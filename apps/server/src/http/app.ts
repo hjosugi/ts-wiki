@@ -21,6 +21,7 @@ import type { DB } from '../db/client.ts'
 import { createServices } from '../services/index.ts'
 import { createEventBus } from '../realtime/bus.ts'
 import { createPresence, dedupeViewers } from '../realtime/presence.ts'
+import { createGitStorage, type GitConfig } from '../storage/git.ts'
 import { verifyPassword } from '../services/auth.ts'
 import type { User } from '../db/schema.ts'
 import { HttpError, unwrap, toErrorResponse } from './errors.ts'
@@ -50,6 +51,34 @@ export const createApp = ({ db, env }: AppDeps) => {
     const viewers = presence.list(path)
     const message = JSON.stringify({ type: 'presence', path, viewers: dedupeViewers(viewers) })
     for (const viewer of viewers) sockets.get(viewer.id)?.send(message)
+  }
+
+  // ── Git storage (DB stays canonical; Git is a mirror + import source) ──────
+  const gitConfig: GitConfig = { ...env.git, markerFile: join(env.dataDir, 'git-sync.json') }
+  const git = createGitStorage(gitConfig)
+  if (git.enabled) void git.init().catch((e) => console.warn('[git] init failed', e))
+
+  const SYSTEM: Principal = { id: 'git-sync', role: 'admin' }
+  const gitAuthor = (id: string | undefined): { name: string; email: string } | null => {
+    if (!id) return null
+    const u = services.users.findById(id)
+    return u ? { name: u.name, email: u.email } : null
+  }
+  // Git → DB: apply imported files through the normal service (system principal).
+  const gitSyncHandlers = {
+    upsert: (path: string, file: { title: string; description: string; content: string }) => {
+      const title = file.title || path.split('/').pop() || path
+      const existing = services.pages.getByPath(path)
+      const result = existing.ok
+        ? services.pages.update(path, { title, description: file.description, content: file.content }, SYSTEM)
+        : services.pages.create({ path, title, content: file.content, description: file.description }, SYSTEM)
+      if (result.ok) {
+        bus.emit({ type: 'page:changed', action: existing.ok ? 'updated' : 'created', path: result.value.path })
+      }
+    },
+    remove: (path: string) => {
+      if (services.pages.remove(path, SYSTEM).ok) bus.emit({ type: 'page:changed', action: 'deleted', path })
+    },
   }
 
   return (
@@ -123,6 +152,7 @@ export const createApp = ({ db, env }: AppDeps) => {
         ({ body, services, principal }) => {
           const page = unwrap(services.pages.create(body, principal))
           bus.emit({ type: 'page:changed', action: 'created', path: page.path })
+          void git.savePage(page, gitAuthor(principal?.id))
           return { page }
         },
         {
@@ -146,6 +176,7 @@ export const createApp = ({ db, env }: AppDeps) => {
         ({ query, body, services, principal }) => {
           const page = unwrap(services.pages.update(query.path, body, principal))
           bus.emit({ type: 'page:changed', action: 'updated', path: page.path })
+          void git.savePage(page, gitAuthor(principal?.id))
           return { page }
         },
         {
@@ -162,6 +193,7 @@ export const createApp = ({ db, env }: AppDeps) => {
         ({ body, services, principal }) => {
           const page = unwrap(services.pages.move(body.oldPath, body.newPath, principal))
           bus.emit({ type: 'page:changed', action: 'moved', path: page.path, from: body.oldPath })
+          void git.movePage(body.oldPath, page, gitAuthor(principal?.id))
           return { page }
         },
         {
@@ -176,6 +208,7 @@ export const createApp = ({ db, env }: AppDeps) => {
         ({ query, services, principal }) => {
           const result = unwrap(services.pages.remove(query.path, principal))
           bus.emit({ type: 'page:changed', action: 'deleted', path: result.path })
+          void git.deletePage(result.path, gitAuthor(principal?.id))
           return result
         },
         { query: t.Object({ path: t.String() }) },
@@ -276,6 +309,16 @@ export const createApp = ({ db, env }: AppDeps) => {
           }),
         },
       )
+
+      // ── Git storage (admin) ───────────────────────────────────────────────
+      .get('/api/git/status', ({ principal }) => {
+        if (!can(principal, 'admin:access')) throw new HttpError(forbidden())
+        return git.status()
+      })
+      .post('/api/git/sync', ({ principal }) => {
+        if (!can(principal, 'admin:access')) throw new HttpError(forbidden())
+        return git.sync(gitSyncHandlers)
+      })
 
       // ── Assets ────────────────────────────────────────────────────────────
       .post(
