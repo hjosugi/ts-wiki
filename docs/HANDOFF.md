@@ -17,23 +17,23 @@ things are the way they are, what bit us, and exactly where to plug in the next 
 | Area | Status | Notes |
 |---|---|---|
 | Monorepo + Bun workspaces | ✅ | `packages/*`, `apps/*`; root scripts orchestrate via `bun --filter` |
-| `@wiki/core` (pure domain) | ✅ | Result, errors, slug, permissions, markdown+TOC, validation. 100% unit-tested |
+| `@wiki/core` (pure domain) | ✅ | Result, errors, slug, permissions, markdown+TOC/link extraction, validation |
 | DB schema + FTS5 migration | ✅ | `users`, `pages`, `page_revisions`, `assets`, `pages_fts` |
 | Pages service (CRUD) | ✅ | transactional: render + revision + FTS index together |
 | Search service (FTS5/BM25) | ✅ | weighted columns, snippets, prefix queries |
 | Users + auth (local + JWT) | ✅ | bcrypt via `Bun.password`; first account → admin |
 | Assets upload | ⚠️ partial | endpoint + static serving + DB row exist; **no UI** yet |
 | Elysia HTTP app + Eden type | ✅ | exports `App`; error mapping centralised |
-| Vue app: view/edit/search/login | ✅ | breadcrumbs, page header actions, tree sidebar, empty states |
+| Vue app: view/edit/search/graph/login | ✅ | breadcrumbs, page header actions, tree sidebar, graph view, empty states |
 | Markdown editor (CodeMirror) | ✅ | split editor + live preview using the *same* core renderer |
-| Tests / typecheck / build | ✅ | 19 tests pass; all 3 packages typecheck; web builds |
+| Tests / typecheck / build | ✅ | 22 tests pass; all 3 packages typecheck; web builds |
 | Auth route guards in router | ⚠️ basic | `PageEdit` redirects if not editor; no global nav guard |
 
 ### Verified during the build (evidence)
-- `bun run test` → **19 pass / 0 fail** (`packages/core/src/core.test.ts`, `apps/server/src/server.test.ts`).
+- `bun run test` → **22 pass / 0 fail** (`packages/core/src/core.test.ts`, `apps/server/src/server.test.ts`).
 - Live API via curl: register/login, 403 for anon writes, path normalization, render-on-save,
   search ranking+snippets, reindex-on-update, move, delete → 404.
-- Eden Treaty client: every call shape (`get`/`post` body/`put` body+query/`move` body/`delete` body+query/`search`) hit the live server successfully.
+- Eden Treaty client: every call shape (`get`/`post` body/`put` body+query/`move` body/`delete` body+query/`search`/`graph`) hit the live server successfully.
 - `bun --filter '@wiki/web' build` → clean; `vue-tsc`, core & server `tsc` → 0 errors.
 
 ---
@@ -130,6 +130,9 @@ Reference patterns worth borrowing:
 Each item notes **where to plug in**.
 
 **High value, low effort**
+- [x] **Graph view** — `extractPageLinks()` in core handles `[[Wiki Links]]` and internal Markdown
+      links; `pages.graph()` returns page/missing nodes + edges; `GET /api/graph`; `GraphView.vue`
+      visualises links and backlinks, with missing nodes opening `_new?path=...`.
 - [x] **Reader chrome components** — added `PageHeader`, `WikiBreadcrumbs`, `PageTree`, and
       `EmptyState`; page view now has copy-path, edit, new-child, updated-at metadata, and a
       structured sidebar without API changes.
@@ -153,9 +156,9 @@ Each item notes **where to plug in**.
       `PageEdit.vue onMounted`) into `router.beforeEach`.
 
 **Medium**
-- [ ] **Backlinks + linked mentions** — parse `[[Page Path]]` / normal links from markdown render
-      output or page content, show "Linked from" on `PageView.vue`, and make missing links one-click
-      page creation. This is a major wiki feel upgrade.
+- [ ] **Backlinks + linked mentions on page view** — graph extraction already exists; show
+      "Linked from" directly on `PageView.vue`, and turn missing `[[links]]` into one-click page
+      creation in rendered markdown.
 - [ ] **Navigation management** — evolve the generated tree into collapsible folders, recent pages,
       starred pages, and optional manual ordering. Avoid building a heavy collection model until
       the component behavior is proven.
@@ -172,8 +175,14 @@ Each item notes **where to plug in**.
 **Larger / later**
 - [ ] OAuth/OIDC strategies (structure: a `modules/auth/*` registry like Wiki.js, but typed).
 - [ ] Comments, tags, multi-site, i18n, SSR.
-- [ ] Postgres option / search engine variety. Explicitly **deprioritised** for now; only revisit
-      after the component/editor/navigation experience is strong.
+- [ ] **Rust-backed search adapter.** Keep SQLite FTS5 as the default embedded engine, but add a
+      `SearchIndexer` interface before swapping engines. Best first external option is
+      **Meilisearch** (`https://www.meilisearch.com/docs/getting_started/overview`) for Rust-built,
+      typo-tolerant, search-as-you-type UX. **Tantivy** (`https://github.com/quickwit-oss/tantivy`)
+      is the lower-level Rust/Lucene-style library if we want to own the indexer. **Quickwit**
+      (`https://quickwit.io/`) is larger-scale/log-search oriented and probably overkill for this
+      wiki until the content volume is much higher. SQLite FTS5 trigram
+      (`https://sqlite.org/fts5.html`) remains the smallest upgrade for CJK/substring matching.
 
 ---
 
@@ -185,7 +194,7 @@ packages/core/src/
   errors.ts        AppError union + httpStatus()                (pure)
   slug.ts          normalizePath / slugifyHeading (Unicode)     (pure)
   permissions.ts   Role, Action, can()                          (pure)
-  markdown.ts      renderMarkdown() → {html, toc}, toPlainText  (pure, isomorphic)
+  markdown.ts      renderMarkdown() → {html, toc}, extractPageLinks(), toPlainText
   page.ts          validatePageInput()                          (pure)
   core.test.ts     unit tests for all of the above
 
@@ -198,7 +207,7 @@ apps/server/src/
     seed.ts        admin + sample pages   (bun run db:seed)
     reset.ts       delete db files        (bun run db:reset)
   services/
-    pages.ts       create/update/remove/get/list — the transactional core
+    pages.ts       create/update/move/remove/get/list/graph — the transactional core
     search.ts      FTS5 query (BM25, snippet) + buildMatchQuery()
     users.ts       count/find/create
     assets.ts      record/list
@@ -213,10 +222,10 @@ apps/server/src/
 apps/web/src/
   lib/api.ts       Eden Treaty client + Api.* methods (the only place treaty is used)
   stores/          auth.ts, pages.ts (Pinia)
-  router/index.ts  routes (/_login /_search /_new /_edit/:path /:path) + paramToPath()
+  router/index.ts  routes (/_login /_search /_graph /_new /_edit/:path /:path) + paramToPath()
   components/      AppHeader.vue, MarkdownEditor.vue, PageHeader.vue, PageTree.vue,
                    WikiBreadcrumbs.vue, EmptyState.vue, PageToc.vue
-  views/           PageView.vue, PageEdit.vue, SearchView.vue, LoginView.vue
+  views/           PageView.vue, PageEdit.vue, SearchView.vue, GraphView.vue, LoginView.vue
   main.ts, App.vue, app.css, uno.config.ts, vite.config.ts
 ```
 
@@ -245,7 +254,7 @@ server's render-on-save and the editor's live preview both pick it up automatica
 bun install
 bun run db:seed     # admin@example.com / password  + sample pages
 bun run dev         # server :4000 + web :5180
-bun run test        # 19 tests
+bun run test        # 22 tests
 bun run typecheck   # all workspaces
 bun run build       # web production build
 ```
