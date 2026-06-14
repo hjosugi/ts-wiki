@@ -240,13 +240,15 @@ export const createApp = ({ db, env }: AppDeps) => {
           path: t.String(),
           name: t.Optional(t.String()),
           userId: t.Optional(t.String()),
+          mode: t.Optional(t.Union([t.Literal('viewing'), t.Literal('editing')])),
         }),
         open(ws) {
-          const { path, name, userId } = ws.data.query
+          const { path, name, userId, mode } = ws.data.query
           sockets.set(ws.id, ws)
           presence.join(path, ws.id, {
             userId: userId ?? null,
             name: (name ?? '').trim() || 'Anonymous',
+            mode: mode ?? 'viewing',
           })
           broadcastPresence(path)
         },

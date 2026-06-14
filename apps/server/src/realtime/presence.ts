@@ -1,16 +1,26 @@
 /**
- * Presence registry — who is currently viewing each page. A pure bookkeeping
- * structure: the WebSocket layer owns the sockets and calls join/leave here on
- * connect/disconnect, then broadcasts `list(path)`.
+ * Presence registry — who is currently on each page, and whether they're just
+ * viewing or actively editing. A pure bookkeeping structure: the WebSocket layer
+ * owns the sockets and calls join/leave here, then broadcasts `list(path)`.
  */
+export type ViewerMode = 'viewing' | 'editing'
+
 export interface Viewer {
   readonly id: string // connection id (one per socket/tab)
   readonly userId: string | null
   readonly name: string
+  readonly mode: ViewerMode
+}
+
+/** A deduped viewer for display (one entry per user, editing wins). */
+export interface ViewerView {
+  readonly userId: string | null
+  readonly name: string
+  readonly mode: ViewerMode
 }
 
 export interface PresenceRegistry {
-  join(path: string, connId: string, who: { userId: string | null; name: string }): void
+  join(path: string, connId: string, who: { userId: string | null; name: string; mode: ViewerMode }): void
   /** Remove a connection; returns the path it was on (to re-broadcast), or null. */
   leave(connId: string): string | null
   list(path: string): Viewer[]
@@ -28,7 +38,7 @@ export const createPresence = (): PresenceRegistry => {
         viewers = new Map()
         byPath.set(path, viewers)
       }
-      viewers.set(connId, { id: connId, userId: who.userId, name: who.name })
+      viewers.set(connId, { id: connId, userId: who.userId, name: who.name, mode: who.mode })
     },
     leave(connId) {
       const path = pathOf.get(connId)
@@ -48,17 +58,17 @@ export const createPresence = (): PresenceRegistry => {
   }
 }
 
-/** Collapse multiple connections of the same user into one display entry. */
-export const dedupeViewers = (
-  viewers: readonly Viewer[],
-): { userId: string | null; name: string }[] => {
-  const seen = new Set<string>()
-  const out: { userId: string | null; name: string }[] = []
+/** Collapse multiple connections of the same user into one entry; editing wins. */
+export const dedupeViewers = (viewers: readonly Viewer[]): ViewerView[] => {
+  const map = new Map<string, ViewerView>()
   for (const v of viewers) {
     const key = v.userId ?? `anon:${v.id}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    out.push({ userId: v.userId, name: v.name })
+    const existing = map.get(key)
+    if (!existing) {
+      map.set(key, { userId: v.userId, name: v.name, mode: v.mode })
+    } else if (v.mode === 'editing' && existing.mode !== 'editing') {
+      map.set(key, { userId: existing.userId, name: existing.name, mode: 'editing' })
+    }
   }
-  return out
+  return [...map.values()]
 }

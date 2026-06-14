@@ -22,6 +22,13 @@ const loading = ref(false)
 
 const path = computed(() => paramToPath(route.params.path) || 'home')
 const { viewers } = usePresence(path)
+const editors = computed(() => viewers.value.filter((v) => v.mode === 'editing'))
+const editorsLabel = computed(() => {
+  const names = editors.value.map((v) => v.name)
+  if (names.length === 1) return `${names[0]} is editing`
+  if (names.length === 2) return `${names[0]} and ${names[1]} are editing`
+  return `${names.length} people editing`
+})
 const toc = computed<{ id: string; text: string; level: number }[]>(() => {
   try {
     return JSON.parse(page.value?.toc ?? '[]')
@@ -75,13 +82,20 @@ onUnmounted(stopRealtime)
           <span
             v-for="(v, i) in viewers.slice(0, 5)"
             :key="i"
-            :title="v.name"
-            class="w-6 h-6 rounded-full bg-violet-500 text-white text-[11px] font-medium flex items-center justify-center ring-2 ring-white dark:ring-gray-950"
+            :title="v.mode === 'editing' ? `${v.name} (editing)` : v.name"
+            class="w-6 h-6 rounded-full text-white text-[11px] font-medium flex items-center justify-center ring-2 ring-white dark:ring-gray-950"
+            :class="v.mode === 'editing' ? 'bg-amber-500' : 'bg-violet-500'"
           >
             {{ (v.name[0] ?? '?').toUpperCase() }}
           </span>
         </div>
-        <span class="text-xs text-gray-400">{{ viewers.length }} viewing now</span>
+        <span
+          class="text-xs"
+          :class="editors.length ? 'text-amber-600 dark:text-amber-400' : 'text-gray-400'"
+        >
+          <template v-if="editors.length">✏ {{ editorsLabel }}</template>
+          <template v-else>{{ viewers.length }} viewing now</template>
+        </span>
       </div>
       <div class="prose dark:prose-invert max-w-none" v-html="page.renderedHtml"></div>
     </article>

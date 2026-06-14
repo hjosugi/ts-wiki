@@ -6,6 +6,7 @@ import { paramToPath } from '@/router'
 import { useAuth } from '@/stores/auth'
 import { usePages } from '@/stores/pages'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
+import { usePresence } from '@/composables/usePresence'
 
 const route = useRoute()
 const router = useRouter()
@@ -19,6 +20,9 @@ const originalPath = ref('')
 const content = ref('')
 const saving = ref(false)
 const error = ref<string | null>(null)
+
+// Announce "editing" presence so readers of this page see "… is editing".
+usePresence(originalPath, 'editing')
 
 onMounted(async () => {
   if (!auth.canEdit) {
