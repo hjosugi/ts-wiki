@@ -13,16 +13,24 @@ export interface GitEnv {
   readonly authorEmail: string
 }
 
+export interface RealtimeEnv {
+  readonly eventBus: 'db' | 'memory'
+  readonly instanceId: string
+  readonly pollIntervalMs: number
+}
+
 export interface Env {
   readonly port: number
   readonly databasePath: string
   readonly dataDir: string
   readonly jwtSecret: string
   readonly git: GitEnv
+  readonly realtime: RealtimeEnv
 }
 
 export const loadEnv = (): Env => {
   const dataDir = process.env.DATA_DIR ?? './data'
+  const eventBus = process.env.WIKI_EVENT_BUS === 'memory' ? 'memory' : 'db'
   return {
     port: Number(process.env.PORT ?? 4000),
     databasePath: process.env.DATABASE_PATH ?? './data/wiki.sqlite',
@@ -37,6 +45,11 @@ export const loadEnv = (): Env => {
       remote: process.env.WIKI_GIT_REMOTE ?? null,
       authorName: process.env.WIKI_GIT_AUTHOR_NAME ?? 'open-wiki',
       authorEmail: process.env.WIKI_GIT_AUTHOR_EMAIL ?? 'wiki@localhost',
+    },
+    realtime: {
+      eventBus,
+      instanceId: process.env.WIKI_INSTANCE_ID ?? crypto.randomUUID(),
+      pollIntervalMs: Number(process.env.WIKI_EVENT_POLL_MS ?? 250),
     },
   }
 }

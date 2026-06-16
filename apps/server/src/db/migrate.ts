@@ -63,6 +63,17 @@ export const runMigrations = (sqlite: Database): void => {
       author_id  TEXT,
       created_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS wiki_events (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_id  TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      action     TEXT NOT NULL,
+      path       TEXT NOT NULL,
+      from_path  TEXT,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS wiki_events_id_idx ON wiki_events(id);
   `)
 
   // Full-text search index. Columns: page_id (returned, not searched), then the

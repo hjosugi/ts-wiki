@@ -102,6 +102,23 @@ Open <http://localhost:5180> (Vite prints the exact URL). Sign in with the seede
 | `bun run test` | Core + server tests (`bun test`) |
 | `bun run typecheck` | Typecheck all workspaces |
 
+## Multi-instance mode
+
+The server defaults to a DB-backed realtime event bus (`WIKI_EVENT_BUS=db`). Page-change events are
+written to the shared SQLite database and every server process polls that log, so SSE subscribers on
+one instance are notified when another instance creates, edits, moves, or deletes a page.
+
+To run multiple API instances, point them at the same `DATABASE_PATH`, keep `JWT_SECRET` identical,
+and give each process its own `PORT`:
+
+```bash
+DATABASE_PATH=./data/wiki.sqlite JWT_SECRET=dev PORT=4000 WIKI_INSTANCE_ID=wiki-1 bun run dev:server
+DATABASE_PATH=./data/wiki.sqlite JWT_SECRET=dev PORT=4001 WIKI_INSTANCE_ID=wiki-2 bun run dev:server
+```
+
+For single-process tests or very small local runs, `WIKI_EVENT_BUS=memory` restores the old
+in-process-only event bus.
+
 ## How it works
 
 **Saving a page** (`createPage`/`updatePage`) is atomic. In one transaction the server: checks

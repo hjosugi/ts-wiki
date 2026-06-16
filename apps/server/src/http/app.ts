@@ -19,7 +19,7 @@ import {
 import type { Env } from '../env.ts'
 import type { DB } from '../db/client.ts'
 import { createServices } from '../services/index.ts'
-import { createEventBus } from '../realtime/bus.ts'
+import { createDbEventBus, createEventBus } from '../realtime/bus.ts'
 import { createPresence, dedupeViewers } from '../realtime/presence.ts'
 import { createGitStorage, type GitConfig } from '../storage/git.ts'
 import { createCollabHub, type CollabConn } from '../realtime/collab.ts'
@@ -44,7 +44,13 @@ const asRole = (value: unknown): Role | null =>
 
 export const createApp = ({ db, env }: AppDeps) => {
   const services = createServices(db)
-  const bus = createEventBus()
+  const bus =
+    env.realtime.eventBus === 'db'
+      ? createDbEventBus(db, {
+          sourceId: env.realtime.instanceId,
+          pollIntervalMs: env.realtime.pollIntervalMs,
+        })
+      : createEventBus()
   const presence = createPresence()
   // connId → live socket, for broadcasting presence updates per page.
   const sockets = new Map<string, { send: (data: string) => unknown }>()
