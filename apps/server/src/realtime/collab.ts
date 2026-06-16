@@ -28,6 +28,17 @@ interface Room {
   readonly doc: Y.Doc
   readonly awareness: awarenessProtocol.Awareness
   readonly conns: Map<CollabConn, Set<number>> // conn → awareness clientIDs it controls
+  saveTimer: ReturnType<typeof setTimeout> | null
+  firstDirtyAt: number
+}
+
+export interface CollabOptions {
+  /** Called (debounced) with the latest text so it can be persisted. */
+  persist?: (room: string, text: string) => void
+  /** Idle delay before saving (ms). */
+  debounceMs?: number
+  /** Hard cap on how long unsaved edits can sit (ms). */
+  maxWaitMs?: number
 }
 
 export interface CollabHub {
@@ -39,8 +50,28 @@ export interface CollabHub {
   roomCount(): number
 }
 
-export const createCollabHub = (): CollabHub => {
+export const createCollabHub = (options: CollabOptions = {}): CollabHub => {
   const rooms = new Map<string, Room>()
+  const persist = options.persist
+  const DEBOUNCE_MS = options.debounceMs ?? 1500
+  const MAX_WAIT_MS = options.maxWaitMs ?? 8000
+
+  const flush = (room: Room): void => {
+    if (room.saveTimer) {
+      clearTimeout(room.saveTimer)
+      room.saveTimer = null
+    }
+    if (room.firstDirtyAt === 0) return
+    room.firstDirtyAt = 0
+    persist?.(room.name, room.doc.getText('content').toString())
+  }
+  const scheduleSave = (room: Room): void => {
+    if (!persist) return
+    if (room.firstDirtyAt === 0) room.firstDirtyAt = Date.now()
+    if (room.saveTimer) clearTimeout(room.saveTimer)
+    const wait = Math.max(0, Math.min(DEBOUNCE_MS, MAX_WAIT_MS - (Date.now() - room.firstDirtyAt)))
+    room.saveTimer = setTimeout(() => flush(room), wait)
+  }
 
   const reply = (conn: CollabConn, encoder: encoding.Encoder): void => {
     conn.send(encoding.toUint8Array(encoder))
@@ -59,14 +90,16 @@ export const createCollabHub = (): CollabHub => {
     const awareness = new awarenessProtocol.Awareness(doc)
     awareness.setLocalState(null) // the server is not itself a participant
 
-    const room: Room = { name, doc, awareness, conns: new Map() }
+    const room: Room = { name, doc, awareness, conns: new Map(), saveTimer: null, firstDirtyAt: 0 }
 
-    // Relay document updates to every other connection.
+    // Relay document updates to every other connection, and schedule an autosave
+    // when the change came from a real client (not the initial DB seed).
     doc.on('update', (update: Uint8Array, origin: unknown) => {
       const encoder = encoding.createEncoder()
       encoding.writeVarUint(encoder, MESSAGE_SYNC)
       syncProtocol.writeUpdate(encoder, update)
       broadcast(room, encoding.toUint8Array(encoder), origin as CollabConn)
+      if (room.conns.has(origin as CollabConn)) scheduleSave(room)
     })
 
     // Relay awareness changes; track which clientIDs each connection owns.
@@ -139,6 +172,7 @@ export const createCollabHub = (): CollabHub => {
         awarenessProtocol.removeAwarenessStates(room.awareness, Array.from(owned), null)
       }
       if (room.conns.size === 0) {
+        flush(room) // final persist of the session before discarding the room
         room.doc.destroy()
         rooms.delete(name)
       }

@@ -65,6 +65,8 @@ export interface PageService {
   getByPath(path: string): Result<Page, AppError>
   create(input: PageInput, principal: Principal | null): Result<Page, AppError>
   update(path: string, patch: UpdatePagePatch, principal: Principal | null): Result<Page, AppError>
+  /** Lightweight content save (no revision) — used by collaborative autosave. */
+  saveContent(path: string, content: string, principal: Principal | null): Result<Page, AppError>
   move(oldPath: string, newPath: string, principal: Principal | null): Result<Page, AppError>
   remove(path: string, principal: Principal | null): Result<{ path: string }, AppError>
 }
@@ -237,6 +239,28 @@ export const createPageService = (db: DB): PageService => {
         return findById(current.id)
       })
 
+      return ok(page)
+    },
+
+    saveContent(path, content, principal) {
+      if (!can(principal, 'page:write')) return err(forbidden())
+
+      const current = findByPath(path)
+      if (!current) return err(notFound(`No page at "${path}"`))
+
+      // Lightweight save for collaborative autosave: refresh content + render +
+      // search index WITHOUT snapshotting a revision (explicit Save does that).
+      const { html, toc } = renderMarkdown(content)
+      const description = toPlainText(content).slice(0, 200)
+      const now = Date.now()
+      const page = db.transaction((tx) => {
+        tx.update(pages)
+          .set({ content, description, renderedHtml: html, toc: JSON.stringify(toc), updatedAt: now })
+          .where(eq(pages.id, current.id))
+          .run()
+        reindex(current.id, current.title, description, content)
+        return findById(current.id)
+      })
       return ok(page)
     },
 

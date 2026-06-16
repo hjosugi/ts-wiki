@@ -83,7 +83,15 @@ export const createApp = ({ db, env }: AppDeps) => {
   }
 
   // ── Collaborative editing (Yjs relay) ─────────────────────────────────────
-  const collab = createCollabHub()
+  const COLLAB: Principal = { id: 'collab-autosave', role: 'editor' }
+  const collab = createCollabHub({
+    // Debounced autosave: persist the live doc WITHOUT a revision (an explicit
+    // Save still snapshots history + commits to Git). Readers get page:changed.
+    persist: (room, text) => {
+      const result = services.pages.saveContent(room, text, COLLAB)
+      if (result.ok) bus.emit({ type: 'page:changed', action: 'updated', path: result.value.path })
+    },
+  })
   const collabConns = new Map<string, { room: string; conn: CollabConn }>()
   const toBytes = (m: unknown): Uint8Array | null => {
     if (m instanceof Uint8Array) return m
@@ -310,7 +318,8 @@ export const createApp = ({ db, env }: AppDeps) => {
       .ws('/api/collab/:room', {
         open(ws) {
           const room = decodeURIComponent(ws.data.params.room)
-          const conn: CollabConn = { send: (data) => ws.send(data) }
+          // ws.raw is the Bun socket — Elysia's ws.send() coerces binary to text.
+          const conn: CollabConn = { send: (data) => void ws.raw.send(data) }
           collabConns.set(ws.id, { room, conn })
           collab.open(room, conn, () => {
             const r = services.pages.getByPath(room)

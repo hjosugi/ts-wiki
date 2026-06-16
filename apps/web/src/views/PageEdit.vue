@@ -6,6 +6,7 @@ import { paramToPath } from '@/router'
 import { useAuth } from '@/stores/auth'
 import { usePages } from '@/stores/pages'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
+import CollabEditor from '@/components/CollabEditor.vue'
 import { usePresence } from '@/composables/usePresence'
 
 const route = useRoute()
@@ -99,6 +100,11 @@ async function remove(): Promise<void> {
       <button v-if="isEdit" class="btn-danger" @click="remove">Delete</button>
     </div>
     <p v-if="error" class="text-sm text-red-600 mb-3">{{ error }}</p>
-    <MarkdownEditor v-model="content" />
+    <!-- Existing pages → collaborative (Yjs) editor; new pages → solo editor. -->
+    <template v-if="isEdit">
+      <CollabEditor v-if="originalPath" :room="originalPath" @update:modelValue="content = $event" />
+      <div v-else class="text-gray-400">Loading editor…</div>
+    </template>
+    <MarkdownEditor v-else v-model="content" />
   </div>
 </template>
