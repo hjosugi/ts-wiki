@@ -52,6 +52,8 @@ export interface GitSyncHandlers {
 export interface SyncResult {
   readonly enabled: boolean
   readonly pulled: boolean
+  /** Whether local commits were pushed back to the remote (false if no remote). */
+  readonly pushed: boolean
   readonly upserted: string[]
   readonly deleted: string[]
 }
@@ -135,16 +137,31 @@ export const createGitStorage = (config: GitConfig): GitStorage => {
     init: () =>
       serialize(async () => {
         if (!config.enabled) return
-        mkdirSync(contentDir, { recursive: true })
+        mkdirSync(config.dir, { recursive: true })
+
+        // First run with a remote: clone it so we share history (a fresh `git
+        // init` would leave unrelated histories and break every pull). Clone into
+        // the (empty) dir; if it fails — e.g. an empty remote — fall back to init.
+        let cloned = false
+        if (!existsSync(join(config.dir, '.git')) && config.remote) {
+          const r = await $`git clone ${config.remote} ${config.dir}`.quiet().nothrow()
+          cloned = r.exitCode === 0
+          if (!cloned) console.warn(`[git] clone failed, starting fresh: ${r.stderr.toString().trim()}`)
+        }
         if (!existsSync(join(config.dir, '.git'))) {
           await git('init', '-b', config.branch)
-          await git('config', 'user.name', config.authorName)
-          await git('config', 'user.email', config.authorEmail)
           writeFileSync(join(config.dir, '.gitkeep'), '')
           await git('add', '-A')
           await git('commit', '-m', 'chore: initialize wiki content repo', '--allow-empty')
         }
-        writeMarker(await headSha())
+        await git('config', 'user.name', config.authorName)
+        await git('config', 'user.email', config.authorEmail)
+        mkdirSync(contentDir, { recursive: true })
+
+        // After a fresh clone leave the marker UNSET so the first sync imports
+        // all existing remote content into the DB. Otherwise pin to HEAD so we
+        // never re-import our own initial commit; a restart keeps any set marker.
+        if (!cloned && readMarker() === null) writeMarker(await headSha())
       }),
 
     savePage: (page, author = null) =>
@@ -175,7 +192,7 @@ export const createGitStorage = (config: GitConfig): GitStorage => {
 
     sync: (handlers) =>
       serialize(async () => {
-        if (!config.enabled) return { enabled: false, pulled: false, upserted: [], deleted: [] }
+        if (!config.enabled) return { enabled: false, pulled: false, pushed: false, upserted: [], deleted: [] }
 
         let pulled = false
         if (config.remote) {
@@ -237,7 +254,18 @@ export const createGitStorage = (config: GitConfig): GitStorage => {
         }
 
         writeMarker(head)
-        return { enabled: true, pulled, upserted, deleted }
+
+        // Push local commits back to the remote (DB → Git → remote). Best-effort:
+        // a failed push (auth, non-fast-forward) is reported, never thrown — the
+        // next sync pulls first and retries.
+        let pushed = false
+        if (config.remote && head) {
+          const r = await git('push', config.remote, `HEAD:${config.branch}`)
+          pushed = r.exitCode === 0
+          if (!pushed) console.warn(`[git] push failed: ${r.stderr.toString().trim()}`)
+        }
+
+        return { enabled: true, pulled, pushed, upserted, deleted }
       }),
 
     status: () =>

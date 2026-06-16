@@ -11,6 +11,8 @@ export interface GitEnv {
   readonly remote: string | null
   readonly authorName: string
   readonly authorEmail: string
+  /** Auto-sync (pull→import→push) interval in ms; 0 disables the scheduler. */
+  readonly syncIntervalMs: number
 }
 
 export interface RealtimeEnv {
@@ -45,6 +47,7 @@ export const loadEnv = (): Env => {
       remote: process.env.WIKI_GIT_REMOTE ?? null,
       authorName: process.env.WIKI_GIT_AUTHOR_NAME ?? 'open-wiki',
       authorEmail: process.env.WIKI_GIT_AUTHOR_EMAIL ?? 'wiki@localhost',
+      syncIntervalMs: Number(process.env.WIKI_GIT_SYNC_INTERVAL_MS ?? 0),
     },
     realtime: {
       eventBus,

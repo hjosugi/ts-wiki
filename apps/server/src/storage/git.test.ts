@@ -73,6 +73,51 @@ describe('git storage', () => {
     rmSync(cfg.root, { recursive: true, force: true })
   })
 
+  test('sync pushes local commits to the remote (DB → Git → remote)', async () => {
+    const cfg = mkConfig()
+    // A bare repo acts as the "remote" we push to.
+    const remote = join(cfg.root, 'remote.git')
+    await $`git init --bare -b main ${remote}`.quiet().nothrow()
+
+    const git = createGitStorage({ ...cfg, remote })
+    await git.init()
+    await git.savePage({ path: 'shared', title: 'Shared', description: '', content: 'hello' })
+
+    const res = await git.sync({ upsert: () => {}, remove: () => {} })
+    expect(res.pushed).toBe(true)
+
+    // Clone the remote elsewhere; the pushed file must be present.
+    const clone = join(cfg.root, 'clone')
+    await $`git clone ${remote} ${clone}`.quiet().nothrow()
+    expect(existsSync(join(clone, 'content', 'shared.md'))).toBe(true)
+    rmSync(cfg.root, { recursive: true, force: true })
+  })
+
+  test('init clones an existing remote; first sync imports its content', async () => {
+    const cfg = mkConfig()
+    const remote = join(cfg.root, 'remote.git')
+    // Seed a remote that already has a page (as if another instance pushed it).
+    const seed = join(cfg.root, 'seed')
+    await $`git init -b main ${seed}`.quiet().nothrow()
+    mkdirSync(join(seed, 'content'), { recursive: true })
+    writeFileSync(join(seed, 'content', 'welcome.md'), '---\ntitle: Welcome\ndescription: w\n---\n\nhi\n')
+    await $`git -C ${seed} add -A`.quiet().nothrow()
+    await $`git -C ${seed} -c user.name=S -c user.email=s@x commit -m seed`.quiet().nothrow()
+    await $`git clone --bare ${seed} ${remote}`.quiet().nothrow()
+
+    // Fresh storage pointed at that remote should clone it on init...
+    const git = createGitStorage({ ...cfg, remote })
+    await git.init()
+    expect(existsSync(join(cfg.dir, 'content', 'welcome.md'))).toBe(true)
+
+    // ...and the first sync imports the pre-existing remote content into the DB.
+    const imported: string[] = []
+    const res = await git.sync({ upsert: (p) => imported.push(p), remove: () => {} })
+    expect(imported).toContain('welcome')
+    expect(res.upserted).toContain('welcome')
+    rmSync(cfg.root, { recursive: true, force: true })
+  })
+
   test('our own push is NOT re-imported (no loop)', async () => {
     const cfg = mkConfig()
     const git = createGitStorage(cfg)

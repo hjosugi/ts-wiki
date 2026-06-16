@@ -88,6 +88,15 @@ export const createApp = ({ db, env }: AppDeps) => {
     },
   }
 
+  // Periodic background sync (pull external commits → DB, push local → remote).
+  // Opt-in via WIKI_GIT_SYNC_INTERVAL_MS; only meaningful with a remote set.
+  if (git.enabled && env.git.remote && env.git.syncIntervalMs > 0) {
+    setInterval(() => {
+      void git.sync(gitSyncHandlers).catch((e) => console.warn('[git] auto-sync failed', e))
+    }, env.git.syncIntervalMs)
+    console.log(`[git] auto-sync every ${env.git.syncIntervalMs}ms → ${env.git.remote}`)
+  }
+
   // ── Collaborative editing (Yjs relay) ─────────────────────────────────────
   const COLLAB: Principal = { id: 'collab-autosave', role: 'editor' }
   const collab = createCollabHub({
