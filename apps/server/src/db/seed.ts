@@ -8,6 +8,7 @@ import type { Principal } from '@wiki/core'
 import { loadEnv } from '../env.ts'
 import { createDb } from './client.ts'
 import { createServices } from '../services/index.ts'
+import { publishedDocPages } from './published-docs.ts'
 
 const env = loadEnv()
 const db = createDb(env.databasePath)
@@ -50,7 +51,7 @@ server the moment it was saved, and indexed for full-text search.
 - SQLite + FTS5 search with BM25 ranking.
 
 Try the **search** box (top bar) and look for *banana* 🍌, or open the
-[Getting Started](/docs/getting-started) guide.
+[open-wiki Docs](/docs).
 `,
   },
   {
@@ -107,6 +108,7 @@ console.log(greet('open-wiki'))
 | Syntax highlighting | ✅ |
 `,
   },
+  ...publishedDocPages(),
 ]
 
 for (const page of samplePages) {

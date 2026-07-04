@@ -28,6 +28,9 @@ account becomes admin), search `banana`, open a page, and hit **Edit** for the l
 
 ## Docs
 
+After `bun run db:seed`, these docs are also published inside the wiki at `/docs`.
+Run `bun run docs:publish` to refresh the wiki pages from the repository Markdown files.
+
 | Where | What |
 |---|---|
 | **[docs/DESIGN.md](docs/DESIGN.md)** | Architecture, the Wiki.js comparison, FP choices, how save/search/types work, multi-instance mode, scripts |

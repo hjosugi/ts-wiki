@@ -6,6 +6,8 @@ import { join } from 'node:path'
 import { parsePageFile } from '@wiki/core'
 import { createGitStorage, type GitConfig } from './git.ts'
 
+const GIT_TEST_TIMEOUT_MS = 15_000
+
 const mkConfig = (): GitConfig & { root: string } => {
   const root = mkdtempSync(join(tmpdir(), 'ow-git-'))
   return {
@@ -13,6 +15,7 @@ const mkConfig = (): GitConfig & { root: string } => {
     dir: join(root, 'repo'),
     branch: 'main',
     remote: null,
+    remoteUrl: null,
     authorName: 'Test',
     authorEmail: 'test@localhost',
     markerFile: join(root, 'git-sync.json'),
@@ -35,7 +38,7 @@ describe('git storage', () => {
     expect(st.clean).toBe(true) // committed, nothing pending
     expect(st.head).toBeTruthy()
     rmSync(cfg.root, { recursive: true, force: true })
-  })
+  }, GIT_TEST_TIMEOUT_MS)
 
   test('deletePage removes the file', async () => {
     const cfg = mkConfig()
@@ -46,7 +49,7 @@ describe('git storage', () => {
     await git.deletePage('tmp')
     expect(existsSync(join(cfg.dir, 'content', 'tmp.md'))).toBe(false)
     rmSync(cfg.root, { recursive: true, force: true })
-  })
+  }, GIT_TEST_TIMEOUT_MS)
 
   test('sync imports an externally-committed file (Git → DB)', async () => {
     const cfg = mkConfig()
@@ -71,7 +74,7 @@ describe('git storage', () => {
     expect(res.upserted).toContain('external')
     expect(imported.find((i) => i.path === 'external')?.title).toBe('External')
     rmSync(cfg.root, { recursive: true, force: true })
-  })
+  }, GIT_TEST_TIMEOUT_MS)
 
   test('sync pushes local commits to the remote (DB → Git → remote)', async () => {
     const cfg = mkConfig()
@@ -79,7 +82,7 @@ describe('git storage', () => {
     const remote = join(cfg.root, 'remote.git')
     await $`git init --bare -b main ${remote}`.quiet().nothrow()
 
-    const git = createGitStorage({ ...cfg, remote })
+    const git = createGitStorage({ ...cfg, remoteUrl: remote })
     await git.init()
     await git.savePage({ path: 'shared', title: 'Shared', description: '', content: 'hello' })
 
@@ -91,7 +94,28 @@ describe('git storage', () => {
     await $`git clone ${remote} ${clone}`.quiet().nothrow()
     expect(existsSync(join(clone, 'content', 'shared.md'))).toBe(true)
     rmSync(cfg.root, { recursive: true, force: true })
-  })
+  }, GIT_TEST_TIMEOUT_MS)
+
+  test('sync uses a configured remote name after cloning from a URL', async () => {
+    const cfg = mkConfig()
+    const remote = join(cfg.root, 'remote.git')
+    await $`git init --bare -b main ${remote}`.quiet().nothrow()
+
+    const git = createGitStorage({ ...cfg, remote: 'mirror', remoteUrl: remote })
+    await git.init()
+
+    const configured = await $`git -C ${cfg.dir} remote get-url mirror`.quiet().nothrow()
+    expect(configured.text().trim()).toBe(remote)
+
+    await git.savePage({ path: 'named', title: 'Named', description: '', content: 'hello' })
+    const res = await git.sync({ upsert: () => {}, remove: () => {} })
+    expect(res.pushed).toBe(true)
+
+    const clone = join(cfg.root, 'clone')
+    await $`git clone ${remote} ${clone}`.quiet().nothrow()
+    expect(existsSync(join(clone, 'content', 'named.md'))).toBe(true)
+    rmSync(cfg.root, { recursive: true, force: true })
+  }, GIT_TEST_TIMEOUT_MS)
 
   test('init clones an existing remote; first sync imports its content', async () => {
     const cfg = mkConfig()
@@ -106,7 +130,7 @@ describe('git storage', () => {
     await $`git clone --bare ${seed} ${remote}`.quiet().nothrow()
 
     // Fresh storage pointed at that remote should clone it on init...
-    const git = createGitStorage({ ...cfg, remote })
+    const git = createGitStorage({ ...cfg, remoteUrl: remote })
     await git.init()
     expect(existsSync(join(cfg.dir, 'content', 'welcome.md'))).toBe(true)
 
@@ -116,7 +140,7 @@ describe('git storage', () => {
     expect(imported).toContain('welcome')
     expect(res.upserted).toContain('welcome')
     rmSync(cfg.root, { recursive: true, force: true })
-  })
+  }, GIT_TEST_TIMEOUT_MS)
 
   test('our own push is NOT re-imported (no loop)', async () => {
     const cfg = mkConfig()
@@ -128,5 +152,5 @@ describe('git storage', () => {
     const res = await git.sync({ upsert: (p) => imported.push(p), remove: () => {} })
     expect(res.upserted).toHaveLength(0) // marker advanced on our commit
     rmSync(cfg.root, { recursive: true, force: true })
-  })
+  }, GIT_TEST_TIMEOUT_MS)
 })

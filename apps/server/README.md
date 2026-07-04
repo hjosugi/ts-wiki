@@ -23,11 +23,25 @@ bun run dev:server
 
 The server listens on `http://localhost:4000` by default.
 
+## Production Configuration
+
+Set `JWT_SECRET` to a strong unique value before running with `NODE_ENV=production`
+or `BUN_ENV=production`; the server refuses to start with the development
+default in production mode.
+
+Local/dev CORS is permissive by default. In production, configure cross-origin
+browser clients with a comma-separated allow-list:
+
+```bash
+WIKI_CORS_ORIGINS=https://wiki.example.com,https://admin.example.com
+```
+
 ## Useful Commands
 
 ```bash
 bun --filter '@wiki/server' db:migrate
 bun --filter '@wiki/server' db:seed
+bun --filter '@wiki/server' docs:publish
 bun --filter '@wiki/server' db:reset
 bun --filter '@wiki/server' typecheck
 bun test apps/server

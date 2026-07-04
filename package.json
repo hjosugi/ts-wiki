@@ -16,6 +16,7 @@
     "db:migrate": "bun --filter '@wiki/server' db:migrate",
     "db:seed": "bun --filter '@wiki/server' db:seed",
     "db:reset": "bun --filter '@wiki/server' db:reset",
+    "docs:publish": "bun --filter '@wiki/server' docs:publish",
     "typecheck": "bun --filter '*' typecheck",
     "test": "bun test packages apps"
   },

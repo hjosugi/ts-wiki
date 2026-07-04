@@ -77,17 +77,28 @@ export interface DbEventBusOptions {
   readonly sourceId?: string
   /** How quickly this process observes events emitted by peers. */
   readonly pollIntervalMs?: number
+  /** Maximum number of recent DB events to retain for peer polling. */
+  readonly maxStoredEvents?: number
 }
+
+const DEFAULT_MAX_STORED_EVENTS = 10_000
+const maxStoredEventsFrom = (value: number | undefined): number =>
+  typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(1, Math.floor(value))
+    : DEFAULT_MAX_STORED_EVENTS
 
 export const createDbEventBus = (db: DB, options: DbEventBusOptions = {}): EventBus => {
   const listeners = new Set<Listener>()
   const sourceId = options.sourceId ?? crypto.randomUUID()
   const pollIntervalMs = Math.max(25, options.pollIntervalMs ?? 250)
+  const maxStoredEvents = maxStoredEventsFrom(options.maxStoredEvents)
   const ownDelivered = new Set<number>()
 
-  let lastSeenId =
-    (db.$client.prepare('SELECT COALESCE(MAX(id), 0) AS id FROM wiki_events').get() as { id: number } | undefined)
-      ?.id ?? 0
+  const readMaxEventId = db.$client.prepare('SELECT COALESCE(MAX(id), 0) AS id FROM wiki_events')
+  const deleteEventsThrough = db.$client.prepare('DELETE FROM wiki_events WHERE id <= ?')
+  const getMaxEventId = (): number => (readMaxEventId.get() as { id: number } | undefined)?.id ?? 0
+
+  let lastSeenId = getMaxEventId()
   let polling = false
 
   const insertEvent = db.$client.prepare(`
@@ -101,6 +112,24 @@ export const createDbEventBus = (db: DB, options: DbEventBusOptions = {}): Event
     ORDER BY id
     LIMIT 100
   `)
+
+  const prune = (): void => {
+    const pruneThroughId = getMaxEventId() - maxStoredEvents
+    if (pruneThroughId <= 0) return
+
+    deleteEventsThrough.run(pruneThroughId)
+    for (const id of ownDelivered) {
+      if (id <= pruneThroughId) ownDelivered.delete(id)
+    }
+  }
+
+  const pruneBestEffort = (): void => {
+    try {
+      prune()
+    } catch {
+      /* pruning is best-effort; event delivery should continue */
+    }
+  }
 
   const poll = (): void => {
     if (polling) return
@@ -118,10 +147,13 @@ export const createDbEventBus = (db: DB, options: DbEventBusOptions = {}): Event
           ...(row.from_path ? { from: row.from_path } : {}),
         })
       }
+      pruneBestEffort()
     } finally {
       polling = false
     }
   }
+
+  pruneBestEffort()
 
   const timer = setInterval(poll, pollIntervalMs)
   ;(timer as unknown as { unref?: () => void }).unref?.()
@@ -138,6 +170,7 @@ export const createDbEventBus = (db: DB, options: DbEventBusOptions = {}): Event
       )
       ownDelivered.add(Number(result.lastInsertRowid))
       deliver(listeners, event)
+      pruneBestEffort()
     },
     subscribe(listener) {
       listeners.add(listener)

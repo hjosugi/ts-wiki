@@ -72,4 +72,34 @@ describe('event bus', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  test('DB-backed bus prunes old stored events after the retention limit', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'open-wiki-bus-'))
+    const path = join(dir, 'wiki.sqlite')
+    const db = createDb(path)
+    const bus = createDbEventBus(db, { sourceId: 'a', pollIntervalMs: 10, maxStoredEvents: 3 })
+
+    try {
+      const seen: WikiEvent[] = []
+      bus.subscribe((e) => seen.push(e))
+
+      for (let i = 0; i < 5; i += 1) {
+        bus.emit({ type: 'page:changed', action: 'updated', path: `page-${i}` })
+      }
+
+      const rows = db.$client
+        .prepare('SELECT path FROM wiki_events ORDER BY id')
+        .all() as Array<{ path: string }>
+
+      expect(seen).toHaveLength(5)
+      expect(rows.map((row) => row.path)).toEqual(['page-2', 'page-3', 'page-4'])
+
+      await Bun.sleep(40)
+      expect(seen).toHaveLength(5)
+    } finally {
+      bus.close()
+      db.$client.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })

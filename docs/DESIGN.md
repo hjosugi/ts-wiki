@@ -112,6 +112,7 @@ in-process-only event bus.
 | `bun run dev:server` / `dev:web` | Run one side |
 | `bun run db:migrate` | Apply schema (also runs automatically on server boot) |
 | `bun run db:seed` | Admin + sample pages (idempotent) |
+| `bun run docs:publish` | Publish this repo's docs into wiki pages under `/docs` |
 | `bun run db:reset` | Delete the SQLite files |
 | `bun run build` | Production build of the web app |
 | `bun run test` | Core + server tests (`bun test`) |

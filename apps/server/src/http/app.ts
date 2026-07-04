@@ -15,6 +15,7 @@ import {
   can,
   forbidden,
   unauthorized,
+  validationError,
 } from '@wiki/core'
 import type { Env } from '../env.ts'
 import type { DB } from '../db/client.ts'
@@ -24,6 +25,13 @@ import { createPresence, dedupeViewers } from '../realtime/presence.ts'
 import { createGitStorage, type GitConfig } from '../storage/git.ts'
 import { createCollabHub, type CollabConn } from '../realtime/collab.ts'
 import { verifyPassword } from '../services/auth.ts'
+import {
+  ALLOWED_ASSET_MIME_TYPES,
+  ASSET_MAX_BYTES,
+  ASSET_MAX_SIZE,
+  assetExtensionForMime,
+  safeAssetStorageName,
+} from '../services/assets.ts'
 import type { User } from '../db/schema.ts'
 import { HttpError, unwrap, toErrorResponse } from './errors.ts'
 
@@ -44,6 +52,7 @@ const asRole = (value: unknown): Role | null =>
 
 export const createApp = ({ db, env }: AppDeps) => {
   const services = createServices(db)
+  const corsOrigin = env.cors.origins === null ? true : [...env.cors.origins]
   const bus =
     env.realtime.eventBus === 'db'
       ? createDbEventBus(db, {
@@ -120,11 +129,19 @@ export const createApp = ({ db, env }: AppDeps) => {
 
   return (
     new Elysia()
-      // Permissive CORS: the SPA uses Bearer tokens (not cookies), so it can run
-      // on any localhost port without a fixed allowed-origin.
-      .use(cors())
+      .use(cors({ origin: corsOrigin }))
       .use(jwt({ name: 'jwt', secret: env.jwtSecret }))
-      .use(staticPlugin({ assets: join(env.dataDir, 'assets'), prefix: '/assets' }))
+      .use(
+        staticPlugin({
+          assets: join(env.dataDir, 'assets'),
+          prefix: '/assets',
+          indexHTML: false,
+          headers: {
+            'x-content-type-options': 'nosniff',
+            'content-disposition': 'inline',
+          },
+        }),
+      )
       .decorate('services', services)
       // Resolve the current principal from a Bearer token on every request.
       .resolve(async ({ jwt, headers }): Promise<{ principal: Principal | null }> => {
@@ -149,7 +166,7 @@ export const createApp = ({ db, env }: AppDeps) => {
         '/api/auth/register',
         async ({ body, services, jwt }) => {
           // Bootstrap: the very first account becomes the admin.
-          const role: Role = services.users.count() === 0 ? 'admin' : 'editor'
+          const role: Role = services.users.count() === 0 ? 'admin' : 'viewer'
           const user = unwrap(await services.users.create({ ...body, role }))
           const token = await jwt.sign({ sub: user.id, role: user.role })
           return { token, user: publicUser(user) }
@@ -390,7 +407,13 @@ export const createApp = ({ db, env }: AppDeps) => {
         async ({ body, services, principal }) => {
           if (!can(principal, 'page:write')) throw new HttpError(forbidden())
           const file = body.file
-          const safeName = `${crypto.randomUUID()}-${file.name.replace(/[^\w.\-]+/g, '_')}`
+          if (!assetExtensionForMime(file.type)) {
+            throw new HttpError(validationError('Unsupported asset type', 'file'))
+          }
+          if (file.size > ASSET_MAX_BYTES) {
+            throw new HttpError(validationError(`Asset must be ${ASSET_MAX_SIZE} or smaller`, 'file'))
+          }
+          const safeName = safeAssetStorageName(file)
           await Bun.write(join(env.dataDir, 'assets', safeName), file)
           const asset = services.assets.record({
             filename: file.name,
@@ -400,7 +423,11 @@ export const createApp = ({ db, env }: AppDeps) => {
           })
           return { id: asset.id, filename: asset.filename, url: `/assets/${safeName}` }
         },
-        { body: t.Object({ file: t.File() }) },
+        {
+          body: t.Object({
+            file: t.File({ maxSize: ASSET_MAX_SIZE, type: [...ALLOWED_ASSET_MIME_TYPES] }),
+          }),
+        },
       )
   )
 }

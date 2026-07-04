@@ -28,7 +28,10 @@ export interface GitConfig {
   readonly enabled: boolean
   readonly dir: string
   readonly branch: string
+  /** Git remote name used for pull/push, e.g. origin. */
   readonly remote: string | null
+  /** Clone URL/path used to bootstrap an empty working directory. */
+  readonly remoteUrl?: string | null
   readonly authorName: string
   readonly authorEmail: string
   /** Where the last-imported commit marker is stored (outside the repo). */
@@ -63,6 +66,7 @@ export interface GitStatus {
   readonly dir: string
   readonly branch: string
   readonly remote: string | null
+  readonly remoteUrl: string | null
   readonly head: string | null
   readonly clean: boolean
 }
@@ -79,6 +83,8 @@ export interface GitStorage {
 
 export const createGitStorage = (config: GitConfig): GitStorage => {
   const contentDir = join(config.dir, 'content')
+  const remoteUrl = config.remoteUrl ?? null
+  const remoteName = config.remote ?? (remoteUrl ? 'origin' : null)
 
   // Serialize all git work through one chain (no interleaved commits).
   let chain: Promise<unknown> = Promise.resolve()
@@ -96,6 +102,14 @@ export const createGitStorage = (config: GitConfig): GitStorage => {
   const headSha = async (): Promise<string | null> => {
     const r = await git('rev-parse', 'HEAD')
     return r.exitCode === 0 ? r.text().trim() : null
+  }
+
+  const ensureRemote = async (): Promise<void> => {
+    if (!remoteName || !remoteUrl) return
+    const existing = await git('remote', 'get-url', remoteName)
+    if (existing.exitCode === 0) return
+    const added = await git('remote', 'add', remoteName, remoteUrl)
+    if (added.exitCode !== 0) console.warn(`[git] remote add failed: ${added.stderr.toString().trim()}`)
   }
 
   const readMarker = (): string | null => {
@@ -139,12 +153,12 @@ export const createGitStorage = (config: GitConfig): GitStorage => {
         if (!config.enabled) return
         mkdirSync(config.dir, { recursive: true })
 
-        // First run with a remote: clone it so we share history (a fresh `git
+        // First run with a clone URL: clone it so we share history (a fresh `git
         // init` would leave unrelated histories and break every pull). Clone into
         // the (empty) dir; if it fails — e.g. an empty remote — fall back to init.
         let cloned = false
-        if (!existsSync(join(config.dir, '.git')) && config.remote) {
-          const r = await $`git clone ${config.remote} ${config.dir}`.quiet().nothrow()
+        if (!existsSync(join(config.dir, '.git')) && remoteUrl) {
+          const r = await $`git clone --origin ${remoteName ?? 'origin'} ${remoteUrl} ${config.dir}`.quiet().nothrow()
           cloned = r.exitCode === 0
           if (!cloned) console.warn(`[git] clone failed, starting fresh: ${r.stderr.toString().trim()}`)
         }
@@ -156,6 +170,7 @@ export const createGitStorage = (config: GitConfig): GitStorage => {
         }
         await git('config', 'user.name', config.authorName)
         await git('config', 'user.email', config.authorEmail)
+        await ensureRemote()
         mkdirSync(contentDir, { recursive: true })
 
         // After a fresh clone leave the marker UNSET so the first sync imports
@@ -195,8 +210,8 @@ export const createGitStorage = (config: GitConfig): GitStorage => {
         if (!config.enabled) return { enabled: false, pulled: false, pushed: false, upserted: [], deleted: [] }
 
         let pulled = false
-        if (config.remote) {
-          const r = await git('pull', '--no-edit', '--no-rebase', config.remote, config.branch)
+        if (remoteName) {
+          const r = await git('pull', '--no-edit', '--no-rebase', remoteName, config.branch)
           pulled = r.exitCode === 0
         }
 
@@ -259,8 +274,8 @@ export const createGitStorage = (config: GitConfig): GitStorage => {
         // a failed push (auth, non-fast-forward) is reported, never thrown — the
         // next sync pulls first and retries.
         let pushed = false
-        if (config.remote && head) {
-          const r = await git('push', config.remote, `HEAD:${config.branch}`)
+        if (remoteName && head) {
+          const r = await git('push', remoteName, `HEAD:${config.branch}`)
           pushed = r.exitCode === 0
           if (!pushed) console.warn(`[git] push failed: ${r.stderr.toString().trim()}`)
         }
@@ -271,7 +286,15 @@ export const createGitStorage = (config: GitConfig): GitStorage => {
     status: () =>
       serialize(async () => {
         if (!config.enabled) {
-          return { enabled: false, dir: config.dir, branch: config.branch, remote: config.remote, head: null, clean: true }
+          return {
+            enabled: false,
+            dir: config.dir,
+            branch: config.branch,
+            remote: remoteName,
+            remoteUrl,
+            head: null,
+            clean: true,
+          }
         }
         const head = await headSha()
         const st = await git('status', '--porcelain')
@@ -279,7 +302,8 @@ export const createGitStorage = (config: GitConfig): GitStorage => {
           enabled: true,
           dir: config.dir,
           branch: config.branch,
-          remote: config.remote,
+          remote: remoteName,
+          remoteUrl,
           head,
           clean: st.text().trim() === '',
         }
