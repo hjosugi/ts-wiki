@@ -9,7 +9,9 @@ const emit = defineEmits<{
 }>()
 
 const assets = ref<AssetView[]>([])
+const uploadInput = ref<HTMLInputElement | null>(null)
 const loading = ref(false)
+const uploading = ref(false)
 const error = ref<string | null>(null)
 
 const altText = (filename: string): string => filename.replace(/\.[^.]+$/, '') || 'image'
@@ -27,8 +29,26 @@ async function load(): Promise<void> {
   }
 }
 
+async function uploadFiles(files: FileList | null): Promise<void> {
+  if (!files?.length) return
+  uploading.value = true
+  error.value = null
+  try {
+    for (const file of Array.from(files)) {
+      await Api.uploadAsset(file)
+    }
+    await load()
+  } catch (e) {
+    error.value = (e as Error).message
+  } finally {
+    uploading.value = false
+    if (uploadInput.value) uploadInput.value.value = ''
+  }
+}
+
 function insert(asset: AssetView): void {
-  emit('insert', `![${altText(asset.filename)}](${asset.url})\n`)
+  const label = altText(asset.filename)
+  emit('insert', asset.mime.startsWith('image/') ? `![${label}](${asset.url})\n` : `[${asset.filename}](${asset.url})\n`)
 }
 
 watch(() => props.open, load, { immediate: true })
@@ -45,7 +65,20 @@ watch(() => props.open, load, { immediate: true })
     <section class="w-full max-w-3xl max-h-[80vh] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-950">
       <div class="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
         <h2 class="font-semibold">Assets</h2>
-        <button class="btn-ghost" type="button" @click="emit('close')">Close</button>
+        <div class="flex items-center gap-2">
+          <button class="btn-ghost" type="button" :disabled="uploading" @click="uploadInput?.click()">
+            {{ uploading ? 'Uploading...' : 'Upload' }}
+          </button>
+          <button class="btn-ghost" type="button" @click="emit('close')">Close</button>
+        </div>
+        <input
+          ref="uploadInput"
+          class="hidden"
+          type="file"
+          multiple
+          accept="image/*,.pdf,.txt,.md,.csv,.json,.zip,.docx,.xlsx,.pptx,.odt,.ods,.odp"
+          @change="uploadFiles(($event.target as HTMLInputElement).files)"
+        />
       </div>
 
       <div class="max-h-[calc(80vh-3.5rem)] overflow-auto p-4">

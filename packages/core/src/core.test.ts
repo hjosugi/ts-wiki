@@ -4,6 +4,7 @@ import {
   normalizePath,
   renderMarkdown,
   extractPageLinks,
+  rewritePageLinks,
   extractCalendarEvents,
   parseIcsEvents,
   calendarEventToFence,
@@ -47,6 +48,15 @@ describe('markdown', () => {
       { path: 'docs/intro', label: 'intro', kind: 'wikilink' },
       { path: 'guide/start', label: 'guide/start', kind: 'markdown' },
     ])
+  })
+  test('rewrites internal page links while preserving labels and anchors', () => {
+    expect(
+      rewritePageLinks(
+        'See [[Docs/Intro|intro]], [Guide](/docs/intro#top), ![Image](/docs/intro.png), and [Site](https://example.com).',
+        'docs/intro',
+        'docs/start',
+      ),
+    ).toBe('See [[docs/start|intro]], [Guide](/docs/start#top), ![Image](/docs/intro.png), and [Site](https://example.com).')
   })
   test('ignores external and asset links in page link extraction', () => {
     expect(extractPageLinks('[Site](https://example.com) ![Image](/assets/a.png) [Hash](#part)')).toEqual([])
@@ -156,6 +166,57 @@ describe('permissions', () => {
   test('admin can do everything', () => {
     const admin = { id: '1', role: 'admin' as const }
     expect(can(admin, 'admin:access')).toBe(true)
+  })
+  test('page rules can restrict a group to a path prefix', () => {
+    const editor = {
+      id: '1',
+      role: 'viewer' as const,
+      groups: ['team-a'],
+      policy: {
+        pageRules: [
+          {
+            subjectType: 'group' as const,
+            subjectId: 'team-a',
+            action: 'page:update' as const,
+            effect: 'allow' as const,
+            matcher: 'prefix' as const,
+            pattern: 'team-a',
+          },
+        ],
+      },
+    }
+
+    expect(can(editor, 'page:update', { path: 'team-a/runbook' })).toBe(true)
+    expect(can(editor, 'page:update', { path: 'team-b/runbook' })).toBe(false)
+  })
+  test('deny wins over allow at the same page-rule specificity', () => {
+    const principal = {
+      id: '1',
+      role: 'editor' as const,
+      groups: ['ops'],
+      policy: {
+        pageRules: [
+          {
+            subjectType: 'group' as const,
+            subjectId: 'ops',
+            action: 'page:update' as const,
+            effect: 'allow' as const,
+            matcher: 'exact' as const,
+            pattern: 'ops/secret',
+          },
+          {
+            subjectType: 'group' as const,
+            subjectId: 'ops',
+            action: 'page:update' as const,
+            effect: 'deny' as const,
+            matcher: 'exact' as const,
+            pattern: 'ops/secret',
+          },
+        ],
+      },
+    }
+
+    expect(can(principal, 'page:update', { path: 'ops/secret' })).toBe(false)
   })
 })
 

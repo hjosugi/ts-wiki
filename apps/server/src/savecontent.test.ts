@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm'
 import type { Principal } from '@ts-wiki/core'
 import { createDb, type DB } from './db/client.ts'
 import { createServices } from './services/index.ts'
-import { pageRevisions } from './db/schema.ts'
+import { pageRevisions, pages as pageRows } from './db/schema.ts'
 
 const admin: Principal = { id: 'a', role: 'admin' }
 const revisions = (db: DB): number =>
@@ -49,5 +49,41 @@ describe('saveContent (collab autosave)', () => {
     const current = pages.getByPath('p')
     expect(current.ok).toBe(true)
     if (current.ok) expect(current.value.content).toBe('external update')
+  })
+
+  test('runs the normal page validator before autosaving', () => {
+    const db = createDb(':memory:')
+    const { pages } = createServices(db)
+    const now = Date.now()
+    db.insert(pageRows)
+      .values({
+        id: 'bad-page',
+        path: 'bad',
+        title: '',
+        description: '',
+        content: 'seed',
+        renderedHtml: '',
+        toc: '[]',
+        contentType: 'markdown',
+        lifecycle: 'active',
+        labels: '[]',
+        status: 'draft',
+        ownerId: null,
+        reviewAt: null,
+        spaceKey: 'main',
+        locale: 'und',
+        authorId: admin.id,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run()
+
+    const result = pages.saveContent('bad', 'autosaved anyway', admin)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.kind).toBe('validation')
+    const current = pages.getByPath('bad')
+    expect(current.ok).toBe(true)
+    if (current.ok) expect(current.value.content).toBe('seed')
   })
 })

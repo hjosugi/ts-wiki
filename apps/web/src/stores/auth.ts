@@ -25,8 +25,8 @@ export const useAuth = defineStore('auth', () => {
     }
   }
 
-  async function login(email: string, password: string): Promise<void> {
-    const res = await Api.login({ email, password })
+  async function login(email: string, password: string, totpCode?: string): Promise<void> {
+    const res = await Api.login({ email, password, totpCode })
     setToken(res.token)
     user.value = res.user
   }

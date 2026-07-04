@@ -4,11 +4,11 @@ A practical guide for whoever picks this up next (human or AI). The user-facing 
 [../README.md](../README.md); this document is the **developer handoff**: current status, why
 things are the way they are, what bit us, and exactly where to plug in the next features.
 
-- **As of:** 2026-06-14
-- **State:** v0 — a small but *complete and verified* vertical slice. Everything below marked ✅
+- **As of:** 2026-07-05
+- **State:** v0.3 — a small but *complete and verified* vertical slice. Everything below marked ✅
   has been run and confirmed (tests + live HTTP + typed client + build + typecheck).
-- **Stack:** Bun 1.3 · Elysia · Drizzle ORM · SQLite (`bun:sqlite`) + FTS5 · Vue 3 · Vite ·
-  UnoCSS · Pinia · CodeMirror 6 · Eden Treaty (no codegen).
+- **Stack:** Bun 1.3 · Elysia · Drizzle ORM · SQLite/libSQL + FTS5 · Vue 3 · Vite ·
+  UnoCSS · Pinia · CodeMirror 6 · Eden Treaty · SimpleWebAuthn (no codegen).
 
 ---
 
@@ -18,14 +18,16 @@ things are the way they are, what bit us, and exactly where to plug in the next 
 |---|---|---|
 | Monorepo + Bun workspaces | ✅ | `packages/*`, `apps/*`; root scripts orchestrate via `bun --filter` |
 | `@ts-wiki/core` (pure domain) | ✅ | Result, errors, slug, permissions, markdown+TOC/link extraction, validation |
-| DB schema + FTS5 migration | ✅ | `users`, `pages`, `page_revisions`, `assets`, `pages_fts` |
+| DB schema + FTS5 migration | ✅ | SQLite default plus libSQL/Turso embedded-replica support |
 | Pages service (CRUD) | ✅ | transactional: render + revision + FTS index together |
 | Search service (FTS5/BM25) | ✅ | weighted columns, snippets, prefix queries |
-| Users + auth (local + JWT) | ✅ | bcrypt via `Bun.password`; first account → admin |
-| Assets upload | ⚠️ partial | endpoint + static serving + DB row exist; **no UI** yet |
+| Users + auth | ✅ | local password, JWT, OIDC, TOTP, passkeys; first account → admin |
+| Groups + page rules | ✅ | role default groups, memberships, path ACL rules, deny precedence |
+| Assets upload | ✅ | local or R2 bytes, DB metadata, upload/picker UI |
 | Elysia HTTP app + Eden type | ✅ | exports `App`; error mapping centralised |
 | Vue app: view/edit/search/graph/login | ✅ | breadcrumbs, page header actions, tree sidebar, graph view, empty states |
-| Markdown editor (CodeMirror) | ✅ | split editor + live preview; event snippet button; same core renderer |
+| Markdown editor (CodeMirror + visual mode) | ✅ | Markdown remains canonical; visual mode round-trips common blocks |
+| Webhooks + automation | ✅ | signed deliveries, retry history, page metadata automation rules |
 | Tests / typecheck / build | ✅ | core/server Bun tests + web Vitest tests; all 3 packages typecheck; web builds |
 | Auth route guards in router | ✅ | global router guard gates editor/admin routes |
 
@@ -156,51 +158,48 @@ Each item notes **where to plug in**.
 - [x] **Page rename / move** — `move(oldPath, newPath, principal)` in `pages.ts`; `POST /api/page/move`;
       `Api.movePage()`; editable path in `PageEdit.vue`; tests cover path normalization, FTS preservation,
       and conflict refusal.
-- [ ] **Page history UI** — data already exists in `page_revisions`. Add `getRevisions(path)` to
-      `pages.ts`, a route, an `Api.history()` call, and a `HistoryView.vue` (diff via `diff` lib).
-- [ ] **Asset image UI** — endpoint exists (`POST /api/assets`). Wire an upload button +
-      drag-drop into `MarkdownEditor.vue` that inserts `![](/assets/…)`.
-- [ ] **Editor ergonomics** — add toolbar buttons for heading/bold/link/image/code/table, upload
-      and paste-image affordances, richer event insertion, unsaved-change warning, and a clearer save/error/status strip
-      in `MarkdownEditor.vue` / `PageEdit.vue`.
-- [ ] **Calendar import/export UX** — add an `.ics` upload/paste parser, event preview modal, and
-      "insert into page" flow. Keep parsing in `@ts-wiki/core` so server render and editor preview
-      agree.
-- [ ] **Quick switcher / command palette** — keyboard-first `Cmd/Ctrl+K` for search, jump to page,
-      create page, and common edit actions. This should sit in `AppHeader.vue` + a new modal
-      component and can reuse `Api.listPages()` / `Api.search()`.
-- [ ] **Templates / starter pages** — let `_new` prefill from templates such as "Decision",
-      "How-to", "Meeting notes", and "Spec". Keep this web-only first; persist templates later if
-      users actually need custom ones.
-- [ ] **Global router auth guard** — centralise the `canEdit` redirect (currently only in
-      `PageEdit.vue onMounted`) into `router.beforeEach`.
+- [x] **Page history UI** — `pages.history()`, `/api/page/history`, `Api.history()`, and
+      `HistoryView.vue` provide revision browsing, diff display, and revision restore.
+- [x] **Asset image UI** — `MarkdownEditor.vue` supports upload button, drag-drop, paste-image
+      upload, and `AssetPicker.vue` for browsing existing assets.
+- [x] **Editor ergonomics** — toolbar buttons cover heading/bold/link/code/table/event/assets,
+      with paste-image affordances, `.ics` import, unsaved-change warnings, and save status in
+      `MarkdownEditor.vue` / `PageEdit.vue`.
+- [x] **Calendar import/export UX** — `.ics` parsing lives in `@ts-wiki/core`; the editor can
+      import `.ics` events into `event` fences and rendered event cards export downloadable `.ics`.
+- [x] **Quick switcher / command palette** — `CommandPalette.vue` supports keyboard-first search,
+      page jumps, new-page creation, and common navigation actions.
+- [x] **Templates / starter pages** — `_new` can prefill blank, decision, how-to, meeting-notes,
+      and spec templates. These remain built-in and web-only until custom persisted templates are
+      worth the extra model.
+- [x] **Global router auth guard** — `router.beforeEach` gates admin/edit routes and preserves a
+      redirect query for login.
 
 **Medium**
-- [ ] **Event extraction + event index** — extract all event fences from pages into a service
-      response (`/api/events`) so the app can show upcoming events, page-linked timelines, and
-      "events on this page" without adding a full calendar database yet.
-- [ ] **Google Calendar integration** — after event cards/index feel good, add optional OAuth,
-      calendar selection, import events into pages, and create/update Google Calendar events from
-      wiki event blocks. Keep this as an adapter around the event model, not the source of truth.
-- [ ] **Backlinks + linked mentions on page view** — graph extraction already exists; show
-      "Linked from" directly on `PageView.vue`, and turn missing `[[links]]` into one-click page
-      creation in rendered markdown.
+- [x] **Event extraction + event index** — `pages.events()` and `/api/events/index` extract event
+      fences across pages; `EventsView.vue` shows upcoming/past events with page links and `.ics`.
+- [x] **Google Calendar integration (no OAuth)** — event cards include Google Calendar template
+      links and `.ics` import/export. OAuth calendar mutation is intentionally out of scope for the
+      lean core; see `docs/ISSUE_RESOLUTION.md`.
+- [x] **Backlinks + linked mentions on page view** — `pages.backlinks()`, `/api/page/backlinks`,
+      and `PageView.vue` show incoming links directly on the reader view.
 - [ ] **Navigation management** — evolve the generated tree into collapsible folders, recent pages,
       starred pages, and optional manual ordering. Avoid building a heavy collection model until
       the component behavior is proven.
-- [ ] **Markdown plugins** — KaTeX math, Mermaid/diagrams, footnotes already partly in markdown-it.
-      Add in `packages/core/src/markdown.ts` (stays isomorphic → server render + live preview both
-      get it for free).
-- [ ] **"Blocks"** (Wiki.js's best idea) — framework-agnostic web components embedded in pages
-      (e.g. `<block-index path="docs">`). See `reference/wiki-vega/blocks/` for the pattern.
-- [ ] **Roles/permissions UI + user management** — `users` table + `permissions.ts` exist; needs
-      admin routes + screens.
-- [ ] **Production web serving** — serve `apps/web/dist` from Elysia (`@elysiajs/static`) for a
-      single-process deploy; add a Dockerfile.
+- [x] **Markdown plugins / typed blocks** — `packages/core/src/markdown.ts` supports safe callout,
+      embed, event, and Mermaid-source fences, shared by server render and live preview.
+- [x] **"Blocks"** (Wiki.js's best idea) — the current typed-fence approach covers the useful
+      lightweight subset without introducing framework-specific custom elements yet.
+- [x] **Roles/permissions UI + user management** — admin users, role changes, default groups,
+      group membership management, and page path rules are implemented.
+- [x] **Production web serving** — Elysia serves `apps/web/dist` under `/ui` and the Dockerfile
+      builds a single production image.
 
 **Larger / later**
-- [ ] OAuth/OIDC strategies (structure: a `modules/auth/*` registry like Wiki.js, but typed).
-- [ ] Comments, tags, multi-site, i18n, SSR.
+- [x] OAuth/OIDC strategy — generic OIDC provider config, login start/callback, account linking,
+      registration controls, and domain allow-listing are implemented.
+- [x] Comments — page comments with mentions, resolve/update/delete, and webhook events are implemented.
+- [ ] Tags, multi-site, i18n, SSR.
 - [ ] **Rust-backed search adapter.** Keep SQLite FTS5 as the default embedded engine, but add a
       `SearchIndexer` interface before swapping engines. Best first external option is
       **Meilisearch** (`https://www.meilisearch.com/docs/getting_started/overview`) for Rust-built,
@@ -229,7 +228,7 @@ apps/server/src/
   db/
     schema.ts      Drizzle tables + inferred types
     migrate.ts     DDL incl. FTS5 (+ `bun src/db/migrate.ts`); FTS_TOKENIZER lives here
-    client.ts      createDb() — bun:sqlite + drizzle, exposes $client for raw FTS
+    client.ts      createDb() — SQLite/libSQL + drizzle, exposes $client for raw FTS
     seed.ts        admin + sample pages   (bun run db:seed)
     reset.ts       delete db files        (bun run db:reset)
   services/

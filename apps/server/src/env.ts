@@ -4,6 +4,13 @@
  */
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  DEFAULT_LIBSQL_REPLICA_FILENAME,
+  DEFAULT_SQLITE_PATH,
+  type DatabaseConfig,
+  type DatabaseDriver,
+} from './db/config.ts'
+import type { AssetStorageConfig } from './storage/assets.ts'
 
 export const DEFAULT_JWT_SECRET = 'dev-insecure-secret-change-me'
 
@@ -32,13 +39,38 @@ export interface CorsEnv {
   readonly origins: readonly string[] | null
 }
 
+export interface OidcProviderEnv {
+  readonly id: string
+  readonly label: string
+  readonly issuer: string
+  readonly clientId: string
+  readonly clientSecret: string
+  readonly redirectUri: string
+  readonly scopes: readonly string[]
+  readonly allowRegistration: boolean
+  readonly allowedEmailDomains: readonly string[]
+  readonly defaultRole: 'admin' | 'editor' | 'viewer'
+}
+
+export interface AuthEnv {
+  readonly siteName: string
+  readonly publicOrigin: string
+  readonly passkeyRpId: string
+  readonly oidcProviders: readonly OidcProviderEnv[]
+}
+
 export interface Env {
   readonly port: number
+  readonly database: DatabaseConfig
+  /** @deprecated Use database.driver/path. Kept for older tests and callers. */
   readonly databasePath: string
   readonly dataDir: string
   readonly webDistDir: string
   readonly jwtSecret: string
+  readonly trustProxyHeaders: boolean
   readonly cors: CorsEnv
+  readonly auth: AuthEnv
+  readonly assetStorage: AssetStorageConfig
   readonly git: GitEnv
   readonly realtime: RealtimeEnv
 }
@@ -55,6 +87,21 @@ const parseCorsOrigins = (value: string | undefined): readonly string[] | null =
   return origins.length > 0 ? origins : null
 }
 
+const parseCsv = (value: string | undefined): readonly string[] =>
+  (value ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+
+const parseRole = (value: string | undefined): 'admin' | 'editor' | 'viewer' =>
+  value === 'admin' || value === 'editor' ? value : 'viewer'
+
+const parseDatabaseDriver = (value: string | undefined): DatabaseDriver => {
+  const driver = value?.trim().toLowerCase() || 'sqlite'
+  if (driver === 'sqlite' || driver === 'libsql') return driver
+  throw new Error('DATABASE_DRIVER must be either "sqlite" or "libsql".')
+}
+
 const loadJwtSecret = (source: EnvSource): string => {
   const jwtSecret =
     source.JWT_SECRET && source.JWT_SECRET.trim().length > 0 ? source.JWT_SECRET : DEFAULT_JWT_SECRET
@@ -68,22 +115,148 @@ const loadJwtSecret = (source: EnvSource): string => {
   return jwtSecret
 }
 
+const optionalTrimmed = (value: string | undefined): string | null => value?.trim() || null
+
+const optionalPublicBaseUrl = (value: string | undefined): string | null =>
+  optionalTrimmed(value)?.replace(/\/+$/, '') || null
+
+const requireEnv = (source: EnvSource, key: string, missing: string[]): string => {
+  const value = optionalTrimmed(source[key])
+  if (!value) {
+    missing.push(key)
+    return ''
+  }
+  return value
+}
+
+const isRemoteLibsqlUrl = (url: string): boolean => /^(libsql|https?|wss?):/i.test(url)
+
+const loadDatabaseEnv = (source: EnvSource, dataDir: string): DatabaseConfig => {
+  const driver = parseDatabaseDriver(source.DATABASE_DRIVER)
+  if (driver === 'sqlite') {
+    return {
+      driver,
+      path: source.DATABASE_PATH ?? DEFAULT_SQLITE_PATH,
+    }
+  }
+
+  const missing: string[] = []
+  const url = requireEnv(source, 'LIBSQL_URL', missing)
+  if (missing.length > 0) {
+    throw new Error(`DATABASE_DRIVER=libsql requires ${missing.join(', ')}.`)
+  }
+  return {
+    driver,
+    url,
+    authToken: optionalTrimmed(source.LIBSQL_AUTH_TOKEN),
+    replicaPath: optionalTrimmed(source.LIBSQL_REPLICA_PATH) ??
+      (isRemoteLibsqlUrl(url) ? join(dataDir, DEFAULT_LIBSQL_REPLICA_FILENAME) : null),
+  }
+}
+
+const loadAssetStorage = (source: EnvSource, dataDir: string): AssetStorageConfig => {
+  const publicBaseUrl = optionalPublicBaseUrl(source.ASSET_PUBLIC_BASE_URL)
+  const storageType = optionalTrimmed(source.ASSET_STORAGE)?.toLowerCase() ?? 'local'
+
+  if (storageType === 'local') {
+    return { type: 'local', dataDir, publicBaseUrl }
+  }
+  if (storageType !== 'r2') {
+    throw new Error('ASSET_STORAGE must be either "local" or "r2".')
+  }
+
+  const missing: string[] = []
+  const accessKeyId = requireEnv(source, 'R2_ACCESS_KEY_ID', missing)
+  const secretAccessKey = requireEnv(source, 'R2_SECRET_ACCESS_KEY', missing)
+  const bucket = requireEnv(source, 'R2_BUCKET', missing)
+  const accountId = optionalTrimmed(source.R2_ACCOUNT_ID)
+  const endpointOverride = optionalTrimmed(source.R2_ENDPOINT)
+  const endpoint = endpointOverride ?? (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : null)
+  if (!endpoint) {
+    missing.push('R2_ACCOUNT_ID or R2_ENDPOINT')
+  }
+  if (missing.length > 0) {
+    throw new Error(`ASSET_STORAGE=r2 requires ${missing.join(', ')}.`)
+  }
+
+  return {
+    type: 'r2',
+    publicBaseUrl,
+    r2: {
+      accountId,
+      accessKeyId,
+      secretAccessKey,
+      bucket,
+      endpoint: endpoint!,
+    },
+  }
+}
+
+const defaultPublicOrigin = (source: EnvSource): string => `http://localhost:${Number(source.PORT ?? 4000)}`
+
+const originHost = (origin: string): string => {
+  try {
+    return new URL(origin).hostname
+  } catch {
+    return 'localhost'
+  }
+}
+
+const loadAuthEnv = (source: EnvSource): AuthEnv => {
+  const publicOrigin = optionalPublicBaseUrl(source.TS_WIKI_PUBLIC_ORIGIN) ?? defaultPublicOrigin(source)
+  const oidcEnabled = source.OIDC_ENABLED === 'true' || source.OIDC_ENABLED === '1'
+  const providers: OidcProviderEnv[] = []
+  if (oidcEnabled) {
+    const missing: string[] = []
+    const issuer = requireEnv(source, 'OIDC_ISSUER', missing).replace(/\/+$/, '')
+    const clientId = requireEnv(source, 'OIDC_CLIENT_ID', missing)
+    const clientSecret = requireEnv(source, 'OIDC_CLIENT_SECRET', missing)
+    const redirectUri = requireEnv(source, 'OIDC_REDIRECT_URI', missing)
+    if (missing.length > 0) {
+      throw new Error(`OIDC_ENABLED=true requires ${missing.join(', ')}.`)
+    }
+    providers.push({
+      id: optionalTrimmed(source.OIDC_PROVIDER_ID) ?? 'oidc',
+      label: optionalTrimmed(source.OIDC_PROVIDER_LABEL) ?? 'OIDC',
+      issuer,
+      clientId,
+      clientSecret,
+      redirectUri,
+      scopes: parseCsv(source.OIDC_SCOPES).length ? parseCsv(source.OIDC_SCOPES) : ['openid', 'email', 'profile'],
+      allowRegistration: source.OIDC_ALLOW_REGISTRATION !== 'false',
+      allowedEmailDomains: parseCsv(source.OIDC_EMAIL_DOMAINS).map((domain) => domain.toLowerCase()),
+      defaultRole: parseRole(source.OIDC_DEFAULT_ROLE),
+    })
+  }
+  return {
+    siteName: optionalTrimmed(source.TS_WIKI_SITE_NAME) ?? 'ts-wiki',
+    publicOrigin,
+    passkeyRpId: optionalTrimmed(source.PASSKEY_RP_ID) ?? originHost(publicOrigin),
+    oidcProviders: providers,
+  }
+}
+
 export const loadEnv = (source: EnvSource = process.env): Env => {
   const production = isProduction(source)
   const dataDir = source.DATA_DIR ?? './data'
+  const database = loadDatabaseEnv(source, dataDir)
   const eventBus = source.TS_WIKI_EVENT_BUS === 'memory' ? 'memory' : 'db'
   const configuredCorsOrigins = parseCorsOrigins(source.TS_WIKI_CORS_ORIGINS)
   const remoteUrl = source.TS_WIKI_GIT_REMOTE_URL?.trim() || null
   const remote = source.TS_WIKI_GIT_REMOTE?.trim() || (remoteUrl ? 'origin' : null)
   return {
     port: Number(source.PORT ?? 4000),
-    databasePath: source.DATABASE_PATH ?? './data/ts-wiki.sqlite',
+    database,
+    databasePath: database.driver === 'sqlite' ? database.path : source.DATABASE_PATH ?? DEFAULT_SQLITE_PATH,
     dataDir,
     webDistDir: source.WEB_DIST_DIR ?? fileURLToPath(new URL('../../web/dist', import.meta.url)),
     jwtSecret: loadJwtSecret(source),
+    trustProxyHeaders: source.TS_WIKI_TRUST_PROXY_HEADERS === 'true' || source.TS_WIKI_TRUST_PROXY_HEADERS === '1',
     cors: {
       origins: configuredCorsOrigins ?? (production ? [] : null),
     },
+    auth: loadAuthEnv(source),
+    assetStorage: loadAssetStorage(source, dataDir),
     git: {
       // NB: namespaced TS_WIKI_GIT_* — plain GIT_DIR / GIT_AUTHOR_* are reserved
       // Git env vars and would hijack every git command we run.

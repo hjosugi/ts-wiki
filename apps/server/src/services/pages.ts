@@ -25,6 +25,7 @@ import {
   renderMarkdown,
   toPlainText,
   extractPageLinks,
+  rewritePageLinks,
   extractCalendarEvents,
   normalizePath,
   normalizeLabels,
@@ -34,7 +35,7 @@ import {
   type ExtractedCalendarEvent,
 } from '@ts-wiki/core'
 import type { DB } from '../db/client.ts'
-import { pages, pageRevisions, type Page, type PageRevision } from '../db/schema.ts'
+import { pageAnalytics, pageComments, pages, pageRevisions, type Page, type PageRevision } from '../db/schema.ts'
 
 export interface PageSummary {
   readonly path: string
@@ -357,11 +358,10 @@ export const createPageService = (db: DB): PageService => {
     },
 
     create(input, principal) {
-      if (!can(principal, 'page:write')) return err(forbidden())
-
       const validated = validatePageInput(input)
       if (!validated.ok) return validated
       const v = validated.value
+      if (!can(principal, 'page:create', { path: v.path })) return err(forbidden())
 
       if (findByPath(v.path)) return err(conflict(`A page already exists at "${v.path}"`))
 
@@ -415,10 +415,9 @@ export const createPageService = (db: DB): PageService => {
     },
 
     update(path, patch, principal) {
-      if (!can(principal, 'page:write')) return err(forbidden())
-
       const current = findByPath(path)
       if (!current || current.lifecycle !== 'active') return err(notFound(`No page at "${path}"`))
+      if (!can(principal, 'page:update', { path: current.path })) return err(forbidden())
 
       const validated = validatePageInput({
         path: current.path,
@@ -442,29 +441,30 @@ export const createPageService = (db: DB): PageService => {
     },
 
     saveContent(path, content, principal, expectedUpdatedAt = null) {
-      if (!can(principal, 'page:write')) return err(forbidden())
-
       const current = findByPath(path)
       if (!current || current.lifecycle !== 'active') return err(notFound(`No page at "${path}"`))
+      if (!can(principal, 'page:update', { path: current.path })) return err(forbidden())
       if (expectedUpdatedAt !== null && current.updatedAt !== expectedUpdatedAt) {
         return err(conflict(`Page "${path}" changed outside the collaborative editor`))
       }
 
+      const validated = validatePageInput({
+        path: current.path,
+        title: current.title,
+        content,
+        labels: parseLabels(current.labels),
+        status: isPageStatus(current.status) ? current.status : 'draft',
+        ownerId: current.ownerId,
+        reviewAt: current.reviewAt,
+        locale: current.locale,
+      })
+      if (!validated.ok) return validated
+
       // Lightweight save for collaborative autosave: refresh content + render +
       // search index WITHOUT snapshotting a revision (explicit Save does that).
-      const description = toPlainText(content).slice(0, 200)
       const page = writeExistingPage(
         current,
-        {
-          title: current.title,
-          description,
-          content,
-          labels: parseLabels(current.labels),
-          status: isPageStatus(current.status) ? current.status : 'draft',
-          ownerId: current.ownerId,
-          reviewAt: current.reviewAt,
-          locale: normalizeLocale(current.locale),
-        },
+        validated.value,
         principal,
         null,
       )
@@ -472,10 +472,9 @@ export const createPageService = (db: DB): PageService => {
     },
 
     restoreRevision(path, revisionId, principal) {
-      if (!can(principal, 'page:write')) return err(forbidden())
-
       const current = findByPath(path)
       if (!current || current.lifecycle !== 'active') return err(notFound(`No page at "${path}"`))
+      if (!can(principal, 'page:update', { path: current.path })) return err(forbidden())
       const revision = db.select().from(pageRevisions).where(eq(pageRevisions.id, revisionId)).get()
       if (!revision || revision.pageId !== current.id) return err(notFound('Revision not found'))
 
@@ -498,10 +497,9 @@ export const createPageService = (db: DB): PageService => {
     },
 
     archive(path, principal) {
-      if (!can(principal, 'page:delete')) return err(forbidden())
-
       const current = findByPath(path)
       if (!current || current.lifecycle !== 'active') return err(notFound(`No page at "${path}"`))
+      if (!can(principal, 'page:delete', { path: current.path })) return err(forbidden())
       const now = Date.now()
       const page = db.transaction((tx) => {
         tx.insert(pageRevisions)
@@ -528,10 +526,9 @@ export const createPageService = (db: DB): PageService => {
     },
 
     restore(path, principal) {
-      if (!can(principal, 'page:write')) return err(forbidden())
-
       const current = findByPath(path)
       if (!current) return err(notFound(`No page at "${path}"`))
+      if (!can(principal, 'page:update', { path: current.path })) return err(forbidden())
       if (current.lifecycle === 'active') return ok(current)
       const now = Date.now()
       const page = db.transaction((tx) => {
@@ -559,10 +556,9 @@ export const createPageService = (db: DB): PageService => {
     },
 
     move(oldPath, newPath, principal) {
-      if (!can(principal, 'page:write')) return err(forbidden())
-
       const current = findByPath(oldPath)
       if (!current || current.lifecycle !== 'active') return err(notFound(`No page at "${oldPath}"`))
+      if (!can(principal, 'page:move', { path: current.path })) return err(forbidden())
 
       const validated = validatePageInput({
         path: newPath,
@@ -605,6 +601,39 @@ export const createPageService = (db: DB): PageService => {
           })
           .where(eq(pages.id, current.id))
           .run()
+        tx.update(pageComments)
+          .set({ path: v.path, updatedAt: now })
+          .where(eq(pageComments.pageId, current.id))
+          .run()
+
+        for (const page of tx.select().from(pages).where(eq(pages.lifecycle, 'active')).all()) {
+          const content = rewritePageLinks(page.content, current.path, v.path)
+          if (content === page.content) continue
+          const { html, toc } = renderMarkdown(content)
+          tx.insert(pageRevisions)
+            .values({
+              id: crypto.randomUUID(),
+              pageId: page.id,
+              path: page.path,
+              title: page.title,
+              description: page.description,
+              content: page.content,
+              authorId: principal?.id ?? null,
+              action: 'updated',
+              createdAt: now,
+            })
+            .run()
+          tx.update(pages)
+            .set({
+              content,
+              renderedHtml: html,
+              toc: JSON.stringify(toc),
+              updatedAt: now,
+            })
+            .where(eq(pages.id, page.id))
+            .run()
+          reindex(page.id, page.title, page.description, content)
+        }
 
         reindex(current.id, current.title, current.description, current.content)
         return findById(current.id)
@@ -614,10 +643,9 @@ export const createPageService = (db: DB): PageService => {
     },
 
     remove(path, principal) {
-      if (!can(principal, 'page:delete')) return err(forbidden())
-
       const current = findByPath(path)
       if (!current || current.lifecycle !== 'active') return err(notFound(`No page at "${path}"`))
+      if (!can(principal, 'page:delete', { path: current.path })) return err(forbidden())
 
       const now = Date.now()
       const deleted = db.transaction((tx) => {
@@ -651,21 +679,19 @@ export const createPageService = (db: DB): PageService => {
 
       const current = findByPath(path)
       if (!current) return err(notFound(`No page at "${path}"`))
-      const now = Date.now()
       db.transaction((tx) => {
-        tx.insert(pageRevisions)
-          .values({
-            id: crypto.randomUUID(),
-            pageId: current.id,
-            path: current.path,
-            title: current.title,
-            description: current.description,
-            content: current.content,
-            authorId: principal?.id ?? null,
-            action: 'purged',
-            createdAt: now,
-          })
-          .run()
+        const paths = new Set<string>([current.path])
+        for (const row of tx.select({ path: pageRevisions.path }).from(pageRevisions).where(eq(pageRevisions.pageId, current.id)).all()) {
+          paths.add(row.path)
+        }
+        for (const row of tx.select({ path: pageComments.path }).from(pageComments).where(eq(pageComments.pageId, current.id)).all()) {
+          paths.add(row.path)
+        }
+        for (const pagePath of paths) {
+          tx.delete(pageAnalytics).where(eq(pageAnalytics.path, pagePath)).run()
+        }
+        tx.delete(pageComments).where(eq(pageComments.pageId, current.id)).run()
+        tx.delete(pageRevisions).where(eq(pageRevisions.pageId, current.id)).run()
         tx.delete(pages).where(eq(pages.id, current.id)).run()
         ftsDelete.run(current.id)
       })

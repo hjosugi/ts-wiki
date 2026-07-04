@@ -19,7 +19,7 @@ writes, and a ~1 MB front-end bundle.
 | Save → render | render is a fire-and-forget job; pages flash blank, index lags | render + revision + search index in **one transaction** |
 | API | Apollo GraphQL (schema + resolvers + codegen) | Elysia typed routes = the contract; **Eden Treaty**, no codegen |
 | Search | every backend (PG, Algolia, Elastic, …) | one backend done well: SQLite **FTS5**, BM25, weighted columns |
-| Front-end | Quasar + TipTap + Monaco (~1 MB JS) | Vue 3 + UnoCSS + CodeMirror; reader bundle ~43 KB gzip |
+| Front-end | Quasar + TipTap + Monaco (~1 MB JS) | Vue 3 + UnoCSS + CodeMirror; bundle size verified from Vite build output |
 | Auth | 20+ Passport strategies | local accounts + JWT, structured to extend |
 
 ## Architecture

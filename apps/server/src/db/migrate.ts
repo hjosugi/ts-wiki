@@ -7,25 +7,33 @@
  * PageService updates inside the same transaction as the page write — explicit
  * effects, no hidden triggers.
  */
-import { Database } from 'bun:sqlite'
+interface MigratableStatement {
+  all(...params: unknown[]): unknown[]
+}
+
+interface MigratableDatabase {
+  prepare(sql: string): MigratableStatement
+  exec(sql: string): unknown
+  close?(): unknown
+}
 
 /** FTS5 tokenizer. `unicode61` ranks prose well; switch to `trigram` for
  *  substring/CJK-heavy content (see README "Search"). */
 export const FTS_TOKENIZER = "unicode61 remove_diacritics 2"
 
-const hasColumn = (sqlite: Database, table: string, column: string): boolean =>
+const hasColumn = (sqlite: MigratableDatabase, table: string, column: string): boolean =>
   sqlite
-    .query<{ name: string }, []>(`PRAGMA table_info(${table})`)
+    .prepare(`PRAGMA table_info(${table})`)
     .all()
-    .some((row) => row.name === column)
+    .some((row) => (row as { name?: string }).name === column)
 
-const addColumn = (sqlite: Database, table: string, column: string, definition: string): void => {
+const addColumn = (sqlite: MigratableDatabase, table: string, column: string, definition: string): void => {
   if (!hasColumn(sqlite, table, column)) {
     sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition};`)
   }
 }
 
-export const runMigrations = (sqlite: Database): void => {
+export const runMigrations = (sqlite: MigratableDatabase): void => {
   sqlite.exec('PRAGMA journal_mode = WAL;')
   sqlite.exec('PRAGMA foreign_keys = ON;')
 
@@ -36,8 +44,96 @@ export const runMigrations = (sqlite: Database): void => {
       name          TEXT NOT NULL,
       password_hash TEXT NOT NULL,
       role          TEXT NOT NULL DEFAULT 'viewer',
+      totp_secret   TEXT,
+      totp_enabled  INTEGER NOT NULL DEFAULT 0,
       created_at    INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS auth_accounts (
+      id               TEXT PRIMARY KEY,
+      user_id          TEXT NOT NULL,
+      provider         TEXT NOT NULL,
+      provider_subject TEXT NOT NULL,
+      email            TEXT NOT NULL,
+      created_at       INTEGER NOT NULL,
+      updated_at       INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS auth_accounts_user_idx ON auth_accounts(user_id);
+    CREATE INDEX IF NOT EXISTS auth_accounts_provider_idx ON auth_accounts(provider, provider_subject);
+
+    CREATE TABLE IF NOT EXISTS oauth_states (
+      state          TEXT PRIMARY KEY,
+      provider       TEXT NOT NULL,
+      nonce          TEXT NOT NULL,
+      code_verifier  TEXT NOT NULL,
+      redirect_after TEXT,
+      expires_at     INTEGER NOT NULL,
+      created_at     INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS passkeys (
+      id           TEXT PRIMARY KEY,
+      user_id      TEXT NOT NULL,
+      name         TEXT NOT NULL,
+      public_key   TEXT NOT NULL,
+      counter      INTEGER NOT NULL DEFAULT 0,
+      transports   TEXT NOT NULL DEFAULT '[]',
+      device_type  TEXT NOT NULL DEFAULT 'unknown',
+      backed_up    INTEGER NOT NULL DEFAULT 0,
+      created_at   INTEGER NOT NULL,
+      last_used_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS passkeys_user_idx ON passkeys(user_id);
+
+    CREATE TABLE IF NOT EXISTS webauthn_challenges (
+      challenge  TEXT PRIMARY KEY,
+      user_id    TEXT,
+      purpose    TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS webauthn_challenges_user_idx ON webauthn_challenges(user_id);
+    CREATE INDEX IF NOT EXISTS webauthn_challenges_expires_idx ON webauthn_challenges(expires_at);
+
+    CREATE TABLE IF NOT EXISTS groups (
+      id          TEXT PRIMARY KEY,
+      key         TEXT NOT NULL UNIQUE,
+      name        TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      created_at  INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS group_memberships (
+      id         TEXT PRIMARY KEY,
+      user_id    TEXT NOT NULL,
+      group_id   TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS group_memberships_user_idx ON group_memberships(user_id);
+    CREATE INDEX IF NOT EXISTS group_memberships_group_idx ON group_memberships(group_id);
+
+    CREATE TABLE IF NOT EXISTS permission_grants (
+      id           TEXT PRIMARY KEY,
+      subject_type TEXT NOT NULL,
+      subject_id   TEXT,
+      action       TEXT NOT NULL,
+      effect       TEXT NOT NULL,
+      created_at   INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS permission_grants_subject_idx ON permission_grants(subject_type, subject_id);
+
+    CREATE TABLE IF NOT EXISTS page_rules (
+      id           TEXT PRIMARY KEY,
+      subject_type TEXT NOT NULL,
+      subject_id   TEXT,
+      action       TEXT NOT NULL,
+      effect       TEXT NOT NULL,
+      matcher      TEXT NOT NULL,
+      pattern      TEXT NOT NULL,
+      created_at   INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS page_rules_subject_idx ON page_rules(subject_type, subject_id);
+    CREATE INDEX IF NOT EXISTS page_rules_pattern_idx ON page_rules(pattern);
 
     CREATE TABLE IF NOT EXISTS pages (
       id            TEXT PRIMARY KEY,
@@ -119,6 +215,50 @@ export const runMigrations = (sqlite: Database): void => {
       created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS wiki_events_id_idx ON wiki_events(id);
+
+    CREATE TABLE IF NOT EXISTS webhook_subscriptions (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL,
+      target_url  TEXT NOT NULL,
+      secret      TEXT NOT NULL,
+      event_types TEXT NOT NULL,
+      enabled     INTEGER NOT NULL DEFAULT 1,
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS webhook_subscriptions_enabled_idx ON webhook_subscriptions(enabled);
+
+    CREATE TABLE IF NOT EXISTS webhook_deliveries (
+      id              TEXT PRIMARY KEY,
+      subscription_id TEXT NOT NULL,
+      event_id        TEXT NOT NULL,
+      event_type      TEXT NOT NULL,
+      payload         TEXT NOT NULL,
+      status          TEXT NOT NULL DEFAULT 'pending',
+      attempts        INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at INTEGER,
+      response_status INTEGER,
+      response_body   TEXT,
+      error           TEXT,
+      created_at      INTEGER NOT NULL,
+      updated_at      INTEGER NOT NULL,
+      delivered_at    INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS webhook_deliveries_subscription_idx ON webhook_deliveries(subscription_id);
+    CREATE INDEX IF NOT EXISTS webhook_deliveries_status_idx ON webhook_deliveries(status);
+    CREATE INDEX IF NOT EXISTS webhook_deliveries_next_attempt_idx ON webhook_deliveries(next_attempt_at);
+
+    CREATE TABLE IF NOT EXISTS automation_rules (
+      id         TEXT PRIMARY KEY,
+      name       TEXT NOT NULL,
+      type       TEXT NOT NULL,
+      enabled    INTEGER NOT NULL DEFAULT 1,
+      config     TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS automation_rules_enabled_idx ON automation_rules(enabled);
+    CREATE INDEX IF NOT EXISTS automation_rules_type_idx ON automation_rules(type);
   `)
 
   // Full-text search index. Columns: page_id (returned, not searched), then the
@@ -141,17 +281,17 @@ export const runMigrations = (sqlite: Database): void => {
   addColumn(sqlite, 'pages', 'space_key', "TEXT NOT NULL DEFAULT 'main'")
   addColumn(sqlite, 'pages', 'locale', "TEXT NOT NULL DEFAULT 'und'")
   addColumn(sqlite, 'assets', 'storage_name', "TEXT NOT NULL DEFAULT ''")
+  addColumn(sqlite, 'users', 'totp_secret', 'TEXT')
+  addColumn(sqlite, 'users', 'totp_enabled', 'INTEGER NOT NULL DEFAULT 0')
 }
 
 /** Run migrations standalone: `bun src/db/migrate.ts`. */
 if (import.meta.main) {
   const { loadEnv } = await import('../env.ts')
+  const { createDb } = await import('./client.ts')
   const env = loadEnv()
-  const { dirname } = await import('node:path')
-  const { mkdirSync } = await import('node:fs')
-  mkdirSync(dirname(env.databasePath), { recursive: true })
-  const sqlite = new Database(env.databasePath, { create: true })
-  runMigrations(sqlite)
-  sqlite.close()
-  console.log(`✓ Migrations applied to ${env.databasePath}`)
+  const db = createDb(env.database)
+  db.$client.close()
+  const target = env.database.driver === 'sqlite' ? env.database.path : env.database.replicaPath ?? env.database.url
+  console.log(`✓ Migrations applied to ${target}`)
 }

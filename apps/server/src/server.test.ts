@@ -7,6 +7,9 @@ const admin: Principal = { id: 'admin-1', role: 'admin' }
 const viewer: Principal = { id: 'viewer-1', role: 'viewer' }
 const anon = null
 
+const tableCount = (db: ReturnType<typeof createDb>, table: string): number =>
+  (db.$client.prepare(`SELECT count(*) AS count FROM ${table}`).get() as { count: number }).count
+
 describe('page + search slice (in-memory db)', () => {
   test('create renders, indexes, and is immediately findable', () => {
     const db = createDb(':memory:')
@@ -109,6 +112,11 @@ describe('page + search slice (in-memory db)', () => {
     const db = createDb(':memory:')
     const { pages, search } = createServices(db)
     pages.create({ path: 'old/path', title: 'Movable', content: 'portable pear' }, admin)
+    pages.create({
+      path: 'home',
+      title: 'Home',
+      content: 'See [[Old/Path|old page]] and [legacy](/old/path#details).',
+    }, admin)
 
     const moved = pages.move('old/path', 'New/Path', admin)
 
@@ -117,6 +125,16 @@ describe('page + search slice (in-memory db)', () => {
     expect(pages.getByPath('old/path').ok).toBe(false)
     expect(pages.getByPath('new/path').ok).toBe(true)
     expect(search.search('pear').hits[0]?.path).toBe('new/path')
+    const home = pages.getByPath('home')
+    expect(home.ok).toBe(true)
+    if (home.ok) {
+      expect(home.value.content).toContain('[[new/path|old page]]')
+      expect(home.value.content).toContain('[legacy](/new/path#details)')
+    }
+    expect(pages.backlinks('new/path')).toEqual([
+      { path: 'home', title: 'Home', label: 'old page', kind: 'wikilink' },
+      { path: 'home', title: 'Home', label: 'new/path', kind: 'markdown' },
+    ])
   })
 
   test('move refuses to overwrite an existing page', () => {
@@ -233,6 +251,39 @@ describe('page + search slice (in-memory db)', () => {
     expect(comments.create('docs/comments', 'anonymous', anon).ok).toBe(false)
   })
 
+  test('asset and analytics services enforce authorization directly', () => {
+    const db = createDb(':memory:')
+    const { assets, analytics } = createServices(db)
+
+    expect(assets.record({
+      id: 'asset-1',
+      filename: 'secret.pdf',
+      storageName: 'asset-1-secret.pdf',
+      mime: 'application/pdf',
+      size: 100,
+      authorId: admin.id,
+    }, viewer).ok).toBe(false)
+
+    const recorded = assets.record({
+      id: 'asset-1',
+      filename: 'secret.pdf',
+      storageName: 'asset-1-secret.pdf',
+      mime: 'application/pdf',
+      size: 100,
+      authorId: admin.id,
+    }, admin)
+    expect(recorded.ok).toBe(true)
+    expect(assets.list(null).ok).toBe(true)
+    expect(assets.remove('asset-1', viewer).ok).toBe(false)
+    expect(assets.remove('asset-1', admin).ok).toBe(true)
+
+    analytics.recordPageView('docs/private')
+    expect(analytics.summary(viewer).ok).toBe(false)
+    const summary = analytics.summary(admin)
+    expect(summary.ok).toBe(true)
+    if (summary.ok) expect(summary.value.totalViews).toBe(1)
+  })
+
   test('delete removes from search', () => {
     const db = createDb(':memory:')
     const { pages, search } = createServices(db)
@@ -246,8 +297,10 @@ describe('page + search slice (in-memory db)', () => {
 
   test('archive, restore, and purge control recoverable page lifecycle', () => {
     const db = createDb(':memory:')
-    const { pages, search } = createServices(db)
+    const { pages, search, comments, analytics } = createServices(db)
     pages.create({ path: 'docs/archive-me', title: 'Archive me', content: 'durable kiwi' }, admin)
+    comments.create('docs/archive-me', 'sensitive note', admin)
+    analytics.recordPageView('docs/archive-me')
 
     const archived = pages.archive('docs/archive-me', admin)
     expect(archived.ok).toBe(true)
@@ -263,5 +316,8 @@ describe('page + search slice (in-memory db)', () => {
     const purged = pages.purge('docs/archive-me', admin)
     expect(purged.ok).toBe(true)
     expect(pages.history('docs/archive-me').ok).toBe(false)
+    expect(tableCount(db, 'page_revisions')).toBe(0)
+    expect(tableCount(db, 'page_comments')).toBe(0)
+    expect(tableCount(db, 'page_analytics')).toBe(0)
   })
 })

@@ -41,6 +41,48 @@ html {
   scroll-margin-top: 5rem;
 }
 
+.visual-editor {
+  overflow: auto;
+}
+
+.visual-editor:focus {
+  border-color: rgb(124 58 237);
+  box-shadow: 0 0 0 1px rgb(124 58 237);
+}
+
+.visual-editor:empty::before {
+  content: 'Start writing...';
+  color: rgb(156 163 175);
+}
+
+.visual-editor img {
+  max-width: min(100%, 44rem);
+  max-height: 28rem;
+  border-radius: 0.375rem;
+  object-fit: contain;
+}
+
+.visual-editor table {
+  table-layout: fixed;
+}
+
+.visual-editor th,
+.visual-editor td {
+  min-width: 7rem;
+  vertical-align: top;
+}
+
+.visual-editor-raw {
+  border: 1px dashed rgb(156 163 175);
+  background: rgb(249 250 251);
+  color: rgb(55 65 81);
+  white-space: pre-wrap;
+}
+
+.visual-editor-callout {
+  cursor: text;
+}
+
 .wiki-event-card {
   display: flex;
   justify-content: space-between;
@@ -263,6 +305,12 @@ html {
 
   .wiki-diagram {
     border-color: rgb(31 41 55);
+  }
+
+  .visual-editor-raw {
+    border-color: rgb(75 85 99);
+    background: rgb(17 24 39);
+    color: rgb(209 213 219);
   }
 }
 

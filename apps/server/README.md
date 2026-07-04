@@ -8,7 +8,7 @@ Bun + Elysia API server for the ts-wiki hands-on project.
 - dependency injection from environment -> database -> services -> app
 - SQLite-backed persistence with Drizzle
 - transaction boundaries for save -> render -> revision -> search index
-- auth, permissions, and error mapping at the API edge
+- local auth, OIDC, TOTP, passkeys, permissions, and error mapping at the API edge
 - server-sent events for page-change notifications
 
 ## Run
@@ -36,6 +36,37 @@ default in production mode.
 For production seeding, set `TS_WIKI_SEED_ADMIN_PASSWORD` or capture the generated
 password from the `db:seed` output. The seed script never falls back to a shared
 default admin password.
+
+SQLite is the default database runtime:
+
+```bash
+DATABASE_DRIVER=sqlite DATABASE_PATH=/data/ts-wiki.sqlite
+```
+
+libSQL/Turso is also supported. Local libSQL can use a `file:` URL; remote
+Turso URLs run through a local embedded-replica file:
+
+```bash
+DATABASE_DRIVER=libsql
+LIBSQL_URL=libsql://your-database.turso.io
+LIBSQL_AUTH_TOKEN=your-turso-token
+# Optional; defaults to DATA_DIR/ts-wiki-libsql-replica.db for remote URLs.
+LIBSQL_REPLICA_PATH=/data/ts-wiki-libsql-replica.db
+```
+
+Passkeys/WebAuthn need a stable HTTPS origin in production:
+
+```bash
+TS_WIKI_PUBLIC_ORIGIN=https://wiki.example.com
+PASSKEY_RP_ID=wiki.example.com
+```
+
+OIDC can be enabled with `OIDC_ENABLED=true` plus issuer/client/redirect
+settings. See `.env.example` for the full list.
+
+Uploaded assets use local disk by default. Set `ASSET_STORAGE=r2` with R2
+account credentials to store files in Cloudflare R2 while keeping the same
+`/assets/...` serving route.
 
 The server can serve the built Vue app directly. Build the web workspace and set
 `WEB_DIST_DIR` when the default `apps/web/dist` path is not correct:
@@ -102,6 +133,9 @@ bun test apps/server
 | `src/http/app.ts` | route composition and HTTP error mapping |
 | `src/observability/logging.ts` | structured request/audit logging |
 | `src/services/pages.ts` | transactional page writes and FTS updates |
+| `src/services/oidc.ts` / `src/services/passkeys.ts` | external login and WebAuthn auth |
+| `src/services/authz.ts` | groups, membership, and page rules |
+| `src/services/webhooks.ts` | signed webhooks, delivery history, automation rules |
 | `src/db/schema.ts` | SQLite tables and relationships |
 | `src/db/migrate.ts` | local schema setup, including FTS5 |
 

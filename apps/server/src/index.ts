@@ -10,7 +10,7 @@ import { createApp } from './http/app.ts'
 const env = loadEnv()
 mkdirSync(join(env.dataDir, 'assets'), { recursive: true })
 
-const db = createDb(env.databasePath)
+const db = createDb(env.database)
 const app = createApp({ db, env }).listen(env.port)
 
 const shutdown = () => {

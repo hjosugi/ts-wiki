@@ -30,7 +30,7 @@ export interface CommentService {
   create(path: string, body: string, principal: Principal | null): Result<CommentView, AppError>
   update(id: string, body: string, principal: Principal | null): Result<CommentView, AppError>
   resolve(id: string, principal: Principal | null): Result<CommentView, AppError>
-  remove(id: string, principal: Principal | null): Result<{ id: string }, AppError>
+  remove(id: string, principal: Principal | null): Result<{ id: string; path: string }, AppError>
 }
 
 const mentionsOf = (body: string): string[] => {
@@ -86,7 +86,7 @@ export const createCommentService = (db: DB): CommentService => {
     },
 
     create(path, body, principal) {
-      if (!principal || !can(principal, 'page:read')) return err(forbidden())
+      if (!principal || !can(principal, 'comment:write', { path })) return err(forbidden())
       const page = findActivePage(path)
       if (!page) return err(notFound(`No page at "${path}"`))
       const clean = cleanBody(body)
@@ -137,7 +137,7 @@ export const createCommentService = (db: DB): CommentService => {
       if (!comment) return err(notFound('Comment not found'))
       if (!canMutate(principal, comment)) return err(forbidden())
       db.delete(pageComments).where(eq(pageComments.id, id)).run()
-      return ok({ id })
+      return ok({ id, path: comment.path })
     },
   }
 }

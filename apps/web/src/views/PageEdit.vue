@@ -9,6 +9,7 @@ import { usePresence } from '@/composables/usePresence'
 
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/MarkdownEditor.vue'))
 const CollabEditor = defineAsyncComponent(() => import('@/components/CollabEditor.vue'))
+const VisualEditor = defineAsyncComponent(() => import('@/components/VisualEditor.vue'))
 
 const route = useRoute()
 const router = useRouter()
@@ -34,6 +35,8 @@ const savedLocale = ref('und')
 const saving = ref(false)
 const error = ref<string | null>(null)
 const selectedTemplate = ref('blank')
+const editorMode = ref<'markdown' | 'visual'>('markdown')
+const collabDisabledForSession = ref(false)
 
 const templates = [
   {
@@ -89,6 +92,9 @@ const saveStatus = computed(() => {
   if (dirty.value) return 'Unsaved changes'
   return 'Saved'
 })
+const useCollaborativeMarkdown = computed(
+  () => isEdit.value && editorMode.value === 'markdown' && originalPath.value && !collabDisabledForSession.value,
+)
 
 function markSaved(): void {
   savedTitle.value = title.value
@@ -129,6 +135,11 @@ function applyTemplate(key: string): void {
   title.value = template.title
   if (!path.value && template.path) path.value = template.path
   content.value = template.content
+}
+
+function setEditorMode(mode: 'markdown' | 'visual'): void {
+  if (mode === 'visual' && isEdit.value) collabDisabledForSession.value = true
+  editorMode.value = mode
 }
 
 // Announce "editing" presence so readers of this page see "… is editing".
@@ -287,11 +298,30 @@ async function archive(): Promise<void> {
       <RouterLink v-if="isEdit && originalPath" class="link-quiet" :to="'/_history/' + originalPath">
         History
       </RouterLink>
+      <div class="inline-flex rounded-md border border-gray-200 p-0.5 dark:border-gray-800" aria-label="Editor mode">
+        <button
+          type="button"
+          class="px-3 py-1 rounded text-sm font-medium transition-colors"
+          :class="editorMode === 'markdown' ? 'bg-violet-600 text-white' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'"
+          @click="setEditorMode('markdown')"
+        >
+          Markdown
+        </button>
+        <button
+          type="button"
+          class="px-3 py-1 rounded text-sm font-medium transition-colors"
+          :class="editorMode === 'visual' ? 'bg-violet-600 text-white' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'"
+          @click="setEditorMode('visual')"
+        >
+          Visual
+        </button>
+      </div>
     </div>
     <p v-if="error" class="text-sm text-red-600 mb-3">{{ error }}</p>
-    <!-- Existing pages → collaborative (Yjs) editor; new pages → solo editor. -->
-    <template v-if="isEdit">
-      <CollabEditor v-if="originalPath" :room="originalPath" @update:modelValue="content = $event" />
+    <VisualEditor v-if="editorMode === 'visual'" v-model="content" />
+    <template v-else-if="isEdit">
+      <CollabEditor v-if="useCollaborativeMarkdown" :room="originalPath" @update:modelValue="content = $event" />
+      <MarkdownEditor v-else-if="originalPath" v-model="content" />
       <div v-else class="text-gray-400">Loading editor…</div>
     </template>
     <MarkdownEditor v-else v-model="content" />

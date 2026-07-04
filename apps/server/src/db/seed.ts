@@ -114,7 +114,7 @@ console.log(greet('ts-wiki'))
 
 export const runSeed = async (): Promise<void> => {
   const env = loadEnv()
-  const db = createDb(env.databasePath)
+  const db = createDb(env.database)
 
   try {
     const services = createServices(db)

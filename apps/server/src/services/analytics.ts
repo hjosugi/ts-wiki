@@ -1,4 +1,5 @@
 import { desc, sql } from 'drizzle-orm'
+import { type AppError, type Principal, type Result, can, err, forbidden, ok } from '@ts-wiki/core'
 import type { DB } from '../db/client.ts'
 import { pageAnalytics } from '../db/schema.ts'
 
@@ -15,7 +16,7 @@ export interface AnalyticsSummary {
 
 export interface AnalyticsService {
   recordPageView(path: string): void
-  summary(limit?: number): AnalyticsSummary
+  summary(principal: Principal | null, limit?: number): Result<AnalyticsSummary, AppError>
 }
 
 export const createAnalyticsService = (db: DB): AnalyticsService => {
@@ -31,7 +32,8 @@ export const createAnalyticsService = (db: DB): AnalyticsService => {
     recordPageView(path) {
       upsert.run(path, Date.now())
     },
-    summary(limit = 10) {
+    summary(principal, limit = 10) {
+      if (!can(principal, 'admin:access')) return err(forbidden())
       const totalViews =
         db.select({ total: sql<number>`coalesce(sum(${pageAnalytics.views}), 0)` }).from(pageAnalytics).get()
           ?.total ?? 0
@@ -45,7 +47,7 @@ export const createAnalyticsService = (db: DB): AnalyticsService => {
         .orderBy(desc(pageAnalytics.views), desc(pageAnalytics.lastViewedAt))
         .limit(limit)
         .all()
-      return { totalViews, topPages }
+      return ok({ totalViews, topPages })
     },
   }
 }

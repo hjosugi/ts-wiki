@@ -19,12 +19,14 @@ import {
 } from '@ts-wiki/core'
 import type { DB } from '../db/client.ts'
 import { users, pages, pageRevisions } from '../db/schema.ts'
+import type { AuthzService } from './authz.ts'
 
 export interface AdminUserView {
   readonly id: string
   readonly email: string
   readonly name: string
   readonly role: Role
+  readonly groups: readonly string[]
   readonly createdAt: number
 }
 
@@ -42,7 +44,7 @@ export interface AdminService {
 
 const ROLES: readonly Role[] = ['admin', 'editor', 'viewer']
 
-export const createAdminService = (db: DB): AdminService => {
+export const createAdminService = (db: DB, authz?: AuthzService): AdminService => {
   const countOf = (table: typeof users | typeof pages | typeof pageRevisions): number =>
     db.select({ c: sql<number>`count(*)` }).from(table).get()?.c ?? 0
 
@@ -51,6 +53,7 @@ export const createAdminService = (db: DB): AdminService => {
     email: u.email,
     name: u.name,
     role: u.role,
+    groups: authz?.principalForUser(u).groups ?? [],
     createdAt: u.createdAt,
   })
 
@@ -84,6 +87,7 @@ export const createAdminService = (db: DB): AdminService => {
       }
 
       db.update(users).set({ role }).where(eq(users.id, userId)).run()
+      authz?.syncRoleGroup(userId, role)
       return ok({ ...toView(target), role })
     },
   }

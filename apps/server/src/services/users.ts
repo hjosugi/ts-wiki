@@ -47,6 +47,8 @@ export const createUserService = (db: DB): UserService => ({
       name: input.name.trim() || email,
       passwordHash: await hashPassword(input.password),
       role: input.role,
+      totpSecret: null,
+      totpEnabled: 0,
       createdAt: now,
     }
     db.insert(users).values(user).run()

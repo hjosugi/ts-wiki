@@ -81,6 +81,21 @@ export interface PublicUser {
   email: string
   name: string
   role: 'admin' | 'editor' | 'viewer'
+  totpEnabled: boolean
+}
+export interface PublicAuthProvider {
+  id: string
+  label: string
+  type: 'oidc'
+}
+export interface PasskeyView {
+  id: string
+  name: string
+  deviceType: string
+  backedUp: boolean
+  transports: string[]
+  createdAt: number
+  lastUsedAt: number | null
 }
 export interface Page {
   id: string
@@ -186,12 +201,69 @@ export interface AdminUserView {
   email: string
   name: string
   role: 'admin' | 'editor' | 'viewer'
+  groups: string[]
   createdAt: number
 }
 export interface AdminStats {
   users: number
   pages: number
   revisions: number
+}
+export interface AuthzGroupView {
+  id: string
+  key: string
+  name: string
+  description: string
+  members: number
+  createdAt: number
+}
+export interface PageRuleView {
+  id: string
+  subjectType: 'user' | 'group' | 'anonymous'
+  subjectId: string | null
+  action: string
+  effect: 'allow' | 'deny'
+  matcher: 'exact' | 'prefix' | 'suffix' | 'regex'
+  pattern: string
+  createdAt: number
+}
+export interface WebhookSubscriptionView {
+  id: string
+  name: string
+  targetUrl: string
+  eventTypes: string[]
+  enabled: boolean
+  createdAt: number
+  updatedAt: number
+}
+export interface WebhookDeliveryView {
+  id: string
+  subscriptionId: string
+  subscriptionName: string | null
+  eventId: string
+  eventType: string
+  status: 'pending' | 'succeeded' | 'failed'
+  attempts: number
+  nextAttemptAt: number | null
+  responseStatus: number | null
+  responseBody: string | null
+  error: string | null
+  createdAt: number
+  updatedAt: number
+  deliveredAt: number | null
+}
+export interface AutomationRuleView {
+  id: string
+  name: string
+  type: 'page-updated-metadata'
+  enabled: boolean
+  config: {
+    pathPrefix: string
+    label?: string
+    status?: Page['status']
+  }
+  createdAt: number
+  updatedAt: number
 }
 export interface AnalyticsSummary {
   totalViews: number
@@ -215,9 +287,49 @@ export const Api = {
   // Auth
   register: (body: { email: string; name: string; password: string }) =>
     call<AuthResult>(client().api.auth.register.post(body)),
-  login: (body: { email: string; password: string }) =>
+  login: (body: { email: string; password: string; totpCode?: string }) =>
     call<AuthResult>(client().api.auth.login.post(body)),
   me: () => call<{ user: PublicUser }>(client().api.auth.me.get()).then((d) => d.user),
+  authProviders: () =>
+    fetchJson<{ providers: PublicAuthProvider[] }>('/api/auth/providers', { method: 'GET' }).then((d) => d.providers),
+  totpSetup: () =>
+    fetchJson<{ secret: string; otpauthUrl: string }>('/api/auth/totp/setup', { method: 'POST' }),
+  totpEnable: (code: string) =>
+    fetchJson<{ user: PublicUser }>('/api/auth/totp/enable', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code }),
+    }).then((d) => d.user),
+  totpDisable: (code?: string) =>
+    fetchJson<{ user: PublicUser }>('/api/auth/totp/disable', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code }),
+    }).then((d) => d.user),
+  passkeys: () =>
+    fetchJson<{ passkeys: PasskeyView[] }>('/api/auth/passkeys', { method: 'GET' }).then((d) => d.passkeys),
+  passkeyRegistrationOptions: () =>
+    fetchJson<{ options: unknown }>('/api/auth/passkeys/register/options', { method: 'POST' }).then((d) => d.options),
+  passkeyVerifyRegistration: (response: unknown, name?: string) =>
+    fetchJson<{ passkey: PasskeyView }>('/api/auth/passkeys/register/verify', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ response, name }),
+    }).then((d) => d.passkey),
+  passkeyDelete: (id: string) =>
+    fetchJson<{ id: string }>(`/api/auth/passkeys/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  passkeyLoginOptions: (email?: string) =>
+    fetchJson<{ options: unknown }>('/api/auth/passkeys/login/options', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email }),
+    }).then((d) => d.options),
+  passkeyLoginVerify: (response: unknown) =>
+    fetchJson<AuthResult & { passkey: PasskeyView }>('/api/auth/passkeys/login/verify', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ response }),
+    }),
 
   // Pages
   listPages: () => call<{ pages: PageSummary[] }>(client().api.pages.get()).then((d) => d.pages),
@@ -368,6 +480,91 @@ export const Api = {
   adminAnalytics: () => fetchJson<AnalyticsSummary>('/api/admin/analytics', { method: 'GET' }),
   adminUsers: () =>
     call<{ users: AdminUserView[] }>(client().api.admin.users.get()).then((d) => d.users),
+  adminGroups: () =>
+    call<{ groups: AuthzGroupView[] }>(client().api.admin.groups.get()).then((d) => d.groups),
+  adminCreateGroup: (body: { key: string; name: string; description?: string }) =>
+    call<{ group: AuthzGroupView }>(client().api.admin.groups.post(body)).then((d) => d.group),
+  adminAddUserToGroup: (body: { userId: string; groupKey: string }) =>
+    fetchJson<{ userId: string; groupKey: string }>('/api/admin/groups/members', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  adminRemoveUserFromGroup: (userId: string, groupKey: string) =>
+    fetchJson<{ userId: string; groupKey: string }>(
+      `/api/admin/groups/members?userId=${encodeURIComponent(userId)}&groupKey=${encodeURIComponent(groupKey)}`,
+      { method: 'DELETE' },
+    ),
+  adminPageRules: () =>
+    fetchJson<{ rules: PageRuleView[] }>('/api/admin/page-rules', { method: 'GET' }).then((d) => d.rules),
+  adminCreatePageRule: (body: {
+    subjectType: PageRuleView['subjectType']
+    subjectId?: string | null
+    action: string
+    effect: PageRuleView['effect']
+    matcher: PageRuleView['matcher']
+    pattern: string
+  }) =>
+    fetchJson<{ rule: PageRuleView }>('/api/admin/page-rules', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then((d) => d.rule),
+  adminDeletePageRule: (id: string) =>
+    fetchJson<{ id: string }>(`/api/admin/page-rules/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  adminWebhooks: () =>
+    fetchJson<{ webhooks: WebhookSubscriptionView[] }>('/api/admin/webhooks', { method: 'GET' }).then((d) => d.webhooks),
+  adminCreateWebhook: (body: {
+    name?: string
+    targetUrl: string
+    secret: string
+    eventTypes: string[]
+    enabled?: boolean
+  }) =>
+    fetchJson<{ webhook: WebhookSubscriptionView }>('/api/admin/webhooks', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then((d) => d.webhook),
+  adminUpdateWebhook: (id: string, body: Partial<{
+    name: string
+    targetUrl: string
+    secret: string
+    eventTypes: string[]
+    enabled: boolean
+  }>) =>
+    fetchJson<{ webhook: WebhookSubscriptionView }>(`/api/admin/webhooks/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then((d) => d.webhook),
+  adminDeleteWebhook: (id: string) =>
+    fetchJson<{ id: string }>(`/api/admin/webhooks/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  adminWebhookDeliveries: (status?: WebhookDeliveryView['status']) =>
+    fetchJson<{ deliveries: WebhookDeliveryView[] }>(
+      `/api/admin/webhooks/deliveries${status ? `?status=${encodeURIComponent(status)}` : ''}`,
+      { method: 'GET' },
+    ).then((d) => d.deliveries),
+  adminRetryWebhookDelivery: (id: string) =>
+    fetchJson<{ delivery: WebhookDeliveryView }>(
+      `/api/admin/webhooks/deliveries/${encodeURIComponent(id)}/retry`,
+      { method: 'POST' },
+    ).then((d) => d.delivery),
+  adminAutomationRules: () =>
+    fetchJson<{ rules: AutomationRuleView[] }>('/api/admin/automation-rules', { method: 'GET' }).then((d) => d.rules),
+  adminCreateAutomationRule: (body: {
+    name?: string
+    type: 'page-updated-metadata'
+    enabled?: boolean
+    config: { pathPrefix: string; label?: string; status?: Page['status'] }
+  }) =>
+    fetchJson<{ rule: AutomationRuleView }>('/api/admin/automation-rules', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then((d) => d.rule),
+  adminDeleteAutomationRule: (id: string) =>
+    fetchJson<{ id: string }>(`/api/admin/automation-rules/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   adminSetRole: (userId: string, role: 'admin' | 'editor' | 'viewer') =>
     call<{ user: AdminUserView }>(client().api.admin.users.role.put({ userId, role })).then(
       (d) => d.user,

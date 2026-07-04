@@ -4,12 +4,12 @@
  * principal resolution, error mapping — are declared once here; handlers stay
  * thin and delegate to services.
  */
-import { existsSync, rmSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { Elysia, t } from 'elysia'
 import { cors } from '@elysiajs/cors'
 import { jwt } from '@elysiajs/jwt'
-import { staticPlugin } from '@elysiajs/static'
+import { eq } from 'drizzle-orm'
 import {
   type Principal,
   type Role,
@@ -25,10 +25,11 @@ import type { Env } from '../env.ts'
 import type { DB } from '../db/client.ts'
 import { createServices } from '../services/index.ts'
 import { createCollabRuntime, createPresenceRuntime, createRealtimeBus } from '../realtime/runtime.ts'
+import { createAssetStorage, type AssetObject, type AssetStorage } from '../storage/assets.ts'
 import { createGitStorage, type GitConfig } from '../storage/git.ts'
 import { createGitSyncHandlers, startGitSyncScheduler } from '../storage/git-sync.ts'
 import type { CollabSeed } from '../realtime/collab.ts'
-import { verifyPassword } from '../services/auth.ts'
+import { otpauthUrl, randomBase32Secret, verifyPassword, verifyTotpCode } from '../services/auth.ts'
 import {
   audit,
   consoleStructuredLogger,
@@ -40,22 +41,32 @@ import {
   ASSET_MAX_BYTES,
   ASSET_MAX_SIZE,
   assetExtensionForMime,
-  safeAssetStorageName,
+  type AssetView,
 } from '../services/assets.ts'
-import type { User } from '../db/schema.ts'
+import type { CommentView } from '../services/comments.ts'
+import type { AutomationEvent, WebhookFetcher } from '../services/webhooks.ts'
+import { users, type Page, type User } from '../db/schema.ts'
 import { HttpError, unwrap, toErrorResponse } from './errors.ts'
 
 export interface AppDeps {
   readonly db: DB
   readonly env: Env
   readonly logger?: StructuredLogger
+  readonly assetStorage?: AssetStorage
+  readonly webhookFetcher?: WebhookFetcher
 }
 
-const publicUser = (user: User) => ({
+const publicUser = (
+  user: Pick<User, 'id' | 'email' | 'name' | 'role'> & {
+    readonly totpEnabled?: boolean | number | null
+    readonly totpSecret?: string | null
+  },
+) => ({
   id: user.id,
   email: user.email,
   name: user.name,
   role: user.role,
+  totpEnabled: Boolean(user.totpEnabled),
 })
 
 const asRole = (value: unknown): Role | null =>
@@ -89,32 +100,143 @@ const verifyPrincipal = async (jwt: JwtVerifier, token: string | null | undefine
 
 interface RateLimitBucket {
   hits: number[]
+  lastSeen: number
 }
 
-const createRateLimiter = (limit: number, windowMs: number) => {
+const createRateLimiter = (limit: number, windowMs: number, maxBuckets = 10_000) => {
   const buckets = new Map<string, RateLimitBucket>()
+  let lastSweep = 0
+
+  const sweepExpired = (now: number): void => {
+    if (now - lastSweep < windowMs) return
+    lastSweep = now
+    const cutoff = now - windowMs
+    for (const [key, bucket] of buckets) {
+      bucket.hits = bucket.hits.filter((hit) => hit > cutoff)
+      if (bucket.hits.length === 0 || bucket.lastSeen <= cutoff) buckets.delete(key)
+    }
+  }
+
+  const trimOverflow = (): void => {
+    while (buckets.size > maxBuckets) {
+      const oldest = buckets.keys().next().value
+      if (!oldest) return
+      buckets.delete(oldest)
+    }
+  }
+
   return (key: string): boolean => {
     const now = Date.now()
+    sweepExpired(now)
     const cutoff = now - windowMs
-    const bucket = buckets.get(key) ?? { hits: [] }
+    const bucket = buckets.get(key) ?? { hits: [], lastSeen: now }
     bucket.hits = bucket.hits.filter((hit) => hit > cutoff)
+    bucket.lastSeen = now
     if (bucket.hits.length >= limit) {
+      buckets.delete(key)
       buckets.set(key, bucket)
       return false
     }
     bucket.hits.push(now)
+    buckets.delete(key)
     buckets.set(key, bucket)
+    trimOverflow()
     return true
   }
 }
 
-const clientIp = (request: Request): string =>
-  request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-  request.headers.get('cf-connecting-ip') ||
-  'local'
+interface RequestIpServer {
+  requestIP(request: Request): { address: string } | null
+}
 
-export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps) => {
-  const services = createServices(db)
+const firstForwardedIp = (request: Request): string | null =>
+  request.headers.get('cf-connecting-ip')?.trim() ||
+  request.headers.get('x-real-ip')?.trim() ||
+  request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+  null
+
+const directClientIp = (request: Request, server: RequestIpServer | null | undefined): string =>
+  server?.requestIP(request)?.address ?? 'local'
+
+const clientIp = (
+  request: Request,
+  server: RequestIpServer | null | undefined,
+  trustProxyHeaders: boolean,
+): string => trustProxyHeaders ? (firstForwardedIp(request) ?? directClientIp(request, server)) : directClientIp(request, server)
+
+const ASSET_RESPONSE_HEADER_ALLOWLIST = [
+  'cache-control',
+  'content-length',
+  'content-type',
+  'etag',
+  'last-modified',
+] as const
+
+const assetResponse = (asset: AssetObject): Response => {
+  const headers = new Headers()
+  for (const header of ASSET_RESPONSE_HEADER_ALLOWLIST) {
+    const value = asset.headers.get(header)
+    if (value) headers.set(header, value)
+  }
+  headers.set('x-content-type-options', 'nosniff')
+  headers.set('content-disposition', 'inline')
+  return new Response(asset.body, { headers })
+}
+
+const parsePageLabels = (value: string): string[] => {
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+const pageSnapshot = (page: Page) => ({
+  id: page.id,
+  path: page.path,
+  title: page.title,
+  lifecycle: page.lifecycle,
+  status: page.status,
+  labels: parsePageLabels(page.labels),
+  ownerId: page.ownerId,
+  reviewAt: page.reviewAt,
+  spaceKey: page.spaceKey,
+  locale: page.locale,
+  createdAt: page.createdAt,
+  updatedAt: page.updatedAt,
+})
+
+const commentSnapshot = (comment: CommentView) => ({
+  id: comment.id,
+  path: comment.path,
+  authorId: comment.authorId,
+  mentions: comment.mentions,
+  resolvedAt: comment.resolvedAt,
+  createdAt: comment.createdAt,
+  updatedAt: comment.updatedAt,
+})
+
+const assetSnapshot = (asset: AssetView) => ({
+  id: asset.id,
+  filename: asset.filename,
+  storageName: asset.storageName,
+  mime: asset.mime,
+  size: asset.size,
+  url: asset.url,
+  authorId: asset.authorId,
+  createdAt: asset.createdAt,
+})
+
+export const createApp = ({
+  db,
+  env,
+  logger = consoleStructuredLogger,
+  assetStorage: suppliedAssetStorage,
+  webhookFetcher,
+}: AppDeps) => {
+  const assetStorage = suppliedAssetStorage ?? createAssetStorage(env.assetStorage)
+  const services = createServices(db, { assetUrl: assetStorage.url, auth: env.auth, webhookFetcher })
   const corsOrigin = env.cors.origins === null ? true : [...env.cors.origins]
   const authLimiter = createRateLimiter(10, 60_000)
   const webIndex = join(env.webDistDir, 'index.html')
@@ -122,6 +244,7 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
   const requestStartedAt = new WeakMap<Request, number>()
   const logRequest = (
     request: Request,
+    server: RequestIpServer | null | undefined,
     status: number,
     principal: Principal | null = null,
     error?: string,
@@ -133,7 +256,7 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
       path: url.pathname,
       status,
       durationMs: Date.now() - startedAt,
-      ip: clientIp(request),
+      ip: clientIp(request, server, env.trustProxyHeaders),
       userId: principal?.id ?? null,
       ...(error ? { error } : {}),
     })
@@ -158,11 +281,38 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
     logger.warn({ type: 'git', action: 'auto_sync_failed', error }),
   )
 
-  const enforceAuthLimit = (request: Request, scope: string): void => {
-    if (!authLimiter(`${scope}:${clientIp(request)}`)) {
+  const enforceAuthLimit = (
+    request: Request,
+    server: RequestIpServer | null | undefined,
+    scope: string,
+  ): void => {
+    if (!authLimiter(`${scope}:${clientIp(request, server, env.trustProxyHeaders)}`)) {
       throw new HttpError(rateLimited('Too many authentication attempts; try again later'))
     }
   }
+
+  const publishAutomation = async (event: AutomationEvent): Promise<void> => {
+    try {
+      await services.webhooks.publish(event)
+    } catch (error) {
+      logger.warn({
+        type: 'webhook',
+        action: 'publish_failed',
+        eventType: event.type,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+  const webhookRetryTimer = setInterval(() => {
+    void services.webhooks.processDueDeliveries().catch((error) => {
+      logger.warn({
+        type: 'webhook',
+        action: 'retry_failed',
+        error: error instanceof Error ? error.message : String(error),
+      })
+    })
+  }, 60_000)
+  ;(webhookRetryTimer as unknown as { unref?: () => void }).unref?.()
 
   const collab = createCollabRuntime({
     // Debounced autosave: persist the live doc WITHOUT a revision (an explicit
@@ -172,6 +322,11 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
       if (result.ok) {
         bus.emit({ type: 'page:changed', action: 'updated', path: result.value.path })
         void git.savePage(result.value, gitAuthor(principal?.id))
+        void publishAutomation({
+          type: 'page.updated',
+          actorId: principal?.id ?? null,
+          data: { page: pageSnapshot(result.value) },
+        })
         audit(logger, 'collab.autosave', { userId: principal?.id ?? null, path: result.value.path })
         return result.value.updatedAt
       }
@@ -185,50 +340,51 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
     new Elysia()
       .use(cors({ origin: corsOrigin }))
       .use(jwt({ name: 'jwt', secret: env.jwtSecret }))
-      .use(
-        staticPlugin({
-          assets: join(env.dataDir, 'assets'),
-          prefix: '/assets',
-          indexHTML: false,
-          headers: {
-            'x-content-type-options': 'nosniff',
-            'content-disposition': 'inline',
-          },
-        }),
-      )
       .decorate('services', services)
       .onRequest(({ request }) => {
         requestStartedAt.set(request, Date.now())
       })
       // Resolve the current principal from a Bearer token on every request.
-      .resolve(async ({ jwt, headers }): Promise<{ principal: Principal | null }> => {
-        return { principal: await verifyPrincipal(jwt, bearerToken(headers.authorization)) }
+      .resolve(async ({ jwt, headers, services }): Promise<{ principal: Principal | null }> => {
+        const tokenPrincipal = await verifyPrincipal(jwt, bearerToken(headers.authorization))
+        if (!tokenPrincipal) return { principal: null }
+        const user = services.users.findById(tokenPrincipal.id)
+        return { principal: user ? services.authz.principalForUser(user) : tokenPrincipal }
       })
-      .onAfterHandle(({ request, set, principal }) => {
+      .onAfterHandle(({ request, server, set, principal }) => {
         const status = typeof set.status === 'number' ? set.status : 200
-        logRequest(request, status, principal)
+        logRequest(request, server, status, principal)
       })
-      .onError(({ error, set, request }) => {
+      .onError(({ error, set, request, server }) => {
         const { status, body } = toErrorResponse(error)
         set.status = status
-        logRequest(request, status, null, body.error.kind)
+        if (status >= 500) {
+          logger.error({
+            type: 'error',
+            action: 'http.unhandled',
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+        logRequest(request, server, status, null, body.error.kind)
         return body
       })
 
       // ── Health ────────────────────────────────────────────────────────────
-      .get('/api/health', () => ({ ok: true as const, name: 'ts-wiki', version: '0.2.0' }))
+      .get('/api/health', () => ({ ok: true as const, name: 'ts-wiki', version: '0.3.0' }))
       .get('/api/settings/public', ({ services }) => services.settings.public())
 
       // ── Auth ──────────────────────────────────────────────────────────────
       .post(
         '/api/auth/register',
-        async ({ body, services, jwt, request }) => {
-          enforceAuthLimit(request, 'register')
+        async ({ body, services, jwt, request, server }) => {
+          enforceAuthLimit(request, server, 'register')
           // Bootstrap: the very first account becomes the admin.
           const role: Role = services.users.count() === 0 ? 'admin' : 'viewer'
           const user = unwrap(await services.users.create({ ...body, role }))
+          services.authz.syncRoleGroup(user.id, user.role)
           const token = await jwt.sign({ sub: user.id, role: user.role })
           audit(logger, 'auth.register', { userId: user.id, role: user.role })
+          await publishAutomation({ type: 'user.created', actorId: user.id, data: { user: publicUser(user) } })
           return { token, user: publicUser(user) }
         },
         {
@@ -241,17 +397,22 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
       )
       .post(
         '/api/auth/login',
-        async ({ body, services, jwt, request }) => {
-          enforceAuthLimit(request, 'login')
+        async ({ body, services, jwt, request, server }) => {
+          enforceAuthLimit(request, server, 'login')
           const user = services.users.findByEmail(body.email)
           if (!user || !(await verifyPassword(body.password, user.passwordHash))) {
             throw new HttpError(unauthorized('Invalid email or password'))
+          }
+          if (user.totpEnabled) {
+            if (!body.totpCode || !user.totpSecret || !verifyTotpCode(user.totpSecret, body.totpCode)) {
+              throw new HttpError(unauthorized('Two-factor code required or invalid'))
+            }
           }
           const token = await jwt.sign({ sub: user.id, role: user.role })
           audit(logger, 'auth.login', { userId: user.id, role: user.role })
           return { token, user: publicUser(user) }
         },
-        { body: t.Object({ email: t.String(), password: t.String() }) },
+        { body: t.Object({ email: t.String(), password: t.String(), totpCode: t.Optional(t.String()) }) },
       )
       .get('/api/auth/me', ({ principal, services }) => {
         if (!principal) throw new HttpError(unauthorized())
@@ -259,6 +420,118 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
         if (!user) throw new HttpError(unauthorized())
         return { user: publicUser(user) }
       })
+      .get('/api/auth/providers', ({ services }) => ({ providers: services.oidc.publicProviders() }))
+      .post('/api/auth/totp/setup', ({ principal, services }) => {
+        if (!principal) throw new HttpError(unauthorized())
+        const user = services.users.findById(principal.id)
+        if (!user) throw new HttpError(unauthorized())
+        const secret = user.totpSecret || randomBase32Secret()
+        db.update(users)
+          .set({ totpSecret: secret, totpEnabled: user.totpEnabled })
+          .where(eq(users.id, user.id))
+          .run()
+        return { secret, otpauthUrl: otpauthUrl(env.auth.siteName, user.email, secret) }
+      })
+      .post(
+        '/api/auth/totp/enable',
+        ({ body, principal, services }) => {
+          if (!principal) throw new HttpError(unauthorized())
+          const user = services.users.findById(principal.id)
+          if (!user?.totpSecret || !verifyTotpCode(user.totpSecret, body.code)) {
+            throw new HttpError(unauthorized('Invalid two-factor code'))
+          }
+          db.update(users).set({ totpEnabled: 1 }).where(eq(users.id, user.id)).run()
+          return { user: publicUser({ ...user, totpEnabled: 1 }) }
+        },
+        { body: t.Object({ code: t.String() }) },
+      )
+      .post(
+        '/api/auth/totp/disable',
+        ({ body, principal, services }) => {
+          if (!principal) throw new HttpError(unauthorized())
+          const user = services.users.findById(principal.id)
+          if (!user) throw new HttpError(unauthorized())
+          if (user.totpEnabled && (!user.totpSecret || !body.code || !verifyTotpCode(user.totpSecret, body.code))) {
+            throw new HttpError(unauthorized('Invalid two-factor code'))
+          }
+          db.update(users).set({ totpSecret: null, totpEnabled: 0 }).where(eq(users.id, user.id)).run()
+          return { user: publicUser({ ...user, totpSecret: null, totpEnabled: 0 }) }
+        },
+        { body: t.Object({ code: t.Optional(t.String()) }) },
+      )
+      .get('/api/auth/passkeys', ({ principal, services }) => ({
+        passkeys: unwrap(services.passkeys.list(principal)),
+      }))
+      .post('/api/auth/passkeys/register/options', async ({ principal, services }) =>
+        unwrap(await services.passkeys.registrationOptions(principal)),
+      )
+      .post(
+        '/api/auth/passkeys/register/verify',
+        async ({ body, principal, services }) => ({
+          passkey: unwrap(await services.passkeys.verifyRegistration(principal, body)),
+        }),
+        {
+          body: t.Object({
+            name: t.Optional(t.String()),
+            response: t.Any(),
+          }),
+        },
+      )
+      .delete(
+        '/api/auth/passkeys/:id',
+        ({ params, principal, services }) => unwrap(services.passkeys.delete(principal, params.id)),
+        { params: t.Object({ id: t.String() }) },
+      )
+      .post(
+        '/api/auth/passkeys/login/options',
+        async ({ body, services }) => unwrap(await services.passkeys.authenticationOptions(body)),
+        { body: t.Object({ email: t.Optional(t.String()) }) },
+      )
+      .post(
+        '/api/auth/passkeys/login/verify',
+        async ({ body, services, jwt }) => {
+          const result = unwrap(await services.passkeys.verifyAuthentication(body))
+          const token = await jwt.sign({ sub: result.user.id, role: result.user.role })
+          audit(logger, 'auth.passkey.login', {
+            userId: result.user.id,
+            passkeyId: result.passkey.id,
+          })
+          return { token, user: publicUser(result.user), passkey: result.passkey }
+        },
+        { body: t.Object({ response: t.Any() }) },
+      )
+      .get(
+        '/api/auth/oidc/:provider/start',
+        async ({ params, query, services }) => {
+          const started = unwrap(await services.oidc.start(params.provider, query.redirect))
+          return Response.redirect(started.url, 302)
+        },
+        { params: t.Object({ provider: t.String() }), query: t.Object({ redirect: t.Optional(t.String()) }) },
+      )
+      .get(
+        '/api/auth/oidc/:provider/callback',
+        async ({ params, query, services, jwt }) => {
+          const result = unwrap(await services.oidc.callback(params.provider, query.code, query.state))
+          const token = await jwt.sign({ sub: result.user.id, role: result.user.role })
+          audit(logger, 'auth.oidc.login', {
+            userId: result.user.id,
+            provider: params.provider,
+            isNewUser: result.isNewUser,
+          })
+          if (result.isNewUser) {
+            await publishAutomation({
+              type: 'user.created',
+              actorId: result.user.id,
+              data: { user: publicUser(result.user) },
+            })
+          }
+          return Response.redirect(`/_login#token=${encodeURIComponent(token)}`, 302)
+        },
+        {
+          params: t.Object({ provider: t.String() }),
+          query: t.Object({ code: t.String(), state: t.String() }),
+        },
+      )
 
       // ── Pages: collection ─────────────────────────────────────────────────
       .get('/api/pages', ({ services }) => ({ pages: services.pages.list() }))
@@ -271,11 +544,16 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
       .get('/api/events/index', ({ services }) => ({ events: services.pages.events() }))
       .post(
         '/api/pages',
-        ({ body, services, principal }) => {
+        async ({ body, services, principal }) => {
           const page = unwrap(services.pages.create(body, principal))
           bus.emit({ type: 'page:changed', action: 'created', path: page.path })
           void git.savePage(page, gitAuthor(principal?.id))
           audit(logger, 'page.create', { userId: principal?.id ?? null, path: page.path })
+          await publishAutomation({
+            type: 'page.created',
+            actorId: principal?.id ?? null,
+            data: { page: pageSnapshot(page) },
+          })
           return { page }
         },
         {
@@ -325,7 +603,7 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
       )
       .post(
         '/api/page/comments',
-        ({ body, services, principal }) => {
+        async ({ body, services, principal }) => {
           const comment = unwrap(services.comments.create(body.path, body.body, principal))
           bus.emit({ type: 'page:changed', action: 'updated', path: comment.path })
           audit(logger, 'comment.create', {
@@ -334,13 +612,18 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
             commentId: comment.id,
             mentions: comment.mentions,
           })
+          await publishAutomation({
+            type: 'comment.created',
+            actorId: principal?.id ?? null,
+            data: { comment: commentSnapshot(comment) },
+          })
           return { comment }
         },
         { body: t.Object({ path: t.String(), body: t.String() }) },
       )
       .put(
         '/api/page/comments/:id',
-        ({ params, body, services, principal }) => {
+        async ({ params, body, services, principal }) => {
           const comment = unwrap(services.comments.update(params.id, body.body, principal))
           bus.emit({ type: 'page:changed', action: 'updated', path: comment.path })
           audit(logger, 'comment.update', {
@@ -348,6 +631,11 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
             path: comment.path,
             commentId: comment.id,
             mentions: comment.mentions,
+          })
+          await publishAutomation({
+            type: 'comment.updated',
+            actorId: principal?.id ?? null,
+            data: { comment: commentSnapshot(comment) },
           })
           return { comment }
         },
@@ -358,7 +646,7 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
       )
       .post(
         '/api/page/comments/:id/resolve',
-        ({ params, services, principal }) => {
+        async ({ params, services, principal }) => {
           const comment = unwrap(services.comments.resolve(params.id, principal))
           bus.emit({ type: 'page:changed', action: 'updated', path: comment.path })
           audit(logger, 'comment.resolve', {
@@ -366,26 +654,45 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
             path: comment.path,
             commentId: comment.id,
           })
+          await publishAutomation({
+            type: 'comment.resolved',
+            actorId: principal?.id ?? null,
+            data: { comment: commentSnapshot(comment) },
+          })
           return { comment }
         },
         { params: t.Object({ id: t.String() }) },
       )
       .delete(
         '/api/page/comments/:id',
-        ({ params, services, principal }) => {
+        async ({ params, services, principal }) => {
           const result = unwrap(services.comments.remove(params.id, principal))
           audit(logger, 'comment.delete', { userId: principal?.id ?? null, commentId: result.id })
+          await publishAutomation({
+            type: 'comment.deleted',
+            actorId: principal?.id ?? null,
+            data: { comment: result },
+          })
           return result
         },
         { params: t.Object({ id: t.String() }) },
       )
       .put(
         '/api/page',
-        ({ query, body, services, principal }) => {
+        async ({ query, body, services, principal }) => {
+          const previous = services.pages.getByPath(query.path)
           const page = unwrap(services.pages.update(query.path, body, principal))
           bus.emit({ type: 'page:changed', action: 'updated', path: page.path })
           void git.savePage(page, gitAuthor(principal?.id))
           audit(logger, 'page.update', { userId: principal?.id ?? null, path: page.path })
+          await publishAutomation({
+            type: 'page.updated',
+            actorId: principal?.id ?? null,
+            data: {
+              page: pageSnapshot(page),
+              ...(previous.ok ? { previous: pageSnapshot(previous.value) } : {}),
+            },
+          })
           return { page }
         },
         {
@@ -409,7 +716,8 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
       )
       .post(
         '/api/page/restore-revision',
-        ({ body, services, principal }) => {
+        async ({ body, services, principal }) => {
+          const previous = services.pages.getByPath(body.path)
           const page = unwrap(services.pages.restoreRevision(body.path, body.revisionId, principal))
           bus.emit({ type: 'page:changed', action: 'updated', path: page.path })
           void git.savePage(page, gitAuthor(principal?.id))
@@ -418,39 +726,68 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
             path: page.path,
             revisionId: body.revisionId,
           })
+          await publishAutomation({
+            type: 'page.updated',
+            actorId: principal?.id ?? null,
+            data: {
+              page: pageSnapshot(page),
+              revisionId: body.revisionId,
+              ...(previous.ok ? { previous: pageSnapshot(previous.value) } : {}),
+            },
+          })
           return { page }
         },
         { body: t.Object({ path: t.String(), revisionId: t.String() }) },
       )
       .post(
         '/api/page/archive',
-        ({ body, services, principal }) => {
+        async ({ body, services, principal }) => {
           const page = unwrap(services.pages.archive(body.path, principal))
           bus.emit({ type: 'page:changed', action: 'deleted', path: page.path })
           void git.deletePage(page.path, gitAuthor(principal?.id))
           audit(logger, 'page.archive', { userId: principal?.id ?? null, path: page.path })
+          await publishAutomation({
+            type: 'page.archived',
+            actorId: principal?.id ?? null,
+            data: { page: pageSnapshot(page) },
+          })
           return { page }
         },
         { body: t.Object({ path: t.String() }) },
       )
       .post(
         '/api/page/restore',
-        ({ body, services, principal }) => {
+        async ({ body, services, principal }) => {
           const page = unwrap(services.pages.restore(body.path, principal))
           bus.emit({ type: 'page:changed', action: 'created', path: page.path })
           void git.savePage(page, gitAuthor(principal?.id))
           audit(logger, 'page.restore', { userId: principal?.id ?? null, path: page.path })
+          await publishAutomation({
+            type: 'page.restored',
+            actorId: principal?.id ?? null,
+            data: { page: pageSnapshot(page) },
+          })
           return { page }
         },
         { body: t.Object({ path: t.String() }) },
       )
       .post(
         '/api/page/move',
-        ({ body, services, principal }) => {
+        async ({ body, services, principal }) => {
+          const previous = services.pages.getByPath(body.oldPath)
           const page = unwrap(services.pages.move(body.oldPath, body.newPath, principal))
           bus.emit({ type: 'page:changed', action: 'moved', path: page.path, from: body.oldPath })
           void git.movePage(body.oldPath, page, gitAuthor(principal?.id))
           audit(logger, 'page.move', { userId: principal?.id ?? null, from: body.oldPath, path: page.path })
+          await publishAutomation({
+            type: 'page.moved',
+            actorId: principal?.id ?? null,
+            data: {
+              page: pageSnapshot(page),
+              previousPath: body.oldPath,
+              ...(previous.ok ? { previous: pageSnapshot(previous.value) } : {}),
+            },
+          })
           return { page }
         },
         {
@@ -462,22 +799,40 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
       )
       .delete(
         '/api/page',
-        ({ query, services, principal }) => {
+        async ({ query, services, principal }) => {
+          const previous = services.pages.getByPath(query.path)
           const result = unwrap(services.pages.remove(query.path, principal))
           bus.emit({ type: 'page:changed', action: 'deleted', path: result.path })
           void git.deletePage(result.path, gitAuthor(principal?.id))
           audit(logger, 'page.delete', { userId: principal?.id ?? null, path: result.path })
+          await publishAutomation({
+            type: 'page.deleted',
+            actorId: principal?.id ?? null,
+            data: {
+              path: result.path,
+              ...(previous.ok ? { page: pageSnapshot(previous.value) } : {}),
+            },
+          })
           return result
         },
         { query: t.Object({ path: t.String() }) },
       )
       .delete(
         '/api/page/purge',
-        ({ query, services, principal }) => {
+        async ({ query, services, principal }) => {
+          const previous = services.pages.getByPath(query.path)
           const result = unwrap(services.pages.purge(query.path, principal))
           bus.emit({ type: 'page:changed', action: 'deleted', path: result.path })
           void git.deletePage(result.path, gitAuthor(principal?.id))
           audit(logger, 'page.purge', { userId: principal?.id ?? null, path: result.path })
+          await publishAutomation({
+            type: 'page.purged',
+            actorId: principal?.id ?? null,
+            data: {
+              path: result.path,
+              ...(previous.ok ? { page: pageSnapshot(previous.value) } : {}),
+            },
+          })
           return result
         },
         { query: t.Object({ path: t.String() }) },
@@ -542,12 +897,12 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
           manifestVersion: 1,
           exportedAt,
           pages: exportedPages,
-          assets: services.assets.list(),
+          assets: unwrap(services.assets.list(principal)),
         }
       })
       .post(
         '/api/import/markdown',
-        ({ body, services, principal }) => {
+        async ({ body, services, principal }) => {
           if (!can(principal, 'page:write')) throw new HttpError(forbidden())
           const parsed = parsePageFile(body.content)
           const title = (body.title ?? parsed.title).trim() || body.path.split('/').at(-1) || 'Imported page'
@@ -576,6 +931,15 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
           bus.emit({ type: 'page:changed', action: existing.ok ? 'updated' : 'created', path: page.path })
           void git.savePage(page, gitAuthor(principal?.id))
           audit(logger, 'page.import_markdown', { userId: principal?.id ?? null, path: page.path })
+          await publishAutomation({
+            type: existing.ok ? 'page.updated' : 'page.created',
+            actorId: principal?.id ?? null,
+            data: {
+              page: pageSnapshot(page),
+              source: 'markdown-import',
+              ...(existing.ok ? { previous: pageSnapshot(existing.value) } : {}),
+            },
+          })
           return { page }
         },
         {
@@ -716,7 +1080,7 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
       .get('/api/admin/stats', ({ services, principal }) => unwrap(services.admin.stats(principal)))
       .get('/api/admin/analytics', ({ services, principal }) => {
         if (!can(principal, 'admin:access')) throw new HttpError(forbidden())
-        return services.analytics.summary()
+        return unwrap(services.analytics.summary(principal))
       })
       .put(
         '/api/admin/settings',
@@ -736,14 +1100,196 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
       .get('/api/admin/users', ({ services, principal }) => ({
         users: unwrap(services.admin.listUsers(principal)),
       }))
+      .get('/api/admin/groups', ({ services, principal }) => ({
+        groups: unwrap(services.authz.listGroups(principal)),
+      }))
+      .post(
+        '/api/admin/groups',
+        ({ body, services, principal }) => ({ group: unwrap(services.authz.createGroup(principal, body)) }),
+        {
+          body: t.Object({
+            key: t.String(),
+            name: t.String(),
+            description: t.Optional(t.String()),
+          }),
+        },
+      )
+      .post(
+        '/api/admin/groups/members',
+        ({ body, services, principal }) => unwrap(services.authz.addUserToGroup(principal, body.userId, body.groupKey)),
+        { body: t.Object({ userId: t.String(), groupKey: t.String() }) },
+      )
+      .delete(
+        '/api/admin/groups/members',
+        ({ query, services, principal }) => unwrap(services.authz.removeUserFromGroup(principal, query.userId, query.groupKey)),
+        { query: t.Object({ userId: t.String(), groupKey: t.String() }) },
+      )
+      .get('/api/admin/page-rules', ({ services, principal }) => ({
+        rules: unwrap(services.authz.listPageRules(principal)),
+      }))
+      .post(
+        '/api/admin/page-rules',
+        ({ body, services, principal }) => ({ rule: unwrap(services.authz.createPageRule(principal, body)) }),
+        {
+          body: t.Object({
+            subjectType: t.Union([t.Literal('user'), t.Literal('group'), t.Literal('anonymous')]),
+            subjectId: t.Optional(t.Union([t.String(), t.Null()])),
+            action: t.Union([
+              t.Literal('page:read'),
+              t.Literal('page:create'),
+              t.Literal('page:update'),
+              t.Literal('page:write'),
+              t.Literal('page:delete'),
+              t.Literal('page:move'),
+              t.Literal('asset:read'),
+              t.Literal('asset:write'),
+              t.Literal('asset:delete'),
+              t.Literal('comment:read'),
+              t.Literal('comment:write'),
+              t.Literal('search:read'),
+              t.Literal('git:sync'),
+              t.Literal('automation:manage'),
+              t.Literal('admin:access'),
+            ]),
+            effect: t.Union([t.Literal('allow'), t.Literal('deny')]),
+            matcher: t.Union([t.Literal('exact'), t.Literal('prefix'), t.Literal('suffix'), t.Literal('regex')]),
+            pattern: t.String(),
+          }),
+        },
+      )
+      .delete(
+        '/api/admin/page-rules/:id',
+        ({ params, services, principal }) => unwrap(services.authz.deletePageRule(principal, params.id)),
+        { params: t.Object({ id: t.String() }) },
+      )
+      .get(
+        '/api/admin/webhooks/deliveries',
+        ({ query, services, principal }) => ({
+          deliveries: unwrap(services.webhooks.listDeliveries(principal, {
+            status: query.status,
+            limit: query.limit,
+          })),
+        }),
+        {
+          query: t.Object({
+            status: t.Optional(t.Union([t.Literal('pending'), t.Literal('succeeded'), t.Literal('failed')])),
+            limit: t.Optional(t.Numeric()),
+          }),
+        },
+      )
+      .post(
+        '/api/admin/webhooks/deliveries/:id/retry',
+        async ({ params, services, principal }) => ({
+          delivery: unwrap(await services.webhooks.retryDelivery(principal, params.id)),
+        }),
+        { params: t.Object({ id: t.String() }) },
+      )
+      .get('/api/admin/webhooks', ({ services, principal }) => ({
+        webhooks: unwrap(services.webhooks.listSubscriptions(principal)),
+      }))
+      .post(
+        '/api/admin/webhooks',
+        ({ body, services, principal }) => ({
+          webhook: unwrap(services.webhooks.createSubscription(principal, body)),
+        }),
+        {
+          body: t.Object({
+            name: t.Optional(t.String()),
+            targetUrl: t.String(),
+            secret: t.String(),
+            eventTypes: t.Array(t.String()),
+            enabled: t.Optional(t.Boolean()),
+          }),
+        },
+      )
+      .put(
+        '/api/admin/webhooks/:id',
+        ({ params, body, services, principal }) => ({
+          webhook: unwrap(services.webhooks.updateSubscription(principal, params.id, body)),
+        }),
+        {
+          params: t.Object({ id: t.String() }),
+          body: t.Object({
+            name: t.Optional(t.String()),
+            targetUrl: t.Optional(t.String()),
+            secret: t.Optional(t.String()),
+            eventTypes: t.Optional(t.Array(t.String())),
+            enabled: t.Optional(t.Boolean()),
+          }),
+        },
+      )
+      .delete(
+        '/api/admin/webhooks/:id',
+        ({ params, services, principal }) => unwrap(services.webhooks.deleteSubscription(principal, params.id)),
+        { params: t.Object({ id: t.String() }) },
+      )
+      .get('/api/admin/automation-rules', ({ services, principal }) => ({
+        rules: unwrap(services.webhooks.listAutomationRules(principal)),
+      }))
+      .post(
+        '/api/admin/automation-rules',
+        ({ body, services, principal }) => ({
+          rule: unwrap(services.webhooks.createAutomationRule(principal, body)),
+        }),
+        {
+          body: t.Object({
+            name: t.Optional(t.String()),
+            type: t.Literal('page-updated-metadata'),
+            enabled: t.Optional(t.Boolean()),
+            config: t.Object({
+              pathPrefix: t.String(),
+              label: t.Optional(t.String()),
+              status: t.Optional(t.Union([
+                t.Literal('draft'),
+                t.Literal('in-review'),
+                t.Literal('verified'),
+                t.Literal('outdated'),
+              ])),
+            }),
+          }),
+        },
+      )
+      .put(
+        '/api/admin/automation-rules/:id',
+        ({ params, body, services, principal }) => ({
+          rule: unwrap(services.webhooks.updateAutomationRule(principal, params.id, body)),
+        }),
+        {
+          params: t.Object({ id: t.String() }),
+          body: t.Object({
+            name: t.Optional(t.String()),
+            enabled: t.Optional(t.Boolean()),
+            config: t.Optional(t.Object({
+              pathPrefix: t.String(),
+              label: t.Optional(t.String()),
+              status: t.Optional(t.Union([
+                t.Literal('draft'),
+                t.Literal('in-review'),
+                t.Literal('verified'),
+                t.Literal('outdated'),
+              ])),
+            })),
+          }),
+        },
+      )
+      .delete(
+        '/api/admin/automation-rules/:id',
+        ({ params, services, principal }) => unwrap(services.webhooks.deleteAutomationRule(principal, params.id)),
+        { params: t.Object({ id: t.String() }) },
+      )
       .put(
         '/api/admin/users/role',
-        ({ body, services, principal }) => {
+        async ({ body, services, principal }) => {
           const user = unwrap(services.admin.setUserRole(principal, body.userId, body.role))
           audit(logger, 'admin.user_role.update', {
             userId: principal?.id ?? null,
             targetUserId: body.userId,
             role: body.role,
+          })
+          await publishAutomation({
+            type: 'user.role_updated',
+            actorId: principal?.id ?? null,
+            data: { user: publicUser(user) },
           })
           return { user }
         },
@@ -774,13 +1320,13 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
 
       // ── Assets ────────────────────────────────────────────────────────────
       .get('/api/assets', ({ services, principal }) => {
-        if (!can(principal, 'page:write')) throw new HttpError(forbidden())
-        return { assets: services.assets.list() }
+        if (!can(principal, 'asset:read')) throw new HttpError(forbidden())
+        return { assets: unwrap(services.assets.list(principal)) }
       })
       .post(
         '/api/assets',
         async ({ body, services, principal }) => {
-          if (!can(principal, 'page:write')) throw new HttpError(forbidden())
+          if (!can(principal, 'asset:write')) throw new HttpError(forbidden())
           const file = body.file
           if (!assetExtensionForMime(file.type)) {
             throw new HttpError(validationError('Unsupported asset type', 'file'))
@@ -789,21 +1335,26 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
             throw new HttpError(validationError(`Asset must be ${ASSET_MAX_SIZE} or smaller`, 'file'))
           }
           const id = crypto.randomUUID()
-          const safeName = safeAssetStorageName(file, id)
-          await Bun.write(join(env.dataDir, 'assets', safeName), file)
-          const asset = services.assets.record({
+          const storageName = assetStorage.storageNameForUpload(id, file)
+          await assetStorage.put({ storageName, file })
+          const asset = unwrap(services.assets.record({
             id,
             filename: file.name,
-            storageName: safeName,
+            storageName,
             mime: file.type,
             size: file.size,
             authorId: principal?.id ?? null,
-          })
+          }, principal))
           audit(logger, 'asset.upload', {
             userId: principal?.id ?? null,
             assetId: asset.id,
             filename: asset.filename,
             size: asset.size,
+          })
+          await publishAutomation({
+            type: 'asset.uploaded',
+            actorId: principal?.id ?? null,
+            data: { asset: assetSnapshot(asset) },
           })
           return { id: asset.id, filename: asset.filename, url: asset.url }
         },
@@ -815,32 +1366,41 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
       )
       .delete(
         '/api/assets/:id',
-        ({ params, services, principal }) => {
-          if (!can(principal, 'page:delete')) throw new HttpError(forbidden())
-          const asset = services.assets.remove(params.id)
+        async ({ params, services, principal }) => {
+          if (!can(principal, 'asset:delete')) throw new HttpError(forbidden())
+          const asset = unwrap(services.assets.findById(params.id, principal))
           if (!asset) throw new HttpError(validationError('Asset not found', 'id'))
-          if (!asset.storageName.includes('/') && !asset.storageName.includes('\\')) {
-            rmSync(join(env.dataDir, 'assets', asset.storageName), { force: true })
-          }
+          await assetStorage.delete(asset.storageName)
+          const removed = unwrap(services.assets.remove(params.id, principal)) ?? asset
           audit(logger, 'asset.delete', {
             userId: principal?.id ?? null,
-            assetId: asset.id,
-            filename: asset.filename,
+            assetId: removed.id,
+            filename: removed.filename,
           })
-          return { asset }
+          await publishAutomation({
+            type: 'asset.deleted',
+            actorId: principal?.id ?? null,
+            data: { asset: assetSnapshot(removed) },
+          })
+          return { asset: removed }
         },
         { params: t.Object({ id: t.String() }) },
       )
       .put(
         '/api/assets/:id',
-        ({ params, body, services, principal }) => {
-          if (!can(principal, 'page:write')) throw new HttpError(forbidden())
-          const asset = services.assets.rename(params.id, body.filename)
+        async ({ params, body, services, principal }) => {
+          if (!can(principal, 'asset:write')) throw new HttpError(forbidden())
+          const asset = unwrap(services.assets.rename(params.id, body.filename, principal))
           if (!asset) throw new HttpError(validationError('Asset not found or filename is empty', 'filename'))
           audit(logger, 'asset.rename', {
             userId: principal?.id ?? null,
             assetId: asset.id,
             filename: asset.filename,
+          })
+          await publishAutomation({
+            type: 'asset.renamed',
+            actorId: principal?.id ?? null,
+            data: { asset: assetSnapshot(asset) },
           })
           return { asset }
         },
@@ -849,6 +1409,10 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
           body: t.Object({ filename: t.String({ minLength: 1 }) }),
         },
       )
+      .get('/assets/*', async ({ params }) => {
+        const asset = await assetStorage.get(params['*'])
+        return asset ? assetResponse(asset) : new Response('Not found', { status: 404 })
+      })
       .get('/ui', () => {
         if (!hasWebDist) return new Response('Not found', { status: 404 })
         return Bun.file(webIndex)

@@ -482,6 +482,13 @@ const hrefToPagePath = (href: string): string | null => {
   return path
 }
 
+const normalizeMarkdownLinkPath = (path: string): string =>
+  path
+    .split('/')
+    .map((segment) => slugifyHeading(segment))
+    .filter(Boolean)
+    .join('/')
+
 const addUniqueLink = (links: PageLink[], seen: Set<string>, link: PageLink): void => {
   if (!link.path || seen.has(`${link.kind}:${link.path}`)) return
   seen.add(`${link.kind}:${link.path}`)
@@ -536,11 +543,7 @@ export const extractPageLinks = (content: string): PageLink[] => {
         const href = token.attrGet('href')
         const path = href ? hrefToPagePath(href) : null
         if (path) {
-          const normalized = path
-            .split('/')
-            .map((segment) => slugifyHeading(segment))
-            .filter(Boolean)
-            .join('/')
+          const normalized = normalizeMarkdownLinkPath(path)
           addUniqueLink(links, seen, { path: normalized, label: path, kind: 'markdown' })
         }
       }
@@ -550,6 +553,39 @@ export const extractPageLinks = (content: string): PageLink[] => {
   visit(tokens as LinkToken[])
 
   return links
+}
+
+const MARKDOWN_LINK = /(!?)\[([^\]\n]+)\]\(([^)\s]+)\)/g
+
+const splitHrefSuffix = (href: string): { base: string; suffix: string } => {
+  const hashIndex = href.indexOf('#')
+  const queryIndex = href.indexOf('?')
+  const suffixIndex = [hashIndex, queryIndex].filter((index) => index >= 0).sort((a, b) => a - b)[0]
+  return suffixIndex === undefined
+    ? { base: href, suffix: '' }
+    : { base: href.slice(0, suffixIndex), suffix: href.slice(suffixIndex) }
+}
+
+/** Rewrite internal page links after a page move, preserving link labels and anchors. */
+export const rewritePageLinks = (content: string, fromPath: string, toPath: string): string => {
+  const from = wikiLinkPath(fromPath)
+  const to = wikiLinkPath(toPath)
+  if (!from || !to || from === to) return content
+
+  const withWikiLinks = (content ?? '').replace(WIKI_LINK, (match, rawPath: string, rawLabel?: string) => {
+    if (wikiLinkPath(rawPath) !== from) return match
+    const label = rawLabel === undefined ? '' : `|${rawLabel}`
+    return `[[${to}${label}]]`
+  })
+
+  return withWikiLinks.replace(MARKDOWN_LINK, (match, bang: string, label: string, href: string) => {
+    if (bang) return match
+    const pagePath = hrefToPagePath(href)
+    if (!pagePath || normalizeMarkdownLinkPath(pagePath) !== from) return match
+    const { base, suffix } = splitHrefSuffix(href)
+    const prefix = base.startsWith('/') ? '/' : ''
+    return `[${label}](${prefix}${to}${suffix})`
+  })
 }
 
 /** Strip Markdown/HTML to plain text — used for search indexing & descriptions. */

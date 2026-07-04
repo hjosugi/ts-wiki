@@ -1,11 +1,15 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { Buffer } from 'node:buffer'
+import { createHmac } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Env } from '../env.ts'
 import { createDb, type DB } from '../db/client.ts'
-import { ASSET_MAX_BYTES } from '../services/assets.ts'
+import { ASSET_MAX_BYTES, safeAssetFilename } from '../services/assets.ts'
+import { totpCode } from '../services/auth.ts'
+import type { WebhookFetcher, WebhookPayload } from '../services/webhooks.ts'
+import type { AssetStorage } from '../storage/assets.ts'
 import type { LogEvent, StructuredLogger } from '../observability/logging.ts'
 import { createApp, type App } from './app.ts'
 
@@ -21,11 +25,24 @@ const png1x1 = new Uint8Array(
 
 const testEnv = (dataDir: string, cors: Env['cors'] = { origins: null }): Env => ({
   port: 0,
+  database: { driver: 'sqlite', path: ':memory:' },
   databasePath: ':memory:',
   dataDir,
   webDistDir: join(dataDir, 'web-dist'),
   jwtSecret: 'test-secret',
+  trustProxyHeaders: false,
   cors,
+  auth: {
+    siteName: 'ts-wiki-test',
+    publicOrigin: 'http://localhost',
+    passkeyRpId: 'localhost',
+    oidcProviders: [],
+  },
+  assetStorage: {
+    type: 'local',
+    dataDir,
+    publicBaseUrl: null,
+  },
   git: {
     enabled: false,
     dir: join(dataDir, 'repo'),
@@ -63,7 +80,12 @@ const captureLogger = (): { logger: StructuredLogger; events: LogEvent[] } => {
 
 const createFixture = (
   cors?: Env['cors'],
-  options: { webDist?: boolean; logger?: StructuredLogger } = {},
+  options: {
+    webDist?: boolean
+    logger?: StructuredLogger
+    assetStorage?: AssetStorage
+    webhookFetcher?: WebhookFetcher
+  } = {},
 ): { app: App; db: DB; dataDir: string } => {
   const dataDir = mkdtempSync(join(tmpdir(), 'ts-wiki-test-'))
   mkdirSync(join(dataDir, 'assets'), { recursive: true })
@@ -73,7 +95,13 @@ const createFixture = (
     writeFileSync(join(dataDir, 'web-dist', 'assets', 'app.js'), 'console.log("ts-wiki")')
   }
   const db = createDb(':memory:')
-  const app = createApp({ db, env: testEnv(dataDir, cors), logger: options.logger ?? noopLogger })
+  const app = createApp({
+    db,
+    env: testEnv(dataDir, cors),
+    logger: options.logger ?? noopLogger,
+    assetStorage: options.assetStorage,
+    webhookFetcher: options.webhookFetcher,
+  })
   fixtures.push({ db, dataDir, app })
   return { app, db, dataDir }
 }
@@ -88,7 +116,7 @@ const jsonRequest = (path: string, body: unknown, token?: string): Request =>
     body: JSON.stringify(body),
   })
 
-const register = async (app: App, email: string): Promise<{ token: string; user: { role: string } }> => {
+const register = async (app: App, email: string): Promise<{ token: string; user: { id: string; role: string } }> => {
   const response = await app.handle(
     jsonRequest('/api/auth/register', { email, name: email.split('@')[0], password: 'password' }),
   )
@@ -102,6 +130,9 @@ const createPage = async (app: App, token: string, path: string, content = 'hell
   )
   expect(response.status).toBe(200)
 }
+
+const tableCount = (db: DB, table: string): number =>
+  (db.$client.prepare(`SELECT count(*) AS count FROM ${table}`).get() as { count: number }).count
 
 afterEach(() => {
   for (const fixture of fixtures.splice(0)) {
@@ -153,6 +184,104 @@ describe('http app auth', () => {
     )
     expect(limited.status).toBe(429)
   }, HTTP_TEST_TIMEOUT_MS)
+
+  test('ignores spoofed forwarded headers for rate-limit keys by default', async () => {
+    const { app } = createFixture()
+
+    for (let i = 0; i < 10; i += 1) {
+      const response = await app.handle(
+        new Request('http://localhost/api/auth/login', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-forwarded-for': `203.0.113.${i}`,
+          },
+          body: JSON.stringify({ email: 'nobody@example.com', password: 'wrong' }),
+        }),
+      )
+      expect(response.status).toBe(401)
+    }
+
+    const limited = await app.handle(
+      new Request('http://localhost/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-forwarded-for': '203.0.113.200',
+        },
+        body: JSON.stringify({ email: 'nobody@example.com', password: 'wrong' }),
+      }),
+    )
+    expect(limited.status).toBe(429)
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('TOTP can be enabled and is then required at login', async () => {
+    const { app } = createFixture()
+    const { token } = await register(app, 'admin@example.com')
+
+    const setup = await app.handle(
+      new Request('http://localhost/api/auth/totp/setup', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+      }),
+    )
+    expect(setup.status).toBe(200)
+    const setupBody = (await setup.json()) as { secret: string; otpauthUrl: string }
+    expect(setupBody.otpauthUrl).toContain('otpauth://totp/')
+
+    const code = totpCode(setupBody.secret)
+    const enabled = await app.handle(
+      jsonRequest('/api/auth/totp/enable', { code }, token),
+    )
+    expect(enabled.status).toBe(200)
+    expect((await enabled.json()).user.totpEnabled).toBe(true)
+
+    const missingCode = await app.handle(
+      jsonRequest('/api/auth/login', { email: 'admin@example.com', password: 'password' }),
+    )
+    expect(missingCode.status).toBe(401)
+
+    const loggedIn = await app.handle(
+      jsonRequest('/api/auth/login', { email: 'admin@example.com', password: 'password', totpCode: code }),
+    )
+    expect(loggedIn.status).toBe(200)
+    expect((await loggedIn.json()).user.totpEnabled).toBe(true)
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('passkey routes issue WebAuthn options and reject invalid assertions', async () => {
+    const { app } = createFixture()
+    const { token } = await register(app, 'admin@example.com')
+
+    const registrationOptions = await app.handle(
+      new Request('http://localhost/api/auth/passkeys/register/options', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+      }),
+    )
+    expect(registrationOptions.status).toBe(200)
+    const registrationBody = await registrationOptions.json()
+    expect(registrationBody.options.rp.id).toBe('localhost')
+    expect(registrationBody.options.user.name).toBe('admin@example.com')
+
+    const loginOptions = await app.handle(
+      jsonRequest('/api/auth/passkeys/login/options', { email: 'admin@example.com' }),
+    )
+    expect(loginOptions.status).toBe(200)
+    const loginBody = await loginOptions.json()
+    expect(typeof loginBody.options.challenge).toBe('string')
+
+    const invalidVerify = await app.handle(
+      jsonRequest('/api/auth/passkeys/login/verify', {
+        response: {
+          id: 'missing',
+          response: {
+            clientDataJSON: Buffer.from(JSON.stringify({ challenge: loginBody.options.challenge })).toString('base64url'),
+          },
+        },
+      }),
+    )
+    expect(invalidVerify.status).toBe(401)
+  }, HTTP_TEST_TIMEOUT_MS)
 })
 
 describe('http app CORS', () => {
@@ -203,6 +332,46 @@ describe('http app authorization', () => {
     expect(anonymous.status).toBe(403)
     expect(viewed.status).toBe(403)
   }, HTTP_TEST_TIMEOUT_MS)
+
+  test('group page rules can grant a viewer write access only under a prefix', async () => {
+    const { app } = createFixture()
+    const admin = await register(app, 'admin@example.com')
+    const viewer = await register(app, 'viewer@example.com')
+
+    const group = await app.handle(
+      jsonRequest('/api/admin/groups', { key: 'team-a', name: 'Team A' }, admin.token),
+    )
+    expect(group.status).toBe(200)
+
+    const membership = await app.handle(
+      jsonRequest('/api/admin/groups/members', { userId: viewer.user.id, groupKey: 'team-a' }, admin.token),
+    )
+    expect(membership.status).toBe(200)
+
+    for (const action of ['page:create', 'page:update']) {
+      const rule = await app.handle(
+        jsonRequest('/api/admin/page-rules', {
+          subjectType: 'group',
+          subjectId: 'team-a',
+          action,
+          effect: 'allow',
+          matcher: 'prefix',
+          pattern: 'team-a',
+        }, admin.token),
+      )
+      expect(rule.status).toBe(200)
+    }
+
+    const allowed = await app.handle(
+      jsonRequest('/api/pages', { path: 'team-a/runbook', title: 'Runbook', content: 'ok' }, viewer.token),
+    )
+    expect(allowed.status).toBe(200)
+
+    const denied = await app.handle(
+      jsonRequest('/api/pages', { path: 'team-b/runbook', title: 'Runbook', content: 'no' }, viewer.token),
+    )
+    expect(denied.status).toBe(403)
+  }, HTTP_TEST_TIMEOUT_MS)
 })
 
 describe('http app settings', () => {
@@ -236,6 +405,173 @@ describe('http app settings', () => {
       siteTitle: 'Docs',
       accentColor: '#2563eb',
       navLinks: [{ label: 'Home', url: '/' }],
+    })
+  }, HTTP_TEST_TIMEOUT_MS)
+})
+
+describe('http app automations and webhooks', () => {
+  test('admin webhooks sign versioned page events without exposing secrets', async () => {
+    const calls: Array<{ url: string; body: string; headers: Headers }> = []
+    const fetcher: WebhookFetcher = async (url, init) => {
+      calls.push({ url, body: String(init.body), headers: new Headers(init.headers) })
+      return new Response('accepted', { status: 202 })
+    }
+    const { app } = createFixture(undefined, { webhookFetcher: fetcher })
+    const { token } = await register(app, 'admin@example.com')
+    const secret = 'super-secret'
+
+    const created = await app.handle(
+      jsonRequest(
+        '/api/admin/webhooks',
+        {
+          name: 'Deploy hook',
+          targetUrl: 'https://hooks.example.com/wiki',
+          secret,
+          eventTypes: ['page.created'],
+        },
+        token,
+      ),
+    )
+    expect(created.status).toBe(200)
+    expect(await created.text()).not.toContain(secret)
+
+    const listed = await app.handle(
+      new Request('http://localhost/api/admin/webhooks', {
+        headers: { authorization: `Bearer ${token}` },
+      }),
+    )
+    expect(listed.status).toBe(200)
+    expect(await listed.text()).not.toContain(secret)
+
+    await createPage(app, token, 'docs/webhook', 'hello webhook')
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.url).toBe('https://hooks.example.com/wiki')
+    const payload = JSON.parse(calls[0]!.body) as {
+      schemaVersion: number
+      type: string
+      actor: { id: string | null }
+      data: { page: { path: string } }
+    }
+    expect(payload.schemaVersion).toBe(1)
+    expect(payload.type).toBe('page.created')
+    expect(payload.actor.id).toBeTruthy()
+    expect(payload.data.page.path).toBe('docs/webhook')
+
+    const timestamp = calls[0]!.headers.get('x-ts-wiki-timestamp')!
+    const expectedSignature = `sha256=${createHmac('sha256', secret).update(`${timestamp}.${calls[0]!.body}`).digest('hex')}`
+    expect(calls[0]!.headers.get('x-ts-wiki-signature')).toBe(expectedSignature)
+
+    const deliveries = await app.handle(
+      new Request('http://localhost/api/admin/webhooks/deliveries', {
+        headers: { authorization: `Bearer ${token}` },
+      }),
+    )
+    expect(deliveries.status).toBe(200)
+    expect(await deliveries.json()).toMatchObject({
+      deliveries: [expect.objectContaining({ eventType: 'page.created', status: 'succeeded', attempts: 1 })],
+    })
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('failed webhook deliveries are visible and retryable', async () => {
+    let shouldSucceed = false
+    const fetcher: WebhookFetcher = async () =>
+      shouldSucceed
+        ? new Response('', { status: 204 })
+        : new Response('nope', { status: 500, statusText: 'nope' })
+    const { app } = createFixture(undefined, { webhookFetcher: fetcher })
+    const { token } = await register(app, 'admin@example.com')
+
+    const webhook = await app.handle(
+      jsonRequest(
+        '/api/admin/webhooks',
+        {
+          targetUrl: 'https://hooks.example.com/failing',
+          secret: 'retry-secret',
+          eventTypes: ['page.created'],
+        },
+        token,
+      ),
+    )
+    expect(webhook.status).toBe(200)
+    await createPage(app, token, 'docs/retry', 'retry me')
+
+    const failed = await app.handle(
+      new Request('http://localhost/api/admin/webhooks/deliveries?status=failed', {
+        headers: { authorization: `Bearer ${token}` },
+      }),
+    )
+    expect(failed.status).toBe(200)
+    const failedBody = await failed.json() as { deliveries: Array<{ id: string; status: string; attempts: number }> }
+    expect(failedBody.deliveries).toHaveLength(1)
+    expect(failedBody.deliveries[0]).toMatchObject({ status: 'failed', attempts: 1 })
+
+    shouldSucceed = true
+    const retry = await app.handle(
+      new Request(`http://localhost/api/admin/webhooks/deliveries/${failedBody.deliveries[0]!.id}/retry`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+      }),
+    )
+    expect(retry.status).toBe(200)
+    expect(await retry.json()).toMatchObject({
+      delivery: expect.objectContaining({ status: 'succeeded', attempts: 2 }),
+    })
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('enabled automation rules can add page metadata on matching updates', async () => {
+    const { app } = createFixture()
+    const { token } = await register(app, 'admin@example.com')
+
+    const rule = await app.handle(
+      jsonRequest(
+        '/api/admin/automation-rules',
+        {
+          name: 'Verify docs updates',
+          type: 'page-updated-metadata',
+          enabled: false,
+          config: { pathPrefix: 'docs', label: 'triaged', status: 'verified' },
+        },
+        token,
+      ),
+    )
+    expect(rule.status).toBe(200)
+    const ruleBody = await rule.json() as { rule: { id: string } }
+
+    await createPage(app, token, 'docs/auto', 'seed')
+    const disabledUpdate = await app.handle(
+      new Request('http://localhost/api/page?path=docs/auto', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ content: 'changed once' }),
+      }),
+    )
+    expect(disabledUpdate.status).toBe(200)
+    const afterDisabled = await app.handle(new Request('http://localhost/api/page?path=docs/auto'))
+    expect(await afterDisabled.json()).toMatchObject({
+      page: expect.objectContaining({ labels: '[]', status: 'draft' }),
+    })
+
+    const enabled = await app.handle(
+      new Request(`http://localhost/api/admin/automation-rules/${ruleBody.rule.id}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ enabled: true }),
+      }),
+    )
+    expect(enabled.status).toBe(200)
+
+    const enabledUpdate = await app.handle(
+      new Request('http://localhost/api/page?path=docs/auto', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ content: 'changed twice' }),
+      }),
+    )
+    expect(enabledUpdate.status).toBe(200)
+    const afterEnabled = await app.handle(new Request('http://localhost/api/page?path=docs/auto'))
+    expect(await afterEnabled.json()).toMatchObject({
+      page: expect.objectContaining({ labels: '["triaged"]', status: 'verified' }),
     })
   }, HTTP_TEST_TIMEOUT_MS)
 })
@@ -392,9 +728,15 @@ describe('http app page utilities', () => {
   }, HTTP_TEST_TIMEOUT_MS)
 
   test('moves pages to trash, restores, archives, and purges through HTTP routes', async () => {
-    const { app } = createFixture()
+    const { app, db } = createFixture()
     const { token } = await register(app, 'admin@example.com')
     await createPage(app, token, 'docs/lifecycle', 'recoverable papaya')
+    const comment = await app.handle(
+      jsonRequest('/api/page/comments', { path: 'docs/lifecycle', body: 'contains sensitive note' }, token),
+    )
+    expect(comment.status).toBe(200)
+    const viewed = await app.handle(new Request('http://localhost/api/page?path=docs/lifecycle'))
+    expect(viewed.status).toBe(200)
 
     const deleted = await app.handle(
       new Request('http://localhost/api/page?path=docs/lifecycle', {
@@ -431,6 +773,9 @@ describe('http app page utilities', () => {
       }),
     )
     expect(purged.status).toBe(200)
+    expect(tableCount(db, 'page_revisions')).toBe(0)
+    expect(tableCount(db, 'page_comments')).toBe(0)
+    expect(tableCount(db, 'page_analytics')).toBe(0)
   }, HTTP_TEST_TIMEOUT_MS)
 
   test('exports pages/site data and imports markdown frontmatter', async () => {
@@ -469,6 +814,81 @@ describe('http app page utilities', () => {
       title: 'Imported',
       labels: '["imported"]',
       status: 'verified',
+    })
+  }, HTTP_TEST_TIMEOUT_MS)
+})
+
+describe('http app webhooks and automation', () => {
+  test('delivers signed webhooks and applies a page-updated metadata rule', async () => {
+    const deliveries: Array<{ url: string; headers: Headers; body: WebhookPayload }> = []
+    const webhookFetcher: WebhookFetcher = async (url, init) => {
+      deliveries.push({
+        url,
+        headers: new Headers(init.headers),
+        body: JSON.parse(String(init.body)) as WebhookPayload,
+      })
+      return new Response('ok', { status: 200 })
+    }
+    const { app } = createFixture(undefined, { webhookFetcher })
+    const { token } = await register(app, 'admin@example.com')
+    await createPage(app, token, 'docs/hook', 'before')
+
+    const subscription = await app.handle(
+      jsonRequest('/api/admin/webhooks', {
+        name: 'Receiver',
+        targetUrl: 'https://hooks.example.com/wiki',
+        secret: 'signing-secret',
+        eventTypes: ['page.updated'],
+      }, token),
+    )
+    expect(subscription.status).toBe(200)
+    expect((await subscription.json()).webhook).not.toHaveProperty('secret')
+
+    const rule = await app.handle(
+      jsonRequest('/api/admin/automation-rules', {
+        name: 'Verify docs',
+        type: 'page-updated-metadata',
+        enabled: true,
+        config: { pathPrefix: 'docs', label: 'reviewed', status: 'verified' },
+      }, token),
+    )
+    expect(rule.status).toBe(200)
+
+    const updated = await app.handle(
+      new Request('http://localhost/api/page?path=docs%2Fhook', {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ content: 'after' }),
+      }),
+    )
+    expect(updated.status).toBe(200)
+
+    expect(deliveries).toHaveLength(1)
+    expect(deliveries[0]!.url).toBe('https://hooks.example.com/wiki')
+    expect(deliveries[0]!.headers.get('x-ts-wiki-signature')).toMatch(/^sha256=/)
+    expect(deliveries[0]!.body).toMatchObject({
+      schemaVersion: 1,
+      type: 'page.updated',
+      data: { page: { path: 'docs/hook', status: 'verified', labels: ['reviewed'] } },
+    })
+
+    const page = await app.handle(new Request('http://localhost/api/page?path=docs%2Fhook'))
+    expect(page.status).toBe(200)
+    expect((await page.json()).page).toMatchObject({ status: 'verified', labels: '["reviewed"]' })
+
+    const history = await app.handle(
+      new Request('http://localhost/api/admin/webhooks/deliveries', {
+        headers: { authorization: `Bearer ${token}` },
+      }),
+    )
+    expect(history.status).toBe(200)
+    expect((await history.json()).deliveries[0]).toMatchObject({
+      eventType: 'page.updated',
+      status: 'succeeded',
+      attempts: 1,
     })
   }, HTTP_TEST_TIMEOUT_MS)
 })
@@ -530,6 +950,110 @@ describe('http app assets', () => {
     )
     expect(removed.status).toBe(200)
     expect(existsSync(join(dataDir, body.url))).toBe(false)
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('uses injected R2-style asset storage keys and public URLs', async () => {
+    const stored = new Map<string, { bytes: Uint8Array; contentType: string }>()
+    const uploads: Array<{ storageName: string; bytes: Uint8Array; contentType: string }> = []
+    const deletes: string[] = []
+    const publicBaseUrl = 'https://cdn.example.com/media'
+    const encodeStorageName = (storageName: string): string =>
+      storageName.split('/').map(encodeURIComponent).join('/')
+    const assetStorage: AssetStorage = {
+      type: 'r2',
+      storageNameForUpload: (id, file) => `assets/${id}/${safeAssetFilename(file)}`,
+      url: (storageName) => `${publicBaseUrl}/${encodeStorageName(storageName)}`,
+      async put({ storageName, file }) {
+        const bytes = new Uint8Array(await file.arrayBuffer())
+        const contentType = file.type
+        uploads.push({ storageName, bytes, contentType })
+        stored.set(storageName, { bytes, contentType })
+      },
+      async get(storageName) {
+        const asset = stored.get(storageName)
+        if (!asset) return null
+        const body = new ArrayBuffer(asset.bytes.byteLength)
+        new Uint8Array(body).set(asset.bytes)
+        return {
+          body: new Blob([body], { type: asset.contentType }),
+          headers: new Headers({ 'content-type': asset.contentType }),
+        }
+      },
+      async delete(storageName) {
+        deletes.push(storageName)
+        stored.delete(storageName)
+      },
+    }
+    const { app } = createFixture(undefined, { assetStorage })
+    const { token } = await register(app, 'admin@example.com')
+    const form = new FormData()
+    form.set('file', new File([png1x1], 'avatar.png', { type: 'image/png' }))
+
+    const upload = await app.handle(
+      new Request('http://localhost/api/assets', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: form,
+      }),
+    )
+
+    expect(upload.status).toBe(200)
+    const body = (await upload.json()) as { id: string; filename: string; url: string }
+    expect(body.filename).toBe('avatar.png')
+    expect(body.url).toMatch(/^https:\/\/cdn\.example\.com\/media\/assets\/[^/]+\/avatar\.png$/)
+    expect(body.url).not.toContain('secret')
+    expect(uploads).toHaveLength(1)
+    expect(uploads[0]!.storageName).toBe(`assets/${body.id}/avatar.png`)
+    expect(uploads[0]!.bytes.byteLength).toBe(png1x1.byteLength)
+
+    const proxied = await app.handle(new Request(`http://localhost/assets/${uploads[0]!.storageName}`))
+    expect(proxied.status).toBe(200)
+    expect(proxied.headers.get('content-type')).toBe('image/png')
+    expect(proxied.headers.get('x-content-type-options')).toBe('nosniff')
+    expect((await proxied.arrayBuffer()).byteLength).toBe(png1x1.byteLength)
+
+    const listed = await app.handle(
+      new Request('http://localhost/api/assets', {
+        headers: { authorization: `Bearer ${token}` },
+      }),
+    )
+    expect(listed.status).toBe(200)
+    const listBody = (await listed.json()) as { assets: Array<{ id: string; url: string; storageName: string }> }
+    expect(listBody.assets[0]).toMatchObject({
+      id: body.id,
+      url: body.url,
+      storageName: uploads[0]!.storageName,
+    })
+
+    const removed = await app.handle(
+      new Request(`http://localhost/api/assets/${body.id}`, {
+        method: 'DELETE',
+        headers: { authorization: `Bearer ${token}` },
+      }),
+    )
+    expect(removed.status).toBe(200)
+    expect(deletes).toEqual([uploads[0]!.storageName])
+    expect(stored.has(uploads[0]!.storageName)).toBe(false)
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('accepts non-image document attachments', async () => {
+    const { app } = createFixture()
+    const { token } = await register(app, 'admin@example.com')
+    const form = new FormData()
+    form.set('file', new File(['%PDF-1.7\n'], 'runbook.pdf', { type: 'application/pdf' }))
+
+    const upload = await app.handle(
+      new Request('http://localhost/api/assets', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: form,
+      }),
+    )
+
+    expect(upload.status).toBe(200)
+    expect(await upload.json()).toMatchObject({
+      filename: 'runbook.pdf',
+    })
   }, HTTP_TEST_TIMEOUT_MS)
 
   test('rejects disallowed or oversized uploads', async () => {
