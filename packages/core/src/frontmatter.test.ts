@@ -29,10 +29,40 @@ describe('frontmatter', () => {
     expect(parsed.content).toContain('Just markdown')
   })
 
-  test('path ↔ file mapping', () => {
+  test('path ↔ file mapping normalizes content markdown files', () => {
     expect(pageFilePath('docs/intro')).toBe('docs/intro.md')
     expect(filePathToPagePath('content/docs/intro.md')).toBe('docs/intro')
-    expect(filePathToPagePath('docs/intro.md')).toBe('docs/intro')
-    expect(filePathToPagePath('README.txt')).toBeNull()
+    expect(filePathToPagePath('content/Docs/Getting Started.md')).toBe('docs/getting-started')
+    expect(filePathToPagePath('content/ガイド/はじめに.md')).toBe('ガイド/はじめに')
+  })
+
+  test('file path mapping rejects non-content and unsafe paths', () => {
+    const invalid = [
+      'docs/intro.md',
+      'README.md',
+      'content.md',
+      'content/README.txt',
+      'content/.md',
+      'content/docs/.md',
+      'content//intro.md',
+      'content/./intro.md',
+      'content/../intro.md',
+      'content/docs/../../secret.md',
+      'content/.../intro.md',
+      'content/docs/---.md',
+      '../content/intro.md',
+      '/content/intro.md',
+      'C:/content/intro.md',
+      'content\\docs\\intro.md',
+      'content/docs/..%2Fsecret.md',
+      'content/docs/%5Csecret.md',
+      ' content/docs/intro.md',
+      'content/docs/intro.md ',
+      'README.txt',
+    ]
+
+    for (const file of invalid) {
+      expect(filePathToPagePath(file)).toBeNull()
+    }
   })
 })

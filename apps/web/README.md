@@ -1,6 +1,6 @@
-# open-wiki Web
+# ts-wiki Web
 
-Vue 3 + Vite front end for the open-wiki hands-on project.
+Vue 3 + Vite front end for the ts-wiki hands-on project.
 
 ## What This Teaches
 
@@ -9,7 +9,7 @@ Vue 3 + Vite front end for the open-wiki hands-on project.
 - Markdown editing with CodeMirror
 - search, page view, edit, login, and admin flows
 - realtime page-change updates through server-sent events
-- keeping UI code thin while domain rules stay in `@wiki/core`
+- keeping UI code thin while domain rules stay in `@ts-wiki/core`
 
 ## Run
 
@@ -30,10 +30,10 @@ admin@example.com / password
 ## Useful Commands
 
 ```bash
-bun --filter '@wiki/web' dev
-bun --filter '@wiki/web' build
-bun --filter '@wiki/web' preview
-bun --filter '@wiki/web' typecheck
+bun --filter '@ts-wiki/web' dev
+bun --filter '@ts-wiki/web' build
+bun --filter '@ts-wiki/web' preview
+bun --filter '@ts-wiki/web' typecheck
 ```
 
 ## Files To Read First

@@ -13,7 +13,16 @@ mkdirSync(join(env.dataDir, 'assets'), { recursive: true })
 const db = createDb(env.databasePath)
 const app = createApp({ db, env }).listen(env.port)
 
-console.log(`▲ open-wiki server  →  http://localhost:${env.port}`)
+const shutdown = () => {
+  app.server?.stop(true)
+  db.$client.close()
+  process.exit(0)
+}
+
+process.once('SIGTERM', shutdown)
+process.once('SIGINT', shutdown)
+
+console.log(`▲ ts-wiki server  →  http://localhost:${env.port}`)
 console.log(`  health: http://localhost:${env.port}/api/health`)
 
 export type { App } from './http/app.ts'

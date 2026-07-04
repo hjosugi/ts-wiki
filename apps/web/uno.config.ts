@@ -1,6 +1,6 @@
 import { defineConfig, presetUno, presetTypography } from 'unocss'
 
-export default defineConfig({
+const unoConfig = defineConfig({
   presets: [
     // `dark: 'media'` → dark mode follows the OS preference, no toggle needed.
     presetUno({ dark: 'media' }),
@@ -23,3 +23,5 @@ export default defineConfig({
     'link-quiet': 'text-violet-600 dark:text-violet-400 hover:underline underline-offset-2',
   },
 })
+
+export default unoConfig

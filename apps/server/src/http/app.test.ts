@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { Buffer } from 'node:buffer'
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Env } from '../env.ts'
@@ -8,7 +8,7 @@ import { createDb, type DB } from '../db/client.ts'
 import { ASSET_MAX_BYTES } from '../services/assets.ts'
 import { createApp, type App } from './app.ts'
 
-const fixtures: Array<{ db: DB; dataDir: string }> = []
+const fixtures: Array<{ db: DB; dataDir: string; app: App }> = []
 const HTTP_TEST_TIMEOUT_MS = 15_000
 
 const png1x1 = new Uint8Array(
@@ -22,6 +22,7 @@ const testEnv = (dataDir: string, cors: Env['cors'] = { origins: null }): Env =>
   port: 0,
   databasePath: ':memory:',
   dataDir,
+  webDistDir: join(dataDir, 'web-dist'),
   jwtSecret: 'test-secret',
   cors,
   git: {
@@ -41,12 +42,21 @@ const testEnv = (dataDir: string, cors: Env['cors'] = { origins: null }): Env =>
   },
 })
 
-const createFixture = (cors?: Env['cors']): { app: App; db: DB; dataDir: string } => {
-  const dataDir = mkdtempSync(join(tmpdir(), 'open-wiki-test-'))
+const createFixture = (
+  cors?: Env['cors'],
+  options: { webDist?: boolean } = {},
+): { app: App; db: DB; dataDir: string } => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'ts-wiki-test-'))
   mkdirSync(join(dataDir, 'assets'), { recursive: true })
+  if (options.webDist) {
+    mkdirSync(join(dataDir, 'web-dist', 'assets'), { recursive: true })
+    writeFileSync(join(dataDir, 'web-dist', 'index.html'), '<!doctype html><div id="app"></div>')
+    writeFileSync(join(dataDir, 'web-dist', 'assets', 'app.js'), 'console.log("ts-wiki")')
+  }
   const db = createDb(':memory:')
-  fixtures.push({ db, dataDir })
-  return { app: createApp({ db, env: testEnv(dataDir, cors) }), db, dataDir }
+  const app = createApp({ db, env: testEnv(dataDir, cors) })
+  fixtures.push({ db, dataDir, app })
+  return { app, db, dataDir }
 }
 
 const jsonRequest = (path: string, body: unknown, token?: string): Request =>
@@ -67,8 +77,16 @@ const register = async (app: App, email: string): Promise<{ token: string; user:
   return response.json()
 }
 
+const createPage = async (app: App, token: string, path: string, content = 'hello'): Promise<void> => {
+  const response = await app.handle(
+    jsonRequest('/api/pages', { path, title: path, content }, token),
+  )
+  expect(response.status).toBe(200)
+}
+
 afterEach(() => {
   for (const fixture of fixtures.splice(0)) {
+    fixture.app.server?.stop(true)
     fixture.db.$client.close()
     rmSync(fixture.dataDir, { recursive: true, force: true })
   }
@@ -83,6 +101,38 @@ describe('http app auth', () => {
 
     expect(first.user.role).toBe('admin')
     expect(second.user.role).toBe('viewer')
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('rate limits repeated login attempts by client IP', async () => {
+    const { app } = createFixture()
+
+    for (let i = 0; i < 10; i += 1) {
+      const response = await app.handle(
+        jsonRequest('/api/auth/login', { email: 'nobody@example.com', password: 'wrong' }),
+      )
+      expect(response.status).toBe(401)
+    }
+
+    const limited = await app.handle(
+      jsonRequest('/api/auth/login', { email: 'nobody@example.com', password: 'wrong' }),
+    )
+    expect(limited.status).toBe(429)
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('rate limits repeated registration attempts by client IP', async () => {
+    const { app } = createFixture()
+
+    for (let i = 0; i < 10; i += 1) {
+      const response = await app.handle(
+        jsonRequest('/api/auth/register', { email: 'same@example.com', name: 'Same', password: 'password' }),
+      )
+      expect([200, 409]).toContain(response.status)
+    }
+
+    const limited = await app.handle(
+      jsonRequest('/api/auth/register', { email: 'same@example.com', name: 'Same', password: 'password' }),
+    )
+    expect(limited.status).toBe(429)
   }, HTTP_TEST_TIMEOUT_MS)
 })
 
@@ -115,6 +165,95 @@ describe('http app CORS', () => {
 
     expect(allowed.headers.get('access-control-allow-origin')).toBe('https://wiki.example.com')
     expect(blocked.headers.get('access-control-allow-origin')).toBeNull()
+  }, HTTP_TEST_TIMEOUT_MS)
+})
+
+describe('http app authorization', () => {
+  test('admin routes reject anonymous and viewer principals', async () => {
+    const { app } = createFixture()
+    await register(app, 'admin@example.com')
+    const viewer = await register(app, 'viewer@example.com')
+
+    const anonymous = await app.handle(new Request('http://localhost/api/admin/stats'))
+    const viewed = await app.handle(
+      new Request('http://localhost/api/admin/stats', {
+        headers: { authorization: `Bearer ${viewer.token}` },
+      }),
+    )
+
+    expect(anonymous.status).toBe(403)
+    expect(viewed.status).toBe(403)
+  }, HTTP_TEST_TIMEOUT_MS)
+})
+
+describe('http app realtime', () => {
+  test('SSE events require a readable principal token', async () => {
+    const { app } = createFixture()
+    const { token } = await register(app, 'admin@example.com')
+
+    const anonymous = await app.handle(new Request('http://localhost/api/events'))
+    expect(anonymous.status).toBe(401)
+
+    const response = await app.handle(new Request(`http://localhost/api/events?token=${token}`))
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toContain('text/event-stream')
+    const reader = response.body!.getReader()
+    const first = await reader.read()
+    expect(new TextDecoder().decode(first.value)).toContain('connected')
+    await reader.cancel()
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('presence WebSocket opens and broadcasts the current viewer list', async () => {
+    const { app } = createFixture()
+    app.listen(0)
+    const base = app.server!.url.href.replace(/^http/, 'ws')
+    const ws = new WebSocket(`${base}api/presence?path=${encodeURIComponent('docs/ws')}&name=Ada`)
+
+    const message = await new Promise<MessageEvent>((resolve, reject) => {
+      ws.onmessage = (event) => resolve(event)
+      ws.onerror = () => reject(new Error('presence socket failed'))
+    })
+    const payload = JSON.parse(String(message.data)) as { type: string; path: string; viewers: Array<{ name: string }> }
+    expect(payload.type).toBe('presence')
+    expect(payload.path).toBe('docs/ws')
+    expect(payload.viewers.some((viewer) => viewer.name === 'Ada')).toBe(true)
+
+    await new Promise<void>((resolve) => {
+      ws.onclose = () => resolve()
+      ws.close()
+    })
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('collab WebSocket rejects anonymous/viewer clients and accepts editors', async () => {
+    const { app } = createFixture()
+    const { token } = await register(app, 'admin@example.com')
+    const viewer = await register(app, 'viewer@example.com')
+    await createPage(app, token, 'docs/ws', 'seed')
+    app.listen(0)
+    const base = app.server!.url.href.replace(/^http/, 'ws')
+
+    const closed = await new Promise<CloseEvent>((resolve) => {
+      const ws = new WebSocket(`${base}api/collab/${encodeURIComponent('docs/ws')}`)
+      ws.onclose = (event) => resolve(event)
+    })
+    expect(closed.code).toBe(1008)
+
+    const viewerClosed = await new Promise<CloseEvent>((resolve) => {
+      const ws = new WebSocket(`${base}api/collab/${encodeURIComponent('docs/ws')}?token=${viewer.token}`)
+      ws.onclose = (event) => resolve(event)
+    })
+    expect(viewerClosed.code).toBe(1008)
+
+    const authed = new WebSocket(`${base}api/collab/${encodeURIComponent('docs/ws')}?token=${token}`)
+    await new Promise<void>((resolve, reject) => {
+      authed.onopen = () => resolve()
+      authed.onerror = () => reject(new Error('authenticated collab socket failed'))
+    })
+    expect(authed.readyState).toBe(WebSocket.OPEN)
+    await new Promise<void>((resolve) => {
+      authed.onclose = () => resolve()
+      authed.close()
+    })
   }, HTTP_TEST_TIMEOUT_MS)
 })
 
@@ -171,5 +310,26 @@ describe('http app assets', () => {
       }),
     )
     expect(largeResponse.status).toBe(422)
+  }, HTTP_TEST_TIMEOUT_MS)
+})
+
+describe('http app web serving', () => {
+  test('serves built web assets and falls back to the SPA shell', async () => {
+    const { app } = createFixture(undefined, { webDist: true })
+
+    const asset = await app.handle(new Request('http://localhost/ui/assets/app.js'))
+    expect(asset.status).toBe(200)
+    expect(await asset.text()).toContain('ts-wiki')
+
+    const ui = await app.handle(new Request('http://localhost/ui/'))
+    expect(ui.status).toBe(200)
+    expect(await ui.text()).toContain('<div id="app"></div>')
+
+    const route = await app.handle(new Request('http://localhost/docs/readme'))
+    expect(route.status).toBe(200)
+    expect(await route.text()).toContain('<div id="app"></div>')
+
+    const api = await app.handle(new Request('http://localhost/api/nope'))
+    expect(api.status).toBe(404)
   }, HTTP_TEST_TIMEOUT_MS)
 })

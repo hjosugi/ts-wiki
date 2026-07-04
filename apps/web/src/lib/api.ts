@@ -10,9 +10,8 @@
  * success shape once per method via `call<T>()` and unwrap Eden's envelope here.
  */
 import { treaty } from '@elysiajs/eden'
-import type { App } from '@wiki/server/app'
-
-const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000'
+import type { App } from '@ts-wiki/server/app'
+import { API_BASE_URL } from './url'
 
 let authToken: string | null = localStorage.getItem('token')
 
@@ -25,7 +24,7 @@ export const setToken = (token: string | null): void => {
 
 /** A fresh treaty instance per call so the current token is always attached. */
 const client = () =>
-  treaty<App>(BASE_URL, {
+  treaty<App>(API_BASE_URL, {
     headers: authToken ? { authorization: `Bearer ${authToken}` } : {},
   })
 

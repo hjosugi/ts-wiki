@@ -145,7 +145,7 @@ const icsDataUrl = (event: CalendarEvent): string => {
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//open-wiki//event//EN',
+    'PRODID:-//ts-wiki//event//EN',
     'BEGIN:VEVENT',
     `SUMMARY:${escapeIcsText(event.title)}`,
     icsDateLine('DTSTART', event.start),

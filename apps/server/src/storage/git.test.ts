@@ -3,7 +3,7 @@ import { $ } from 'bun'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { parsePageFile } from '@wiki/core'
+import { parsePageFile } from '@ts-wiki/core'
 import { createGitStorage, type GitConfig } from './git.ts'
 
 const GIT_TEST_TIMEOUT_MS = 15_000

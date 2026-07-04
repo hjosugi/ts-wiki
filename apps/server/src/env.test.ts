@@ -23,7 +23,7 @@ describe('loadEnv', () => {
     const env = loadEnv({
       NODE_ENV: 'production',
       JWT_SECRET: 'prod-secret',
-      WIKI_CORS_ORIGINS: 'https://wiki.example.com, http://localhost:5173 ',
+      TS_WIKI_CORS_ORIGINS: 'https://wiki.example.com, http://localhost:5173 ',
     })
 
     expect(env.jwtSecret).toBe('prod-secret')

@@ -61,7 +61,8 @@ async function submit(): Promise<void> {
     </button>
 
     <p class="text-xs text-gray-400 mt-6">
-      Seeded admin: <code class="font-mono">admin@example.com</code> / <code class="font-mono">password</code>
+      Seeded admin: <code class="font-mono">admin@example.com</code>; password comes from
+      <code class="font-mono">db:seed</code>.
     </p>
   </div>
 </template>

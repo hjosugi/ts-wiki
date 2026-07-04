@@ -4,54 +4,54 @@
  *
  *   bun run db:seed
  */
-import type { Principal } from '@wiki/core'
+import type { Principal } from '@ts-wiki/core'
 import { loadEnv } from '../env.ts'
 import { createDb } from './client.ts'
 import { createServices } from '../services/index.ts'
-import { publishedDocPages } from './published-docs.ts'
-
-const env = loadEnv()
-const db = createDb(env.databasePath)
-const services = createServices(db)
 
 const ADMIN_EMAIL = 'admin@example.com'
-const ADMIN_PASSWORD = 'password'
+export const SEED_ADMIN_PASSWORD_ENV = 'TS_WIKI_SEED_ADMIN_PASSWORD'
 
-let admin = services.users.findByEmail(ADMIN_EMAIL)
-if (!admin) {
-  const created = await services.users.create({
-    email: ADMIN_EMAIL,
-    name: 'Admin',
-    password: ADMIN_PASSWORD,
-    role: 'admin',
-  })
-  if (created.ok) {
-    admin = created.value
-    console.log(`✓ created admin  ${ADMIN_EMAIL} / ${ADMIN_PASSWORD}`)
-  } else {
-    console.error('! could not create admin:', created.error.message)
-  }
+type EnvSource = Record<string, string | undefined>
+
+export interface SeedAdminPassword {
+  readonly password: string
+  readonly source: 'env' | 'generated'
 }
 
-const principal: Principal | null = admin ? { id: admin.id, role: admin.role } : null
+export const generateSeedAdminPassword = (): string => {
+  const bytes = new Uint8Array(24)
+  crypto.getRandomValues(bytes)
+  const secret = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+  return `ow-${secret}`
+}
 
-const samplePages = [
+export const resolveSeedAdminPassword = (
+  source: EnvSource = process.env,
+  generatePassword: () => string = generateSeedAdminPassword,
+): SeedAdminPassword => {
+  const configured = source[SEED_ADMIN_PASSWORD_ENV]?.trim()
+  if (configured) return { password: configured, source: 'env' }
+  return { password: generatePassword(), source: 'generated' }
+}
+
+const samplePages = () => [
   {
     path: 'home',
-    title: 'Welcome to open-wiki',
-    content: `# Welcome to open-wiki 👋
+    title: 'Welcome to ts-wiki',
+    content: `# Welcome to ts-wiki 👋
 
 A **modern, lean, FP-leaning** wiki. This page is Markdown, rendered on the
 server the moment it was saved, and indexed for full-text search.
 
 ## What's here
 
-- A pure, isomorphic core (\`@wiki/core\`) — rendering, slugs, permissions.
+- A pure, isomorphic core (\`@ts-wiki/core\`) — rendering, slugs, permissions.
 - A Bun + Elysia API with end-to-end types via Eden Treaty.
 - SQLite + FTS5 search with BM25 ranking.
 
 Try the **search** box (top bar) and look for *banana* 🍌, or open the
-[open-wiki Docs](/docs).
+[Getting Started](/docs/getting-started) guide.
 `,
   },
   {
@@ -75,7 +75,9 @@ single transaction — so it's readable and findable immediately.
 | editor |  ✅  |  ✅   |   ✅   |       |
 | admin  |  ✅  |  ✅   |   ✅   |  ✅   |
 
-> The very first account you register becomes the admin.
+> If you ran \`db:seed\`, sign in as \`admin@example.com\` with the password
+> printed by the seed command. Without a seeded admin, the first registered
+> account becomes the admin.
 
 The secret fruit for search testing is **banana**.
 `,
@@ -91,7 +93,7 @@ A quick tour of supported Markdown.
 
 \`\`\`ts
 const greet = (name: string): string => \`Hello, \${name}!\`
-console.log(greet('open-wiki'))
+console.log(greet('ts-wiki'))
 \`\`\`
 
 ## Lists & tasks
@@ -108,17 +110,58 @@ console.log(greet('open-wiki'))
 | Syntax highlighting | ✅ |
 `,
   },
-  ...publishedDocPages(),
 ]
 
-for (const page of samplePages) {
-  if (services.pages.getByPath(page.path).ok) {
-    console.log(`· skip   ${page.path} (exists)`)
-    continue
+export const runSeed = async (): Promise<void> => {
+  const env = loadEnv()
+  const db = createDb(env.databasePath)
+
+  try {
+    const services = createServices(db)
+    let admin = services.users.findByEmail(ADMIN_EMAIL)
+    if (!admin) {
+      const seedPassword = resolveSeedAdminPassword()
+      const created = await services.users.create({
+        email: ADMIN_EMAIL,
+        name: 'Admin',
+        password: seedPassword.password,
+        role: 'admin',
+      })
+      if (created.ok) {
+        admin = created.value
+        if (seedPassword.source === 'generated') {
+          console.log(`✓ created admin  ${ADMIN_EMAIL}`)
+          console.log(`! generated admin password: ${seedPassword.password}`)
+          console.log(
+            `  Store it now; it will not be shown again. Set ${SEED_ADMIN_PASSWORD_ENV} to choose it explicitly.`,
+          )
+        } else {
+          console.log(`✓ created admin  ${ADMIN_EMAIL} (password from ${SEED_ADMIN_PASSWORD_ENV})`)
+        }
+      } else {
+        console.error('! could not create admin:', created.error.message)
+      }
+    } else {
+      console.log(`· skip   ${ADMIN_EMAIL} (admin exists)`)
+    }
+
+    const principal: Principal | null = admin ? { id: admin.id, role: admin.role } : null
+
+    for (const page of samplePages()) {
+      if (services.pages.getByPath(page.path).ok) {
+        console.log(`· skip   ${page.path} (exists)`)
+        continue
+      }
+      const result = services.pages.create(page, principal)
+      console.log(result.ok ? `✓ page   ${page.path}` : `! page   ${page.path}: ${result.error.message}`)
+    }
+
+    console.log('✓ seed complete')
+  } finally {
+    db.$client.close()
   }
-  const result = services.pages.create(page, principal)
-  console.log(result.ok ? `✓ page   ${page.path}` : `! page   ${page.path}: ${result.error.message}`)
 }
 
-db.$client.close()
-console.log('✓ seed complete')
+if (import.meta.main) {
+  await runSeed()
+}

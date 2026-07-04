@@ -4,6 +4,7 @@
  * principal resolution, error mapping — are declared once here; handlers stay
  * thin and delegate to services.
  */
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { Elysia, t } from 'elysia'
 import { cors } from '@elysiajs/cors'
@@ -14,16 +15,17 @@ import {
   type Role,
   can,
   forbidden,
+  rateLimited,
   unauthorized,
   validationError,
-} from '@wiki/core'
+} from '@ts-wiki/core'
 import type { Env } from '../env.ts'
 import type { DB } from '../db/client.ts'
 import { createServices } from '../services/index.ts'
 import { createDbEventBus, createEventBus } from '../realtime/bus.ts'
 import { createPresence, dedupeViewers } from '../realtime/presence.ts'
 import { createGitStorage, type GitConfig } from '../storage/git.ts'
-import { createCollabHub, type CollabConn } from '../realtime/collab.ts'
+import { createCollabHub, type CollabConn, type CollabSeed } from '../realtime/collab.ts'
 import { verifyPassword } from '../services/auth.ts'
 import {
   ALLOWED_ASSET_MIME_TYPES,
@@ -50,9 +52,64 @@ const publicUser = (user: User) => ({
 const asRole = (value: unknown): Role | null =>
   value === 'admin' || value === 'editor' || value === 'viewer' ? value : null
 
+interface JwtVerifier {
+  verify(token: string): Promise<unknown>
+}
+
+const principalFromPayload = (payload: unknown): Principal | null => {
+  const data = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : null
+  const role = asRole(data?.role)
+  const id = data?.sub
+  if (typeof id !== 'string' || !role) {
+    return null
+  }
+  return { id, role }
+}
+
+const bearerToken = (authorization: string | undefined): string | null =>
+  authorization?.startsWith('Bearer ') ? authorization.slice(7) : null
+
+const verifyPrincipal = async (jwt: JwtVerifier, token: string | null | undefined): Promise<Principal | null> => {
+  if (!token) return null
+  try {
+    return principalFromPayload(await jwt.verify(token))
+  } catch {
+    return null
+  }
+}
+
+interface RateLimitBucket {
+  hits: number[]
+}
+
+const createRateLimiter = (limit: number, windowMs: number) => {
+  const buckets = new Map<string, RateLimitBucket>()
+  return (key: string): boolean => {
+    const now = Date.now()
+    const cutoff = now - windowMs
+    const bucket = buckets.get(key) ?? { hits: [] }
+    bucket.hits = bucket.hits.filter((hit) => hit > cutoff)
+    if (bucket.hits.length >= limit) {
+      buckets.set(key, bucket)
+      return false
+    }
+    bucket.hits.push(now)
+    buckets.set(key, bucket)
+    return true
+  }
+}
+
+const clientIp = (request: Request): string =>
+  request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+  request.headers.get('cf-connecting-ip') ||
+  'local'
+
 export const createApp = ({ db, env }: AppDeps) => {
   const services = createServices(db)
   const corsOrigin = env.cors.origins === null ? true : [...env.cors.origins]
+  const authLimiter = createRateLimiter(10, 60_000)
+  const webIndex = join(env.webDistDir, 'index.html')
+  const hasWebDist = existsSync(webIndex)
   const bus =
     env.realtime.eventBus === 'db'
       ? createDbEventBus(db, {
@@ -98,7 +155,7 @@ export const createApp = ({ db, env }: AppDeps) => {
   }
 
   // Periodic background sync (pull external commits → DB, push local → remote).
-  // Opt-in via WIKI_GIT_SYNC_INTERVAL_MS; only meaningful with a remote set.
+  // Opt-in via TS_WIKI_GIT_SYNC_INTERVAL_MS; only meaningful with a remote set.
   if (git.enabled && env.git.remote && env.git.syncIntervalMs > 0) {
     setInterval(() => {
       void git.sync(gitSyncHandlers).catch((e) => console.warn('[git] auto-sync failed', e))
@@ -106,17 +163,29 @@ export const createApp = ({ db, env }: AppDeps) => {
     console.log(`[git] auto-sync every ${env.git.syncIntervalMs}ms → ${env.git.remote}`)
   }
 
-  // ── Collaborative editing (Yjs relay) ─────────────────────────────────────
-  const COLLAB: Principal = { id: 'collab-autosave', role: 'editor' }
+  const enforceAuthLimit = (request: Request, scope: string): void => {
+    if (!authLimiter(`${scope}:${clientIp(request)}`)) {
+      throw new HttpError(rateLimited('Too many authentication attempts; try again later'))
+    }
+  }
+
   const collab = createCollabHub({
     // Debounced autosave: persist the live doc WITHOUT a revision (an explicit
     // Save still snapshots history + commits to Git). Readers get page:changed.
-    persist: (room, text) => {
-      const result = services.pages.saveContent(room, text, COLLAB)
-      if (result.ok) bus.emit({ type: 'page:changed', action: 'updated', path: result.value.path })
+    persist: (room, text, expectedUpdatedAt, principal) => {
+      const result = services.pages.saveContent(room, text, principal, expectedUpdatedAt)
+      if (result.ok) {
+        bus.emit({ type: 'page:changed', action: 'updated', path: result.value.path })
+        void git.savePage(result.value, gitAuthor(principal?.id))
+        return result.value.updatedAt
+      }
+      if (result.error.kind === 'conflict') {
+        console.warn(`[collab] skipped stale autosave for ${room}: ${result.error.message}`)
+      }
+      return null
     },
   })
-  const collabConns = new Map<string, { room: string; conn: CollabConn }>()
+  const collabConns = new Map<string, { room: string; conn: CollabConn; principal: Principal }>()
   const toBytes = (m: unknown): Uint8Array | null => {
     if (m instanceof Uint8Array) return m
     if (m instanceof ArrayBuffer) return new Uint8Array(m)
@@ -145,12 +214,7 @@ export const createApp = ({ db, env }: AppDeps) => {
       .decorate('services', services)
       // Resolve the current principal from a Bearer token on every request.
       .resolve(async ({ jwt, headers }): Promise<{ principal: Principal | null }> => {
-        const auth = headers.authorization
-        if (!auth?.startsWith('Bearer ')) return { principal: null }
-        const payload = await jwt.verify(auth.slice(7))
-        const role = payload ? asRole((payload as Record<string, unknown>).role) : null
-        if (!payload || typeof payload.sub !== 'string' || !role) return { principal: null }
-        return { principal: { id: payload.sub, role } }
+        return { principal: await verifyPrincipal(jwt, bearerToken(headers.authorization)) }
       })
       .onError(({ error, set }) => {
         const { status, body } = toErrorResponse(error)
@@ -159,12 +223,13 @@ export const createApp = ({ db, env }: AppDeps) => {
       })
 
       // ── Health ────────────────────────────────────────────────────────────
-      .get('/api/health', () => ({ ok: true as const, name: 'open-wiki', version: '0.1.0' }))
+      .get('/api/health', () => ({ ok: true as const, name: 'ts-wiki', version: '0.1.1' }))
 
       // ── Auth ──────────────────────────────────────────────────────────────
       .post(
         '/api/auth/register',
-        async ({ body, services, jwt }) => {
+        async ({ body, services, jwt, request }) => {
+          enforceAuthLimit(request, 'register')
           // Bootstrap: the very first account becomes the admin.
           const role: Role = services.users.count() === 0 ? 'admin' : 'viewer'
           const user = unwrap(await services.users.create({ ...body, role }))
@@ -181,7 +246,8 @@ export const createApp = ({ db, env }: AppDeps) => {
       )
       .post(
         '/api/auth/login',
-        async ({ body, services, jwt }) => {
+        async ({ body, services, jwt, request }) => {
+          enforceAuthLimit(request, 'login')
           const user = services.users.findByEmail(body.email)
           if (!user || !(await verifyPassword(body.password, user.passwordHash))) {
             throw new HttpError(unauthorized('Invalid email or password'))
@@ -277,7 +343,11 @@ export const createApp = ({ db, env }: AppDeps) => {
       })
 
       // ── Realtime (Server-Sent Events; any transport subscribes to the bus) ─
-      .get('/api/events', ({ request }) => {
+      .get('/api/events', async ({ request, query, jwt }) => {
+        const principal = await verifyPrincipal(jwt, query.token)
+        if (!principal) throw new HttpError(unauthorized())
+        if (!can(principal, 'page:read')) throw new HttpError(forbidden())
+
         const encoder = new TextEncoder()
         let unsubscribe: (() => void) | null = null
         let heartbeat: ReturnType<typeof setInterval> | null = null
@@ -317,7 +387,7 @@ export const createApp = ({ db, env }: AppDeps) => {
             connection: 'keep-alive',
           },
         })
-      })
+      }, { query: t.Object({ token: t.Optional(t.String()) }) })
 
       // ── Presence (WebSocket; one connection per open page) ────────────────
       // Identity (name/userId) comes from the query for v0 — presence is
@@ -348,15 +418,27 @@ export const createApp = ({ db, env }: AppDeps) => {
 
       // ── Collaborative editing (Yjs over WebSocket; room = page path) ───────
       .ws('/api/collab/:room', {
+        query: t.Object({
+          token: t.Optional(t.String()),
+        }),
         open(ws) {
-          const room = decodeURIComponent(ws.data.params.room)
-          // ws.raw is the Bun socket — Elysia's ws.send() coerces binary to text.
-          const conn: CollabConn = { send: (data) => void ws.raw.send(data) }
-          collabConns.set(ws.id, { room, conn })
-          collab.open(room, conn, () => {
-            const r = services.pages.getByPath(room)
-            return r.ok ? r.value.content : ''
-          })
+          void (async () => {
+            const principal = await verifyPrincipal(ws.data.jwt, ws.data.query.token)
+            if (!principal || !can(principal, 'page:write')) {
+              ws.close(1008, 'Authentication required')
+              return
+            }
+            const room = decodeURIComponent(ws.data.params.room)
+            const current = services.pages.getByPath(room)
+            const seed = (): CollabSeed => ({
+              text: current.ok ? current.value.content : '',
+              updatedAt: current.ok ? current.value.updatedAt : null,
+            })
+            // ws.raw is the Bun socket — Elysia's ws.send() coerces binary to text.
+            const conn: CollabConn = { send: (data) => void ws.raw.send(data) }
+            collabConns.set(ws.id, { room, conn, principal })
+            collab.open(room, conn, seed, principal)
+          })().catch(() => ws.close(1011, 'Collab authentication failed'))
         },
         message(ws, message) {
           const entry = collabConns.get(ws.id)
@@ -429,6 +511,29 @@ export const createApp = ({ db, env }: AppDeps) => {
           }),
         },
       )
+      .get('/ui', () => {
+        if (!hasWebDist) return new Response('Not found', { status: 404 })
+        return Bun.file(webIndex)
+      })
+      .get('/ui/*', ({ params }) => {
+        if (!hasWebDist) return new Response('Not found', { status: 404 })
+        const rel = params['*']
+        if (!rel || rel === '/') return Bun.file(webIndex)
+        if (rel.includes('..') || rel.includes('\\')) return new Response('Not found', { status: 404 })
+        const file = join(env.webDistDir, rel)
+        if (!existsSync(file)) return new Response('Not found', { status: 404 })
+        return new Response(Bun.file(file), {
+          headers: { 'x-content-type-options': 'nosniff' },
+        })
+      })
+      .get('*', ({ request }) => {
+        if (!hasWebDist) return new Response('Not found', { status: 404 })
+        const pathname = new URL(request.url).pathname
+        if (pathname.startsWith('/api') || pathname.startsWith('/assets')) {
+          return new Response('Not found', { status: 404 })
+        }
+        return Bun.file(webIndex)
+      })
   )
 }
 

@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { sql } from 'drizzle-orm'
-import type { Principal } from '@wiki/core'
+import type { Principal } from '@ts-wiki/core'
 import { createDb, type DB } from './db/client.ts'
 import { createServices } from './services/index.ts'
 import { pageRevisions } from './db/schema.ts'
@@ -30,5 +30,24 @@ describe('saveContent (collab autosave)', () => {
     const { pages } = createServices(db)
     expect(pages.saveContent('p', 'x', null).ok).toBe(false)
     expect(pages.saveContent('missing', 'x', admin).ok).toBe(false)
+  })
+
+  test('rejects stale collaborative autosaves after an external write', async () => {
+    const db = createDb(':memory:')
+    const { pages } = createServices(db)
+    const created = pages.create({ path: 'p', title: 'P', content: 'seed' }, admin)
+    if (!created.ok) throw new Error('seed failed')
+    const collabSeedUpdatedAt = created.value.updatedAt
+
+    await Bun.sleep(2)
+    const external = pages.update('p', { content: 'external update' }, admin)
+    expect(external.ok).toBe(true)
+
+    const stale = pages.saveContent('p', 'stale collab text', admin, collabSeedUpdatedAt)
+    expect(stale.ok).toBe(false)
+    if (!stale.ok) expect(stale.error.kind).toBe('conflict')
+    const current = pages.getByPath('p')
+    expect(current.ok).toBe(true)
+    if (current.ok) expect(current.value.content).toBe('external update')
   })
 })

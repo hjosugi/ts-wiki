@@ -7,8 +7,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@wiki/core": ["../../packages/core/src/index.ts"],
-      "@wiki/server/app": ["../server/src/http/app.ts"]
+      "@ts-wiki/core": ["../../packages/core/src/index.ts"],
+      "@ts-wiki/server/app": ["../server/src/http/app.ts"]
     }
   },
   "include": ["src", "vite.config.ts", "uno.config.ts", "env.d.ts"]

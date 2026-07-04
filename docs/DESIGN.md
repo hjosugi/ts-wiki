@@ -1,21 +1,21 @@
-# open-wiki — Design & Architecture
+# ts-wiki — Design & Architecture
 
 The big picture and the *why*. For setup and a one-minute overview see the
 [README](../README.md); for implementation status and roadmap see [HANDOFF.md](HANDOFF.md).
 
 ## Why it's different from Wiki.js
 
-open-wiki is inspired by [Wiki.js](https://js.wiki) — and is a deliberate reaction to it. Wiki.js v3
+ts-wiki is inspired by [Wiki.js](https://js.wiki) — and is a deliberate reaction to it. Wiki.js v3
 ("vega") has been in development since 2021 with no beta as of 2025, while v2 sits in feature
-freeze. open-wiki keeps the good ideas (rich Markdown rendering, weighted full-text search, an
+freeze. ts-wiki keeps the good ideas (rich Markdown rendering, weighted full-text search, an
 embeddable "blocks" concept) and throws out the things that made v3 hard to finish: a global
 mutable `WIKI` god-object, 1,000-line models, fire-and-forget rendering, non-transactional
 writes, and a ~1 MB front-end bundle.
 
-| | Wiki.js v3 (vega) | open-wiki |
+| | Wiki.js v3 (vega) | ts-wiki |
 |---|---|---|
 | Shared state | global mutable `WIKI` singleton, reached into everywhere | explicit dependency injection; pure core, effects at the edges |
-| Domain logic | mixed into 1,000-line Objection models | pure functions in `@wiki/core`, returning `Result<T, E>` |
+| Domain logic | mixed into 1,000-line Objection models | pure functions in `@ts-wiki/core`, returning `Result<T, E>` |
 | Save → render | render is a fire-and-forget job; pages flash blank, index lags | render + revision + search index in **one transaction** |
 | API | Apollo GraphQL (schema + resolvers + codegen) | Elysia typed routes = the contract; **Eden Treaty**, no codegen |
 | Search | every backend (PG, Algolia, Elastic, …) | one backend done well: SQLite **FTS5**, BM25, weighted columns |
@@ -29,9 +29,9 @@ nothing about HTTP or the database; the web app and server both depend on the co
 each other (except the server's *type*, which the client imports for free).
 
 ```
-open-wiki/
+ts-wiki/
 ├── packages/
-│   └── core/              @wiki/core — pure, isomorphic, no I/O
+│   └── core/              @ts-wiki/core — pure, isomorphic, no I/O
 │       └── src/
 │           ├── result.ts      Result<T, E> — exception-free errors
 │           ├── errors.ts      AppError union → HTTP status mapping
@@ -40,13 +40,13 @@ open-wiki/
 │           ├── markdown.ts    markdown-it pipeline → { html, toc }
 │           └── page.ts        pure input validation
 ├── apps/
-│   ├── server/            @wiki/server — Bun + Elysia
+│   ├── server/            @ts-wiki/server — Bun + Elysia
 │   │   └── src/
 │   │       ├── db/            Drizzle schema, FTS5 migration, seed/reset
 │   │       ├── services/      pages · search · users · assets  (DI factories)
 │   │       ├── http/          Elysia app (exports the `App` type) + error mapping
 │   │       └── index.ts       env → db → app → listen
-│   └── web/               @wiki/web — Vue 3 + Vite + UnoCSS + Pinia
+│   └── web/               @ts-wiki/web — Vue 3 + Vite + UnoCSS + Pinia
 │       └── src/
 │           ├── lib/api.ts     Eden Treaty client (typed from the server's App)
 │           ├── stores/        auth · pages (Pinia)
@@ -57,7 +57,7 @@ open-wiki/
 
 ### Functional-programming choices
 
-- **Pure core, effects at the edges.** `@wiki/core` is free of I/O and globals. Rendering,
+- **Pure core, effects at the edges.** `@ts-wiki/core` is free of I/O and globals. Rendering,
   slugs, validation, and permissions are pure functions you can test in microseconds.
 - **`Result<T, E>` over exceptions.** Services return typed results; the HTTP layer is the one
   place that turns an error into a status code (`unwrap` → `onError`).
@@ -89,7 +89,7 @@ routes at compile time.
 
 ## Multi-instance mode
 
-The server defaults to a DB-backed realtime event bus (`WIKI_EVENT_BUS=db`). Page-change events are
+The server defaults to a DB-backed realtime event bus (`TS_WIKI_EVENT_BUS=db`). Page-change events are
 written to the shared SQLite database and every server process polls that log, so SSE subscribers on
 one instance are notified when another instance creates, edits, moves, or deletes a page.
 
@@ -97,11 +97,11 @@ To run multiple API instances, point them at the same `DATABASE_PATH`, keep `JWT
 and give each process its own `PORT`:
 
 ```bash
-DATABASE_PATH=./data/wiki.sqlite JWT_SECRET=dev PORT=4000 WIKI_INSTANCE_ID=wiki-1 bun run dev:server
-DATABASE_PATH=./data/wiki.sqlite JWT_SECRET=dev PORT=4001 WIKI_INSTANCE_ID=wiki-2 bun run dev:server
+DATABASE_PATH=./data/ts-wiki.sqlite JWT_SECRET=dev PORT=4000 TS_WIKI_INSTANCE_ID=ts-wiki-1 bun run dev:server
+DATABASE_PATH=./data/ts-wiki.sqlite JWT_SECRET=dev PORT=4001 TS_WIKI_INSTANCE_ID=ts-wiki-2 bun run dev:server
 ```
 
-For single-process tests or very small local runs, `WIKI_EVENT_BUS=memory` restores the old
+For single-process tests or very small local runs, `TS_WIKI_EVENT_BUS=memory` restores the old
 in-process-only event bus.
 
 ## Scripts
@@ -112,7 +112,6 @@ in-process-only event bus.
 | `bun run dev:server` / `dev:web` | Run one side |
 | `bun run db:migrate` | Apply schema (also runs automatically on server boot) |
 | `bun run db:seed` | Admin + sample pages (idempotent) |
-| `bun run docs:publish` | Publish this repo's docs into wiki pages under `/docs` |
 | `bun run db:reset` | Delete the SQLite files |
 | `bun run build` | Production build of the web app |
 | `bun run test` | Core + server tests (`bun test`) |

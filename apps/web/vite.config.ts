@@ -2,14 +2,16 @@ import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import UnoCSS from 'unocss/vite'
+import unoConfig from './uno.config'
 
 export default defineConfig({
-  plugins: [vue(), UnoCSS()],
+  base: '/ui/',
+  plugins: [vue(), UnoCSS({ ...unoConfig, configFile: false })],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
       // Consume the core package as TypeScript source so Vite transpiles it.
-      '@wiki/core': fileURLToPath(new URL('../../packages/core/src/index.ts', import.meta.url)),
+      '@ts-wiki/core': fileURLToPath(new URL('../../packages/core/src/index.ts', import.meta.url)),
     },
   },
   server: {

@@ -1,4 +1,4 @@
-# open-wiki Core
+# ts-wiki Core
 
 Pure TypeScript domain package shared by the server and web app.
 
@@ -16,7 +16,7 @@ From the repository root:
 
 ```bash
 bun test packages/core
-bun --filter '@wiki/core' typecheck
+bun --filter '@ts-wiki/core' typecheck
 ```
 
 ## Files To Read First

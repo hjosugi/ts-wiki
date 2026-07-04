@@ -1,5 +1,5 @@
 /**
- * @wiki/core — the pure, isomorphic heart of the wiki.
+ * @ts-wiki/core — the pure, isomorphic heart of the wiki.
  *
  * Everything here is free of I/O and global state. The server and the web app
  * both depend on it; neither can reach into the other.

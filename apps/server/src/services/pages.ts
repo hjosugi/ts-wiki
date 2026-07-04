@@ -1,6 +1,6 @@
 /**
  * Page service — the core write path. Every mutation:
- *   1. checks permission (pure `can()` from @wiki/core),
+ *   1. checks permission (pure `can()` from @ts-wiki/core),
  *   2. validates & normalises input (pure `validatePageInput`),
  *   3. renders Markdown → HTML + TOC (pure `renderMarkdown`),
  *   4. persists page + revision + FTS index in ONE transaction.
@@ -25,7 +25,7 @@ import {
   renderMarkdown,
   toPlainText,
   extractPageLinks,
-} from '@wiki/core'
+} from '@ts-wiki/core'
 import type { DB } from '../db/client.ts'
 import { pages, pageRevisions, type Page } from '../db/schema.ts'
 
@@ -66,7 +66,12 @@ export interface PageService {
   create(input: PageInput, principal: Principal | null): Result<Page, AppError>
   update(path: string, patch: UpdatePagePatch, principal: Principal | null): Result<Page, AppError>
   /** Lightweight content save (no revision) — used by collaborative autosave. */
-  saveContent(path: string, content: string, principal: Principal | null): Result<Page, AppError>
+  saveContent(
+    path: string,
+    content: string,
+    principal: Principal | null,
+    expectedUpdatedAt?: number | null,
+  ): Result<Page, AppError>
   move(oldPath: string, newPath: string, principal: Principal | null): Result<Page, AppError>
   remove(path: string, principal: Principal | null): Result<{ path: string }, AppError>
 }
@@ -242,11 +247,14 @@ export const createPageService = (db: DB): PageService => {
       return ok(page)
     },
 
-    saveContent(path, content, principal) {
+    saveContent(path, content, principal, expectedUpdatedAt = null) {
       if (!can(principal, 'page:write')) return err(forbidden())
 
       const current = findByPath(path)
       if (!current) return err(notFound(`No page at "${path}"`))
+      if (expectedUpdatedAt !== null && current.updatedAt !== expectedUpdatedAt) {
+        return err(conflict(`Page "${path}" changed outside the collaborative editor`))
+      }
 
       // Lightweight save for collaborative autosave: refresh content + render +
       // search index WITHOUT snapshotting a revision (explicit Save does that).

@@ -22,7 +22,7 @@ import {
   pageFilePath,
   filePathToPagePath,
   type PageFileData,
-} from '@wiki/core'
+} from '@ts-wiki/core'
 
 export interface GitConfig {
   readonly enabled: boolean

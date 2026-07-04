@@ -3,7 +3,7 @@
  * `unwrap()` a Result and, on failure, throw an `HttpError` that the app's
  * single `.onError` hook turns into a typed JSON body + status code.
  */
-import { type AppError, type Result, httpStatus, internal } from '@wiki/core'
+import { type AppError, type Result, httpStatus, internal } from '@ts-wiki/core'
 
 export class HttpError extends Error {
   constructor(readonly appError: AppError) {

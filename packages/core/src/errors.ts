@@ -9,6 +9,7 @@ export type ErrorKind =
   | 'forbidden'
   | 'not_found'
   | 'conflict'
+  | 'rate_limited'
   | 'internal'
 
 export interface AppError {
@@ -24,6 +25,7 @@ export const unauthorized = (message = 'Authentication required'): AppError => (
 export const forbidden = (message = 'You do not have permission to do that'): AppError => ({ kind: 'forbidden', message })
 export const notFound = (message = 'Not found'): AppError => ({ kind: 'not_found', message })
 export const conflict = (message: string): AppError => ({ kind: 'conflict', message })
+export const rateLimited = (message = 'Too many requests'): AppError => ({ kind: 'rate_limited', message })
 export const internal = (message = 'Internal error'): AppError => ({ kind: 'internal', message })
 
 /** Map a domain error onto an HTTP status code. The single source of truth. */
@@ -39,6 +41,8 @@ export const httpStatus = (error: AppError): number => {
       return 404
     case 'conflict':
       return 409
+    case 'rate_limited':
+      return 429
     case 'internal':
       return 500
   }

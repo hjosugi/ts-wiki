@@ -19,7 +19,7 @@ function submitSearch(): void {
   >
     <div class="max-w-7xl mx-auto px-4 h-14 flex items-center gap-4">
       <RouterLink to="/" class="flex items-center gap-1.5 font-bold text-lg shrink-0">
-        <span class="text-violet-600">▲</span> open<span class="text-violet-600">wiki</span>
+        <span class="text-violet-600">▲</span> ts<span class="text-violet-600">wiki</span>
       </RouterLink>
 
       <form class="flex-1 max-w-md" @submit.prevent="submitSearch">

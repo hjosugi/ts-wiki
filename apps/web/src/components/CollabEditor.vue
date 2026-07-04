@@ -7,7 +7,9 @@ import { EditorView, basicSetup } from 'codemirror'
 import { EditorState } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
 import { oneDark } from '@codemirror/theme-one-dark'
-import { renderMarkdown } from '@wiki/core'
+import { renderMarkdown } from '@ts-wiki/core'
+import { getToken } from '@/lib/api'
+import { WS_BASE_URL } from '@/lib/url'
 import { useAuth } from '@/stores/auth'
 
 const props = defineProps<{ room: string }>()
@@ -23,8 +25,6 @@ let view: EditorView | null = null
 let provider: WebsocketProvider | null = null
 let ydoc: Y.Doc | null = null
 
-const WS_BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:4000').replace(/^http/, 'ws')
-
 /** Deterministic per-user colour so remote cursors are stable & distinct. */
 function userColor(seed: string): string {
   let h = 0
@@ -35,9 +35,12 @@ function userColor(seed: string): string {
 onMounted(() => {
   ydoc = new Y.Doc()
   const ytext = ydoc.getText('content')
-  // WebsocketProvider connects to `${WS_BASE}/api/collab/<room>` and speaks the
+  // WebsocketProvider connects to `${WS_BASE_URL}/api/collab/<room>` and speaks the
   // y-websocket protocol our server implements.
-  provider = new WebsocketProvider(`${WS_BASE}/api/collab`, encodeURIComponent(props.room), ydoc)
+  const token = getToken()
+  provider = new WebsocketProvider(`${WS_BASE_URL}/api/collab`, encodeURIComponent(props.room), ydoc, {
+    params: token ? { token } : {},
+  })
 
   const name = auth.user?.name ?? 'Anonymous'
   const color = userColor(name + (auth.user?.id ?? ''))

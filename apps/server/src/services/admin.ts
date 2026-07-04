@@ -1,6 +1,6 @@
 /**
  * Admin service — admin-only operations. Every method gates on
- * `can(principal, 'admin:access')` (the same pure check from @wiki/core), so the
+ * `can(principal, 'admin:access')` (the same pure check from @ts-wiki/core), so the
  * HTTP layer stays a thin `unwrap(...)`.
  */
 import { eq, asc, sql } from 'drizzle-orm'
@@ -16,7 +16,7 @@ import {
   notFound,
   conflict,
   validationError,
-} from '@wiki/core'
+} from '@ts-wiki/core'
 import type { DB } from '../db/client.ts'
 import { users, pages, pageRevisions } from '../db/schema.ts'
 

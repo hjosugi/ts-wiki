@@ -1,4 +1,4 @@
-# open-wiki — Handoff / 引き継ぎ資料
+# ts-wiki — Handoff / 引き継ぎ資料
 
 A practical guide for whoever picks this up next (human or AI). The user-facing overview is in
 [../README.md](../README.md); this document is the **developer handoff**: current status, why
@@ -17,7 +17,7 @@ things are the way they are, what bit us, and exactly where to plug in the next 
 | Area | Status | Notes |
 |---|---|---|
 | Monorepo + Bun workspaces | ✅ | `packages/*`, `apps/*`; root scripts orchestrate via `bun --filter` |
-| `@wiki/core` (pure domain) | ✅ | Result, errors, slug, permissions, markdown+TOC/link extraction, validation |
+| `@ts-wiki/core` (pure domain) | ✅ | Result, errors, slug, permissions, markdown+TOC/link extraction, validation |
 | DB schema + FTS5 migration | ✅ | `users`, `pages`, `page_revisions`, `assets`, `pages_fts` |
 | Pages service (CRUD) | ✅ | transactional: render + revision + FTS index together |
 | Search service (FTS5/BM25) | ✅ | weighted columns, snippets, prefix queries |
@@ -34,7 +34,7 @@ things are the way they are, what bit us, and exactly where to plug in the next 
 - Live API via curl: register/login, 403 for anon writes, path normalization, render-on-save,
   search ranking+snippets, reindex-on-update, move, delete → 404.
 - Eden Treaty client: every call shape (`get`/`post` body/`put` body+query/`move` body/`delete` body+query/`search`/`graph`) hit the live server successfully.
-- `bun --filter '@wiki/web' build` → clean; `vue-tsc`, core & server `tsc` → 0 errors.
+- `bun --filter '@ts-wiki/web' build` → clean; `vue-tsc`, core & server `tsc` → 0 errors.
 
 ---
 
@@ -51,7 +51,7 @@ These three were explicitly chosen with the user up front:
 
 Cross-cutting principles (the "FP-leaning architecture" the user asked for):
 
-- **Dependencies point inward.** `@wiki/core` has no I/O and no globals. `apps/web` and
+- **Dependencies point inward.** `@ts-wiki/core` has no I/O and no globals. `apps/web` and
   `apps/server` depend on core; never on each other except the server's *type* (Eden).
 - **Pure core, effects at the edges.** Rendering/slug/validation/permissions are pure functions.
 - **`Result<T, E>` over throwing.** Services return results; `apps/server/src/http/errors.ts`
@@ -68,7 +68,7 @@ Cross-cutting principles (the "FP-leaning architecture" the user asked for):
 
 > Follow these so the codebase stays coherent.
 
-- **New domain logic that is pure → put it in `@wiki/core`** and unit-test it. If it touches the
+- **New domain logic that is pure → put it in `@ts-wiki/core`** and unit-test it. If it touches the
   DB or network, it's a *service*, not core.
 - **Services are factories:** `createXService(db) => { ...methods }`. Return `Result<T, AppError>`
   for expected failures (validation/permission/conflict/not-found). Don't throw for those.
@@ -156,7 +156,7 @@ Each item notes **where to plug in**.
       and paste-image affordances, richer event insertion, unsaved-change warning, and a clearer save/error/status strip
       in `MarkdownEditor.vue` / `PageEdit.vue`.
 - [ ] **Calendar import/export UX** — add an `.ics` upload/paste parser, event preview modal, and
-      "insert into page" flow. Keep parsing in `@wiki/core` so server render and editor preview
+      "insert into page" flow. Keep parsing in `@ts-wiki/core` so server render and editor preview
       agree.
 - [ ] **Quick switcher / command palette** — keyboard-first `Cmd/Ctrl+K` for search, jump to page,
       create page, and common edit actions. This should sit in `AppHeader.vue` + a new modal

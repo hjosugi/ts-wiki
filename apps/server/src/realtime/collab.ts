@@ -15,6 +15,7 @@ import * as syncProtocol from 'y-protocols/sync'
 import * as awarenessProtocol from 'y-protocols/awareness'
 import * as encoding from 'lib0/encoding'
 import * as decoding from 'lib0/decoding'
+import type { Principal } from '@ts-wiki/core'
 
 const MESSAGE_SYNC = 0
 const MESSAGE_AWARENESS = 1
@@ -28,13 +29,26 @@ interface Room {
   readonly doc: Y.Doc
   readonly awareness: awarenessProtocol.Awareness
   readonly conns: Map<CollabConn, Set<number>> // conn → awareness clientIDs it controls
+  readonly principals: Map<CollabConn, Principal>
   saveTimer: ReturnType<typeof setTimeout> | null
   firstDirtyAt: number
+  seededUpdatedAt: number | null
+  lastPrincipal: Principal | null
+}
+
+export interface CollabSeed {
+  readonly text: string
+  readonly updatedAt: number | null
 }
 
 export interface CollabOptions {
   /** Called (debounced) with the latest text so it can be persisted. */
-  persist?: (room: string, text: string) => void
+  persist?: (
+    room: string,
+    text: string,
+    expectedUpdatedAt: number | null,
+    principal: Principal | null,
+  ) => number | null | void
   /** Idle delay before saving (ms). */
   debounceMs?: number
   /** Hard cap on how long unsaved edits can sit (ms). */
@@ -42,7 +56,7 @@ export interface CollabOptions {
 }
 
 export interface CollabHub {
-  open(roomName: string, conn: CollabConn, seed: () => string): void
+  open(roomName: string, conn: CollabConn, seed: () => string | CollabSeed, principal?: Principal | null): void
   message(roomName: string, conn: CollabConn, data: Uint8Array): void
   close(roomName: string, conn: CollabConn): void
   /** Current text of a room (for tests/diagnostics), or null if no such room. */
@@ -56,6 +70,9 @@ export const createCollabHub = (options: CollabOptions = {}): CollabHub => {
   const DEBOUNCE_MS = options.debounceMs ?? 1500
   const MAX_WAIT_MS = options.maxWaitMs ?? 8000
 
+  const normalizeSeed = (seed: string | CollabSeed): CollabSeed =>
+    typeof seed === 'string' ? { text: seed, updatedAt: null } : seed
+
   const flush = (room: Room): void => {
     if (room.saveTimer) {
       clearTimeout(room.saveTimer)
@@ -63,10 +80,17 @@ export const createCollabHub = (options: CollabOptions = {}): CollabHub => {
     }
     if (room.firstDirtyAt === 0) return
     room.firstDirtyAt = 0
-    persist?.(room.name, room.doc.getText('content').toString())
+    const updatedAt = persist?.(
+      room.name,
+      room.doc.getText('content').toString(),
+      room.seededUpdatedAt,
+      room.lastPrincipal,
+    )
+    if (typeof updatedAt === 'number') room.seededUpdatedAt = updatedAt
   }
-  const scheduleSave = (room: Room): void => {
+  const scheduleSave = (room: Room, principal: Principal | null): void => {
     if (!persist) return
+    room.lastPrincipal = principal
     if (room.firstDirtyAt === 0) room.firstDirtyAt = Date.now()
     if (room.saveTimer) clearTimeout(room.saveTimer)
     const wait = Math.max(0, Math.min(DEBOUNCE_MS, MAX_WAIT_MS - (Date.now() - room.firstDirtyAt)))
@@ -80,17 +104,27 @@ export const createCollabHub = (options: CollabOptions = {}): CollabHub => {
     for (const conn of room.conns.keys()) if (conn !== except) conn.send(data)
   }
 
-  const getRoom = (name: string, seed: () => string): Room => {
+  const getRoom = (name: string, seed: () => string | CollabSeed): Room => {
     const existing = rooms.get(name)
     if (existing) return existing
 
     const doc = new Y.Doc()
-    const initial = seed()
-    if (initial) doc.getText('content').insert(0, initial)
+    const initial = normalizeSeed(seed())
+    if (initial.text) doc.getText('content').insert(0, initial.text)
     const awareness = new awarenessProtocol.Awareness(doc)
     awareness.setLocalState(null) // the server is not itself a participant
 
-    const room: Room = { name, doc, awareness, conns: new Map(), saveTimer: null, firstDirtyAt: 0 }
+    const room: Room = {
+      name,
+      doc,
+      awareness,
+      conns: new Map(),
+      principals: new Map(),
+      saveTimer: null,
+      firstDirtyAt: 0,
+      seededUpdatedAt: initial.updatedAt,
+      lastPrincipal: null,
+    }
 
     // Relay document updates to every other connection, and schedule an autosave
     // when the change came from a real client (not the initial DB seed).
@@ -99,7 +133,9 @@ export const createCollabHub = (options: CollabOptions = {}): CollabHub => {
       encoding.writeVarUint(encoder, MESSAGE_SYNC)
       syncProtocol.writeUpdate(encoder, update)
       broadcast(room, encoding.toUint8Array(encoder), origin as CollabConn)
-      if (room.conns.has(origin as CollabConn)) scheduleSave(room)
+      if (room.conns.has(origin as CollabConn)) {
+        scheduleSave(room, room.principals.get(origin as CollabConn) ?? null)
+      }
     })
 
     // Relay awareness changes; track which clientIDs each connection owns.
@@ -124,9 +160,10 @@ export const createCollabHub = (options: CollabOptions = {}): CollabHub => {
   }
 
   return {
-    open(name, conn, seed) {
+    open(name, conn, seed, principal = null) {
       const room = getRoom(name, seed)
       room.conns.set(conn, new Set())
+      if (principal) room.principals.set(conn, principal)
 
       // 1) Kick off sync: send our state vector (SyncStep1).
       const syncEncoder = encoding.createEncoder()
@@ -168,6 +205,7 @@ export const createCollabHub = (options: CollabOptions = {}): CollabHub => {
       if (!room) return
       const owned = room.conns.get(conn)
       room.conns.delete(conn)
+      room.principals.delete(conn)
       if (owned && owned.size > 0) {
         awarenessProtocol.removeAwarenessStates(room.awareness, Array.from(owned), null)
       }

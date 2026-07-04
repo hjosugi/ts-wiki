@@ -43,8 +43,8 @@ describe('event bus', () => {
   })
 
   test('DB-backed bus delivers events across instances without local duplicates', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'open-wiki-bus-'))
-    const path = join(dir, 'wiki.sqlite')
+    const dir = mkdtempSync(join(tmpdir(), 'ts-wiki-bus-'))
+    const path = join(dir, 'ts-wiki.sqlite')
     const dbA = createDb(path)
     const dbB = createDb(path)
     const busA = createDbEventBus(dbA, { sourceId: 'a', pollIntervalMs: 10 })
@@ -74,8 +74,8 @@ describe('event bus', () => {
   })
 
   test('DB-backed bus prunes old stored events after the retention limit', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'open-wiki-bus-'))
-    const path = join(dir, 'wiki.sqlite')
+    const dir = mkdtempSync(join(tmpdir(), 'ts-wiki-bus-'))
+    const path = join(dir, 'ts-wiki.sqlite')
     const db = createDb(path)
     const bus = createDbEventBus(db, { sourceId: 'a', pollIntervalMs: 10, maxStoredEvents: 3 })
 

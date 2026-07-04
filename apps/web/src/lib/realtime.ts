@@ -4,7 +4,8 @@
  * automatically, so this is fire-and-forget. (Transport is intentionally hidden
  * behind `onWikiEvent`, so we can swap SSE → WebSocket without touching callers.)
  */
-const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000'
+import { getToken } from './api'
+import { API_BASE_URL } from './url'
 
 export interface WikiEvent {
   type: 'page:changed'
@@ -20,7 +21,10 @@ let source: EventSource | null = null
 
 export function connectRealtime(): void {
   if (source) return
-  source = new EventSource(`${BASE_URL}/api/events`)
+  const token = getToken()
+  const url = new URL('/api/events', API_BASE_URL)
+  if (token) url.searchParams.set('token', token)
+  source = new EventSource(url.toString())
   source.onmessage = (msg) => {
     try {
       const event = JSON.parse(msg.data) as WikiEvent

@@ -3,6 +3,7 @@
  * factory — no `process.env` reads scattered through the codebase, no globals.
  */
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 export const DEFAULT_JWT_SECRET = 'dev-insecure-secret-change-me'
 
@@ -35,6 +36,7 @@ export interface Env {
   readonly port: number
   readonly databasePath: string
   readonly dataDir: string
+  readonly webDistDir: string
   readonly jwtSecret: string
   readonly cors: CorsEnv
   readonly git: GitEnv
@@ -69,34 +71,35 @@ const loadJwtSecret = (source: EnvSource): string => {
 export const loadEnv = (source: EnvSource = process.env): Env => {
   const production = isProduction(source)
   const dataDir = source.DATA_DIR ?? './data'
-  const eventBus = source.WIKI_EVENT_BUS === 'memory' ? 'memory' : 'db'
-  const configuredCorsOrigins = parseCorsOrigins(source.WIKI_CORS_ORIGINS)
-  const remoteUrl = source.WIKI_GIT_REMOTE_URL?.trim() || null
-  const remote = source.WIKI_GIT_REMOTE?.trim() || (remoteUrl ? 'origin' : null)
+  const eventBus = source.TS_WIKI_EVENT_BUS === 'memory' ? 'memory' : 'db'
+  const configuredCorsOrigins = parseCorsOrigins(source.TS_WIKI_CORS_ORIGINS)
+  const remoteUrl = source.TS_WIKI_GIT_REMOTE_URL?.trim() || null
+  const remote = source.TS_WIKI_GIT_REMOTE?.trim() || (remoteUrl ? 'origin' : null)
   return {
     port: Number(source.PORT ?? 4000),
-    databasePath: source.DATABASE_PATH ?? './data/wiki.sqlite',
+    databasePath: source.DATABASE_PATH ?? './data/ts-wiki.sqlite',
     dataDir,
+    webDistDir: source.WEB_DIST_DIR ?? fileURLToPath(new URL('../../web/dist', import.meta.url)),
     jwtSecret: loadJwtSecret(source),
     cors: {
       origins: configuredCorsOrigins ?? (production ? [] : null),
     },
     git: {
-      // NB: namespaced WIKI_GIT_* — plain GIT_DIR / GIT_AUTHOR_* are reserved
+      // NB: namespaced TS_WIKI_GIT_* — plain GIT_DIR / GIT_AUTHOR_* are reserved
       // Git env vars and would hijack every git command we run.
-      enabled: source.WIKI_GIT_ENABLED === 'true' || source.WIKI_GIT_ENABLED === '1',
-      dir: source.WIKI_GIT_DIR ?? join(dataDir, 'repo'),
-      branch: source.WIKI_GIT_BRANCH ?? 'main',
+      enabled: source.TS_WIKI_GIT_ENABLED === 'true' || source.TS_WIKI_GIT_ENABLED === '1',
+      dir: source.TS_WIKI_GIT_DIR ?? join(dataDir, 'repo'),
+      branch: source.TS_WIKI_GIT_BRANCH ?? 'main',
       remote,
       remoteUrl,
-      authorName: source.WIKI_GIT_AUTHOR_NAME ?? 'open-wiki',
-      authorEmail: source.WIKI_GIT_AUTHOR_EMAIL ?? 'wiki@localhost',
-      syncIntervalMs: Number(source.WIKI_GIT_SYNC_INTERVAL_MS ?? 0),
+      authorName: source.TS_WIKI_GIT_AUTHOR_NAME ?? 'ts-wiki',
+      authorEmail: source.TS_WIKI_GIT_AUTHOR_EMAIL ?? 'ts-wiki@localhost',
+      syncIntervalMs: Number(source.TS_WIKI_GIT_SYNC_INTERVAL_MS ?? 0),
     },
     realtime: {
       eventBus,
-      instanceId: source.WIKI_INSTANCE_ID ?? crypto.randomUUID(),
-      pollIntervalMs: Number(source.WIKI_EVENT_POLL_MS ?? 250),
+      instanceId: source.TS_WIKI_INSTANCE_ID ?? crypto.randomUUID(),
+      pollIntervalMs: Number(source.TS_WIKI_EVENT_POLL_MS ?? 250),
     },
   }
 }

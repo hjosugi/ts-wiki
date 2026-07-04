@@ -1,6 +1,7 @@
 {
-  "name": "open-wiki",
-  "version": "0.1.0",
+  "name": "ts-wiki",
+  "version": "0.1.1",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "description": "A modern, lean, FP-leaning open-source wiki. Bun + Elysia + Drizzle (SQLite/FTS5) + Vue 3.",
@@ -9,14 +10,13 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "bun --filter '@wiki/server' --filter '@wiki/web' dev",
-    "dev:server": "bun --filter '@wiki/server' dev",
-    "dev:web": "bun --filter '@wiki/web' dev",
-    "build": "bun --filter '@wiki/web' build",
-    "db:migrate": "bun --filter '@wiki/server' db:migrate",
-    "db:seed": "bun --filter '@wiki/server' db:seed",
-    "db:reset": "bun --filter '@wiki/server' db:reset",
-    "docs:publish": "bun --filter '@wiki/server' docs:publish",
+    "dev": "bun --filter '@ts-wiki/server' --filter '@ts-wiki/web' dev",
+    "dev:server": "bun --filter '@ts-wiki/server' dev",
+    "dev:web": "bun --filter '@ts-wiki/web' dev",
+    "build": "bun --filter '@ts-wiki/web' build",
+    "db:migrate": "bun --filter '@ts-wiki/server' db:migrate",
+    "db:seed": "bun --filter '@ts-wiki/server' db:seed",
+    "db:reset": "bun --filter '@ts-wiki/server' db:reset",
     "typecheck": "bun --filter '*' typecheck",
     "test": "bun test packages apps"
   },
@@ -24,6 +24,6 @@
     "typescript": "^5.8.3"
   },
   "engines": {
-    "bun": ">=1.1.0"
+    "bun": ">=1.3.0"
   }
 }

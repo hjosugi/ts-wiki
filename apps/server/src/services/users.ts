@@ -3,7 +3,7 @@
  * failures (duplicate email); throws only on genuinely exceptional states.
  */
 import { eq, sql } from 'drizzle-orm'
-import { type Result, ok, err, conflict, type AppError, type Role } from '@wiki/core'
+import { type Result, ok, err, conflict, type AppError, type Role } from '@ts-wiki/core'
 import type { DB } from '../db/client.ts'
 import { users, type User } from '../db/schema.ts'
 import { hashPassword } from './auth.ts'

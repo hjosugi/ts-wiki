@@ -14,6 +14,8 @@
  * We hand-roll a tiny frontmatter reader/writer (title + description only) so
  * the core stays dependency-free; it's lenient enough for hand-edited files.
  */
+import { normalizePath } from './slug.ts'
+
 export interface PageFileData {
   readonly title: string
   readonly description: string
@@ -64,8 +66,34 @@ export const parsePageFile = (raw: string): PageFileData => {
 /** Page path → repo-relative file path (under the content/ root). */
 export const pageFilePath = (path: string): string => `${path}.md`
 
-/** Repo file path → page path, or null if it isn't a content markdown file. */
+const MARKDOWN_EXTENSION = '.md'
+const CONTENT_ROOT = 'content'
+const CONTROL_CHAR = /[\u0000-\u001f\u007f]/
+const WINDOWS_DRIVE = /^[A-Za-z]:/
+const ENCODED_PATH_SEPARATOR = /%(?:2f|5c)/i
+
+const isUnsafeSegment = (segment: string): boolean =>
+  segment.length === 0 || segment === '.' || segment === '..'
+
+/** Repo-relative content file path -> normalized page path, or null if invalid. */
 export const filePathToPagePath = (file: string): string | null => {
-  const m = /^(?:content\/)?(.+)\.md$/.exec(file.trim())
-  return m ? (m[1] ?? null) : null
+  if (file.length === 0) return null
+  if (file !== file.trim()) return null
+  if (CONTROL_CHAR.test(file)) return null
+  if (file.includes('\\') || file.startsWith('/') || WINDOWS_DRIVE.test(file)) return null
+  if (ENCODED_PATH_SEPARATOR.test(file)) return null
+
+  const parts = file.split('/')
+  if (parts[0] !== CONTENT_ROOT) return null
+  if (parts.some(isUnsafeSegment)) return null
+
+  const filename = parts.at(-1)
+  if (!filename?.endsWith(MARKDOWN_EXTENSION)) return null
+
+  const stem = filename.slice(0, -MARKDOWN_EXTENSION.length)
+  const pageSegments = [...parts.slice(1, -1), stem]
+  if (pageSegments.some(isUnsafeSegment)) return null
+
+  const normalizedSegments = pageSegments.map((segment) => normalizePath(segment))
+  return normalizedSegments.every((segment) => segment.length > 0) ? normalizedSegments.join('/') : null
 }
