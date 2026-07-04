@@ -10,7 +10,7 @@ ts-wiki is inspired by [Wiki.js](https://js.wiki) — and is a deliberate reacti
 freeze. ts-wiki keeps the good ideas (rich Markdown rendering, weighted full-text search, an
 embeddable "blocks" concept) and throws out the things that made v3 hard to finish: a global
 mutable `WIKI` god-object, 1,000-line models, fire-and-forget rendering, non-transactional
-writes, and a ~1 MB front-end bundle.
+writes, and a large rich-editor front-end bundle.
 
 | | Wiki.js v3 (vega) | ts-wiki |
 |---|---|---|
@@ -20,7 +20,7 @@ writes, and a ~1 MB front-end bundle.
 | API | Apollo GraphQL (schema + resolvers + codegen) | Elysia typed routes = the contract; **Eden Treaty**, no codegen |
 | Search | every backend (PG, Algolia, Elastic, …) | one backend done well: SQLite **FTS5**, BM25, weighted columns |
 | Front-end | Quasar + TipTap + Monaco (~1 MB JS) | Vue 3 + UnoCSS + CodeMirror; bundle size verified from Vite build output |
-| Auth | 20+ Passport strategies | local accounts + JWT, structured to extend |
+| Auth | 20+ Passport strategies | local/OIDC/TOTP/passkey auth, private mode, revocable JWT sessions |
 
 ## Architecture
 
@@ -87,6 +87,13 @@ query so it feels good as-you-type.
 **Types** are shared without codegen. The server exports its `App` type; `apps/web/src/lib/api.ts`
 does `treaty<App>(...)`, so every request's path, query, and body is checked against the real
 routes at compile time.
+
+**Bundle size is measured from Vite output, not estimated.** As of v0.3.2,
+`bun run build` reports the two main entry chunks at about **415 KB gzip** and
+**853 KB gzip**. The warning is expected today because Markdown rendering,
+highlighting, Mermaid-adjacent parsing, CodeMirror, Yjs collaboration, and admin
+surfaces share entry dependencies. Future performance work should use this build
+output as the baseline rather than repeating older "`~43 KB gzip`" claims.
 
 ## Multi-instance mode
 

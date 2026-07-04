@@ -36,10 +36,16 @@ const testEnv = (dataDir: string, cors: Env['cors'] = { origins: null }): Env =>
     siteName: 'ts-wiki-test',
     publicOrigin: 'http://localhost',
     passkeyRpId: 'localhost',
+    tokenTtlSeconds: 30 * 24 * 60 * 60,
+    registration: 'open',
+    privateWiki: false,
     oidcProviders: [],
   },
   search: {
     ftsTokenizer: 'unicode61',
+  },
+  assetUpload: {
+    maxBytes: ASSET_MAX_BYTES,
   },
   assetStorage: {
     type: 'local',
@@ -88,6 +94,7 @@ const createFixture = (
     logger?: StructuredLogger
     assetStorage?: AssetStorage
     webhookFetcher?: WebhookFetcher
+    env?: (env: Env) => Env
   } = {},
 ): { app: App; db: DB; dataDir: string } => {
   const dataDir = mkdtempSync(join(tmpdir(), 'ts-wiki-test-'))
@@ -98,9 +105,10 @@ const createFixture = (
     writeFileSync(join(dataDir, 'web-dist', 'assets', 'app.js'), 'console.log("ts-wiki")')
   }
   const db = createDb(':memory:')
+  const env = options.env?.(testEnv(dataDir, cors)) ?? testEnv(dataDir, cors)
   const app = createApp({
     db,
-    env: testEnv(dataDir, cors),
+    env,
     logger: options.logger ?? noopLogger,
     assetStorage: options.assetStorage,
     webhookFetcher: options.webhookFetcher,
@@ -284,6 +292,153 @@ describe('http app auth', () => {
       }),
     )
     expect(invalidVerify.status).toBe(401)
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('users can update profile and rotate their own password with audit logs', async () => {
+    const { logger, events } = captureLogger()
+    const { app } = createFixture(undefined, { logger })
+    const { token } = await register(app, 'admin@example.com')
+
+    const profile = await app.handle(
+      new Request('http://localhost/api/auth/profile', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: 'Ada Admin' }),
+      }),
+    )
+    expect(profile.status).toBe(200)
+    expect((await profile.json()).user.name).toBe('Ada Admin')
+
+    const password = await app.handle(
+      new Request('http://localhost/api/auth/password', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ currentPassword: 'password', newPassword: 'new-password' }),
+      }),
+    )
+    expect(password.status).toBe(200)
+
+    const oldToken = await app.handle(new Request('http://localhost/api/auth/me', {
+      headers: { authorization: `Bearer ${token}` },
+    }))
+    expect(oldToken.status).toBe(401)
+
+    const oldPassword = await app.handle(
+      jsonRequest('/api/auth/login', { email: 'admin@example.com', password: 'password' }),
+    )
+    expect(oldPassword.status).toBe(401)
+
+    const newPassword = await app.handle(
+      jsonRequest('/api/auth/login', { email: 'admin@example.com', password: 'new-password' }),
+    )
+    expect(newPassword.status).toBe(200)
+    expect(events).toContainEqual(expect.objectContaining({ type: 'audit', action: 'auth.profile.update' }))
+    expect(events).toContainEqual(expect.objectContaining({ type: 'audit', action: 'auth.password.change' }))
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('admin reset/deactivate invalidates sessions and demoted admins lose admin access', async () => {
+    const { logger, events } = captureLogger()
+    const { app } = createFixture(undefined, { logger })
+    const admin = await register(app, 'admin@example.com')
+    const user = await register(app, 'user@example.com')
+
+    const promoted = await app.handle(
+      new Request('http://localhost/api/admin/users/role', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${admin.token}` },
+        body: JSON.stringify({ userId: user.user.id, role: 'admin' }),
+      }),
+    )
+    expect(promoted.status).toBe(200)
+
+    const promotedStats = await app.handle(new Request('http://localhost/api/admin/stats', {
+      headers: { authorization: `Bearer ${user.token}` },
+    }))
+    expect(promotedStats.status).toBe(200)
+
+    const demoted = await app.handle(
+      new Request('http://localhost/api/admin/users/role', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${admin.token}` },
+        body: JSON.stringify({ userId: user.user.id, role: 'viewer' }),
+      }),
+    )
+    expect(demoted.status).toBe(200)
+    const demotedStats = await app.handle(new Request('http://localhost/api/admin/stats', {
+      headers: { authorization: `Bearer ${user.token}` },
+    }))
+    expect(demotedStats.status).toBe(403)
+
+    const reset = await app.handle(
+      new Request('http://localhost/api/admin/users/password', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${admin.token}` },
+        body: JSON.stringify({ userId: user.user.id, password: 'reset-password' }),
+      }),
+    )
+    expect(reset.status).toBe(200)
+    const resetLogin = await app.handle(
+      jsonRequest('/api/auth/login', { email: 'user@example.com', password: 'reset-password' }),
+    )
+    expect(resetLogin.status).toBe(200)
+    const resetToken = (await resetLogin.json()).token as string
+
+    const deactivated = await app.handle(
+      new Request('http://localhost/api/admin/users/deactivate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${admin.token}` },
+        body: JSON.stringify({ userId: user.user.id }),
+      }),
+    )
+    expect(deactivated.status).toBe(200)
+    expect((await deactivated.json()).user.disabledAt).toEqual(expect.any(Number))
+
+    const existingSession = await app.handle(new Request('http://localhost/api/auth/me', {
+      headers: { authorization: `Bearer ${resetToken}` },
+    }))
+    expect(existingSession.status).toBe(401)
+    const deactivatedLogin = await app.handle(
+      jsonRequest('/api/auth/login', { email: 'user@example.com', password: 'reset-password' }),
+    )
+    expect(deactivatedLogin.status).toBe(401)
+    expect(events).toContainEqual(expect.objectContaining({ type: 'audit', action: 'admin.user.password.reset' }))
+    expect(events).toContainEqual(expect.objectContaining({ type: 'audit', action: 'admin.user.deactivate' }))
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('registration can be disabled while first-admin bootstrap still works', async () => {
+    const { app } = createFixture(undefined, {
+      env: (env) => ({ ...env, auth: { ...env.auth, registration: 'off' } }),
+    })
+
+    const first = await register(app, 'admin@example.com')
+    expect(first.user.role).toBe('admin')
+
+    const second = await app.handle(
+      jsonRequest('/api/auth/register', { email: 'viewer@example.com', name: 'Viewer', password: 'password' }),
+    )
+    expect(second.status).toBe(403)
+
+    const settings = await app.handle(new Request('http://localhost/api/settings/public'))
+    expect((await settings.json()).registration).toBe('off')
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('private wiki requires a principal for page read routes and realtime', async () => {
+    const { app } = createFixture(undefined, {
+      env: (env) => ({ ...env, auth: { ...env.auth, privateWiki: true } }),
+    })
+    const { token } = await register(app, 'admin@example.com')
+    await createPage(app, token, 'docs/private', 'secret')
+
+    expect((await app.handle(new Request('http://localhost/api/pages'))).status).toBe(401)
+    expect((await app.handle(new Request('http://localhost/api/search?q=secret'))).status).toBe(401)
+    expect((await app.handle(new Request('http://localhost/api/events'))).status).toBe(401)
+    expect((await app.handle(new Request('http://localhost/api/page?path=docs/private'))).status).toBe(401)
+
+    const authed = await app.handle(new Request('http://localhost/api/page?path=docs/private', {
+      headers: { authorization: `Bearer ${token}` },
+    }))
+    expect(authed.status).toBe(200)
+    expect((await authed.json()).page.path).toBe('docs/private')
   }, HTTP_TEST_TIMEOUT_MS)
 })
 
@@ -664,6 +819,34 @@ describe('http app realtime', () => {
       authed.close()
     })
   }, HTTP_TEST_TIMEOUT_MS)
+
+  test('stays responsive during concurrent saves with SSE churn', async () => {
+    const { app } = createFixture()
+    const { token } = await register(app, 'admin@example.com')
+    await createPage(app, token, 'docs/load', 'seed')
+
+    const streams = await Promise.all(
+      Array.from({ length: 8 }, () => app.handle(new Request(`http://localhost/api/events?token=${token}`))),
+    )
+    for (const response of streams) expect(response.status).toBe(200)
+
+    await Promise.all(
+      Array.from({ length: 24 }, (_, index) =>
+        app.handle(
+          new Request('http://localhost/api/page?path=docs/load', {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+            body: JSON.stringify({ content: `save ${index}` }),
+          }),
+        ).then((response) => expect(response.status).toBe(200)),
+      ),
+    )
+
+    await Promise.all(streams.map((response) => response.body?.cancel().catch(() => undefined)))
+    const health = await app.handle(new Request('http://localhost/api/health'))
+    expect(health.status).toBe(200)
+    expect(await health.json()).toMatchObject({ ok: true })
+  }, HTTP_TEST_TIMEOUT_MS)
 })
 
 describe('http app page utilities', () => {
@@ -728,6 +911,35 @@ describe('http app page utilities', () => {
     expect((await analytics.json()).topPages).toContainEqual(
       expect.objectContaining({ path: 'docs/target', views: 1 }),
     )
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('moving a page leaves redirects from previous paths', async () => {
+    const { app } = createFixture()
+    const { token } = await register(app, 'admin@example.com')
+    await createPage(app, token, 'docs/old', 'old content')
+
+    const firstMove = await app.handle(
+      jsonRequest('/api/page/move', { oldPath: 'docs/old', newPath: 'docs/middle' }, token),
+    )
+    expect(firstMove.status).toBe(200)
+    const secondMove = await app.handle(
+      jsonRequest('/api/page/move', { oldPath: 'docs/middle', newPath: 'docs/new' }, token),
+    )
+    expect(secondMove.status).toBe(200)
+
+    const old = await app.handle(new Request('http://localhost/api/page?path=docs/old'))
+    expect(old.status).toBe(200)
+    expect(await old.json()).toMatchObject({
+      page: expect.objectContaining({ path: 'docs/new' }),
+      redirectedFrom: ['docs/old'],
+    })
+
+    const middle = await app.handle(new Request('http://localhost/api/page?path=docs/middle'))
+    expect(middle.status).toBe(200)
+    expect(await middle.json()).toMatchObject({
+      page: expect.objectContaining({ path: 'docs/new' }),
+      redirectedFrom: ['docs/middle'],
+    })
   }, HTTP_TEST_TIMEOUT_MS)
 
   test('moves pages to trash, restores, archives, and purges through HTTP routes', async () => {
@@ -1063,9 +1275,33 @@ describe('http app assets', () => {
     )
 
     expect(upload.status).toBe(200)
-    expect(await upload.json()).toMatchObject({
+    const body = await upload.json()
+    expect(body).toMatchObject({
       filename: 'runbook.pdf',
     })
+    const served = await app.handle(new Request(`http://localhost${body.url}`))
+    expect(served.status).toBe(200)
+    expect(served.headers.get('content-disposition')).toBe('attachment')
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('honors the configured upload byte limit', async () => {
+    const { app } = createFixture(undefined, {
+      env: (env) => ({ ...env, assetUpload: { maxBytes: 4 } }),
+    })
+    const { token } = await register(app, 'admin@example.com')
+    const form = new FormData()
+    form.set('file', new File(['12345'], 'tiny.png', { type: 'image/png' }))
+
+    const upload = await app.handle(
+      new Request('http://localhost/api/assets', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: form,
+      }),
+    )
+
+    expect(upload.status).toBe(422)
+    expect(await upload.json()).toMatchObject({ error: { message: 'Asset must be 4B or smaller' } })
   }, HTTP_TEST_TIMEOUT_MS)
 
   test('rejects disallowed or oversized uploads', async () => {

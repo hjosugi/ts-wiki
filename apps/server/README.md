@@ -33,6 +33,15 @@ Set `JWT_SECRET` to a strong unique value before running with `NODE_ENV=producti
 or `BUN_ENV=production`; the server refuses to start with the development
 default in production mode.
 
+JWTs expire by default after 30 days. Set `TS_WIKI_JWT_TTL_SECONDS` to shorten
+or lengthen that window. Role changes and user deactivation are rechecked
+against the database on every request, so old tokens do not keep stale admin
+access.
+
+Set `TS_WIKI_PRIVATE=true` to require login for page/search/realtime read
+routes. Set `TS_WIKI_REGISTRATION=off` to disable self-registration after the
+first-admin bootstrap.
+
 For production seeding, set `TS_WIKI_SEED_ADMIN_PASSWORD` or capture the generated
 password from the `db:seed` output. The seed script never falls back to a shared
 default admin password.
@@ -76,7 +85,8 @@ settings. See `.env.example` for the full list.
 
 Uploaded assets use local disk by default. Set `ASSET_STORAGE=r2` with R2
 account credentials to store files in Cloudflare R2 while keeping the same
-`/assets/...` serving route.
+`/assets/...` serving route. `ASSET_MAX_BYTES` controls the upload limit
+(default 25 MiB); non-image assets are served as downloads.
 
 The server can serve the built Vue app directly. Build the web workspace and set
 `WEB_DIST_DIR` when the default `apps/web/dist` path is not correct:

@@ -15,7 +15,6 @@ import {
   type Role,
   can,
   forbidden,
-  rateLimited,
   unauthorized,
   validationError,
   serializePageFile,
@@ -30,6 +29,7 @@ import { createGitStorage, type GitConfig } from '../storage/git.ts'
 import { createGitSyncHandlers, startGitSyncScheduler } from '../storage/git-sync.ts'
 import type { CollabSeed } from '../realtime/collab.ts'
 import { otpauthUrl, randomBase32Secret, verifyPassword, verifyTotpCode } from '../services/auth.ts'
+import { isUserActive } from '../services/users.ts'
 import {
   audit,
   consoleStructuredLogger,
@@ -38,8 +38,7 @@ import {
 } from '../observability/logging.ts'
 import {
   ALLOWED_ASSET_MIME_TYPES,
-  ASSET_MAX_BYTES,
-  ASSET_MAX_SIZE,
+  ASSET_HARD_MAX_SIZE,
   assetExtensionForMime,
   type AssetView,
 } from '../services/assets.ts'
@@ -47,6 +46,7 @@ import type { CommentView } from '../services/comments.ts'
 import type { AutomationEvent, WebhookFetcher } from '../services/webhooks.ts'
 import { users, type Page, type User } from '../db/schema.ts'
 import { HttpError, unwrap, toErrorResponse } from './errors.ts'
+import { authRateLimitError, clientIp, createRateLimiter, type RequestIpServer } from './rate-limit.ts'
 
 export interface AppDeps {
   readonly db: DB
@@ -69,100 +69,46 @@ const publicUser = (
   totpEnabled: Boolean(user.totpEnabled),
 })
 
-const asRole = (value: unknown): Role | null =>
-  value === 'admin' || value === 'editor' || value === 'viewer' ? value : null
-
 interface JwtVerifier {
   verify(token: string): Promise<unknown>
 }
 
-const principalFromPayload = (payload: unknown): Principal | null => {
+interface JwtSigner {
+  sign(payload: Record<string, unknown>): Promise<string>
+}
+
+interface TokenPrincipal {
+  readonly id: string
+  readonly issuedAtMs: number
+}
+
+const tokenPrincipalFromPayload = (payload: unknown): TokenPrincipal | null => {
   const data = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : null
-  const role = asRole(data?.role)
+  if (!data) return null
   const id = data?.sub
-  if (typeof id !== 'string' || !role) {
+  if (typeof id !== 'string') {
     return null
   }
-  return { id, role }
+  const issuedAtMs =
+    typeof data.iatMs === 'number'
+      ? data.iatMs
+      : typeof data.iat === 'number'
+        ? data.iat * 1000
+        : 0
+  return { id, issuedAtMs }
 }
 
 const bearerToken = (authorization: string | undefined): string | null =>
   authorization?.startsWith('Bearer ') ? authorization.slice(7) : null
 
-const verifyPrincipal = async (jwt: JwtVerifier, token: string | null | undefined): Promise<Principal | null> => {
+const verifyTokenPrincipal = async (jwt: JwtVerifier, token: string | null | undefined): Promise<TokenPrincipal | null> => {
   if (!token) return null
   try {
-    return principalFromPayload(await jwt.verify(token))
+    return tokenPrincipalFromPayload(await jwt.verify(token))
   } catch {
     return null
   }
 }
-
-interface RateLimitBucket {
-  hits: number[]
-  lastSeen: number
-}
-
-const createRateLimiter = (limit: number, windowMs: number, maxBuckets = 10_000) => {
-  const buckets = new Map<string, RateLimitBucket>()
-  let lastSweep = 0
-
-  const sweepExpired = (now: number): void => {
-    if (now - lastSweep < windowMs) return
-    lastSweep = now
-    const cutoff = now - windowMs
-    for (const [key, bucket] of buckets) {
-      bucket.hits = bucket.hits.filter((hit) => hit > cutoff)
-      if (bucket.hits.length === 0 || bucket.lastSeen <= cutoff) buckets.delete(key)
-    }
-  }
-
-  const trimOverflow = (): void => {
-    while (buckets.size > maxBuckets) {
-      const oldest = buckets.keys().next().value
-      if (!oldest) return
-      buckets.delete(oldest)
-    }
-  }
-
-  return (key: string): boolean => {
-    const now = Date.now()
-    sweepExpired(now)
-    const cutoff = now - windowMs
-    const bucket = buckets.get(key) ?? { hits: [], lastSeen: now }
-    bucket.hits = bucket.hits.filter((hit) => hit > cutoff)
-    bucket.lastSeen = now
-    if (bucket.hits.length >= limit) {
-      buckets.delete(key)
-      buckets.set(key, bucket)
-      return false
-    }
-    bucket.hits.push(now)
-    buckets.delete(key)
-    buckets.set(key, bucket)
-    trimOverflow()
-    return true
-  }
-}
-
-interface RequestIpServer {
-  requestIP(request: Request): { address: string } | null
-}
-
-const firstForwardedIp = (request: Request): string | null =>
-  request.headers.get('cf-connecting-ip')?.trim() ||
-  request.headers.get('x-real-ip')?.trim() ||
-  request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-  null
-
-const directClientIp = (request: Request, server: RequestIpServer | null | undefined): string =>
-  server?.requestIP(request)?.address ?? 'local'
-
-const clientIp = (
-  request: Request,
-  server: RequestIpServer | null | undefined,
-  trustProxyHeaders: boolean,
-): string => trustProxyHeaders ? (firstForwardedIp(request) ?? directClientIp(request, server)) : directClientIp(request, server)
 
 const ASSET_RESPONSE_HEADER_ALLOWLIST = [
   'cache-control',
@@ -179,8 +125,15 @@ const assetResponse = (asset: AssetObject): Response => {
     if (value) headers.set(header, value)
   }
   headers.set('x-content-type-options', 'nosniff')
-  headers.set('content-disposition', 'inline')
+  const contentType = headers.get('content-type') ?? ''
+  headers.set('content-disposition', contentType.startsWith('image/') ? 'inline' : 'attachment')
   return new Response(asset.body, { headers })
+}
+
+const formatBytes = (bytes: number): string => {
+  if (bytes % (1024 * 1024) === 0) return `${bytes / (1024 * 1024)}MB`
+  if (bytes % 1024 === 0) return `${bytes / 1024}KB`
+  return `${bytes}B`
 }
 
 const safeAssetRequestPath = (rawPath: string): string | null => {
@@ -275,6 +228,40 @@ export const createApp = ({
   }
   const bus = createRealtimeBus(db, env.realtime)
   const presenceRuntime = createPresenceRuntime()
+  const signAuthToken = (jwt: JwtSigner, user: Pick<User, 'id' | 'role'>): Promise<string> => {
+    const now = Date.now()
+    return jwt.sign({
+      sub: user.id,
+      role: user.role,
+      iatMs: now,
+      exp: Math.floor(now / 1000) + env.auth.tokenTtlSeconds,
+    })
+  }
+  const publicSettings = () => ({
+    ...services.settings.public(),
+    privateWiki: env.auth.privateWiki,
+    registration: env.auth.registration,
+  })
+  const principalForToken = async (jwt: JwtVerifier, token: string | null | undefined): Promise<Principal | null> => {
+    const tokenPrincipal = await verifyTokenPrincipal(jwt, token)
+    if (!tokenPrincipal) return null
+    const user = services.users.findById(tokenPrincipal.id)
+    if (!isUserActive(user)) return null
+    if (user.tokenInvalidBefore > tokenPrincipal.issuedAtMs) return null
+    return services.authz.principalForUser(user)
+  }
+  const requirePageRead = (principal: Principal | null, path?: string): void => {
+    if (env.auth.privateWiki && !principal) throw new HttpError(unauthorized())
+    if (!can(principal, 'page:read', { path })) throw new HttpError(forbidden())
+  }
+  const requireSearchRead = (principal: Principal | null): void => {
+    if (env.auth.privateWiki && !principal) throw new HttpError(unauthorized())
+    if (!can(principal, 'search:read')) throw new HttpError(forbidden())
+  }
+  const requireAssetRead = (principal: Principal | null): void => {
+    if (env.auth.privateWiki && !principal) throw new HttpError(unauthorized())
+    if (!can(principal, 'asset:read')) throw new HttpError(forbidden())
+  }
 
   // ── Git storage (DB stays canonical; Git is a mirror + import source) ──────
   const gitConfig: GitConfig = { ...env.git, markerFile: join(env.dataDir, 'git-sync.json') }
@@ -288,18 +275,14 @@ export const createApp = ({
     const u = services.users.findById(id)
     return u ? { name: u.name, email: u.email } : null
   }
-  const gitSyncHandlers = createGitSyncHandlers({ services, bus })
-  startGitSyncScheduler(git, env.git, gitSyncHandlers, (error) =>
-    logger.warn({ type: 'git', action: 'auto_sync_failed', error }),
-  )
 
   const enforceAuthLimit = (
     request: Request,
     server: RequestIpServer | null | undefined,
     scope: string,
   ): void => {
-    if (!authLimiter(`${scope}:${clientIp(request, server, env.trustProxyHeaders)}`)) {
-      throw new HttpError(rateLimited('Too many authentication attempts; try again later'))
+    if (!authLimiter.check(`${scope}:${clientIp(request, server, env.trustProxyHeaders)}`)) {
+      throw new HttpError(authRateLimitError())
     }
   }
 
@@ -326,20 +309,85 @@ export const createApp = ({
   }, 60_000)
   ;(webhookRetryTimer as unknown as { unref?: () => void }).unref?.()
 
+  type PageChangedAction = 'created' | 'updated' | 'deleted' | 'moved'
+  const emitPageChanged = (action: PageChangedAction, path: string, from?: string): void => {
+    bus.emit({ type: 'page:changed', action, path, ...(from ? { from } : {}) })
+  }
+
+  const pageWriteEffects = async ({
+    action,
+    page,
+    path,
+    from,
+    principal,
+    auditAction,
+    auditData = {},
+    automation,
+    mirror = action === 'deleted' ? 'delete' : action === 'moved' ? 'move' : 'save',
+  }: {
+    action: PageChangedAction
+    page?: Page
+    path?: string
+    from?: string
+    principal: Principal | null
+    auditAction: string
+    auditData?: Record<string, unknown>
+    automation?: AutomationEvent
+    mirror?: 'save' | 'delete' | 'move' | 'none'
+  }): Promise<void> => {
+    const targetPath = path ?? page?.path
+    if (!targetPath) return
+    emitPageChanged(action, targetPath, from)
+    if (mirror === 'save' && page) void git.savePage(page, gitAuthor(principal?.id))
+    else if (mirror === 'delete') void git.deletePage(targetPath, gitAuthor(principal?.id))
+    else if (mirror === 'move' && page && from) void git.movePage(from, page, gitAuthor(principal?.id))
+    audit(logger, auditAction, { userId: principal?.id ?? null, path: targetPath, ...auditData })
+    if (automation) await publishAutomation(automation)
+  }
+
+  const gitSyncHandlers = createGitSyncHandlers({
+    services,
+    bus,
+    onPageWrite: (write) => {
+      void pageWriteEffects({
+        action: write.action,
+        page: write.page,
+        path: write.path,
+        principal: write.principal,
+        auditAction: `git_sync.page.${write.action}`,
+        auditData: { source: 'git-sync' },
+        automation: write.page
+          ? {
+              type: write.action === 'created' ? 'page.created' : 'page.updated',
+              actorId: write.principal.id,
+              data: { page: pageSnapshot(write.page), source: 'git-sync' },
+            }
+          : undefined,
+        mirror: 'none',
+      })
+    },
+  })
+  startGitSyncScheduler(git, env.git, gitSyncHandlers, (error) =>
+    logger.warn({ type: 'git', action: 'auto_sync_failed', error }),
+  )
+
   const collab = createCollabRuntime({
     // Debounced autosave: persist the live doc WITHOUT a revision (an explicit
     // Save still snapshots history + commits to Git). Readers get page:changed.
     persist: (room, text, expectedUpdatedAt, principal) => {
       const result = services.pages.saveContent(room, text, principal, expectedUpdatedAt)
       if (result.ok) {
-        bus.emit({ type: 'page:changed', action: 'updated', path: result.value.path })
-        void git.savePage(result.value, gitAuthor(principal?.id))
-        void publishAutomation({
-          type: 'page.updated',
-          actorId: principal?.id ?? null,
-          data: { page: pageSnapshot(result.value) },
+        void pageWriteEffects({
+          action: 'updated',
+          page: result.value,
+          principal,
+          auditAction: 'collab.autosave',
+          automation: {
+            type: 'page.updated',
+            actorId: principal?.id ?? null,
+            data: { page: pageSnapshot(result.value) },
+          },
         })
-        audit(logger, 'collab.autosave', { userId: principal?.id ?? null, path: result.value.path })
         return result.value.updatedAt
       }
       if (result.error.kind === 'conflict') {
@@ -357,11 +405,8 @@ export const createApp = ({
         requestStartedAt.set(request, Date.now())
       })
       // Resolve the current principal from a Bearer token on every request.
-      .resolve(async ({ jwt, headers, services }): Promise<{ principal: Principal | null }> => {
-        const tokenPrincipal = await verifyPrincipal(jwt, bearerToken(headers.authorization))
-        if (!tokenPrincipal) return { principal: null }
-        const user = services.users.findById(tokenPrincipal.id)
-        return { principal: user ? services.authz.principalForUser(user) : tokenPrincipal }
+      .resolve(async ({ jwt, headers }): Promise<{ principal: Principal | null }> => {
+        return { principal: await principalForToken(jwt, bearerToken(headers.authorization)) }
       })
       .onAfterHandle(({ request, server, set, principal }) => {
         const status = typeof set.status === 'number' ? set.status : 200
@@ -382,8 +427,8 @@ export const createApp = ({
       })
 
       // ── Health ────────────────────────────────────────────────────────────
-      .get('/api/health', () => ({ ok: true as const, name: 'ts-wiki', version: '0.3.0' }))
-      .get('/api/settings/public', ({ services }) => services.settings.public())
+      .get('/api/health', () => ({ ok: true as const, name: 'ts-wiki', version: '0.3.2' }))
+      .get('/api/settings/public', () => publicSettings())
 
       // ── Auth ──────────────────────────────────────────────────────────────
       .post(
@@ -392,9 +437,12 @@ export const createApp = ({
           enforceAuthLimit(request, server, 'register')
           // Bootstrap: the very first account becomes the admin.
           const role: Role = services.users.count() === 0 ? 'admin' : 'viewer'
+          if (role !== 'admin' && env.auth.registration === 'off') {
+            throw new HttpError(forbidden('Registration is disabled'))
+          }
           const user = unwrap(await services.users.create({ ...body, role }))
           services.authz.syncRoleGroup(user.id, user.role)
-          const token = await jwt.sign({ sub: user.id, role: user.role })
+          const token = await signAuthToken(jwt, user)
           audit(logger, 'auth.register', { userId: user.id, role: user.role })
           await publishAutomation({ type: 'user.created', actorId: user.id, data: { user: publicUser(user) } })
           return { token, user: publicUser(user) }
@@ -415,12 +463,13 @@ export const createApp = ({
           if (!user || !(await verifyPassword(body.password, user.passwordHash))) {
             throw new HttpError(unauthorized('Invalid email or password'))
           }
+          if (!isUserActive(user)) throw new HttpError(unauthorized('Account is deactivated'))
           if (user.totpEnabled) {
             if (!body.totpCode || !user.totpSecret || !verifyTotpCode(user.totpSecret, body.totpCode)) {
               throw new HttpError(unauthorized('Two-factor code required or invalid'))
             }
           }
-          const token = await jwt.sign({ sub: user.id, role: user.role })
+          const token = await signAuthToken(jwt, user)
           audit(logger, 'auth.login', { userId: user.id, role: user.role })
           return { token, user: publicUser(user) }
         },
@@ -432,6 +481,24 @@ export const createApp = ({
         if (!user) throw new HttpError(unauthorized())
         return { user: publicUser(user) }
       })
+      .put(
+        '/api/auth/profile',
+        async ({ body, principal, services }) => {
+          const user = unwrap(services.users.updateProfile(principal, body))
+          audit(logger, 'auth.profile.update', { userId: user.id })
+          return { user: publicUser(user) }
+        },
+        { body: t.Object({ name: t.Optional(t.String({ minLength: 1 })) }) },
+      )
+      .put(
+        '/api/auth/password',
+        async ({ body, principal, services }) => {
+          const user = unwrap(await services.users.changePassword(principal, body))
+          audit(logger, 'auth.password.change', { userId: user.id })
+          return { user: publicUser(user) }
+        },
+        { body: t.Object({ currentPassword: t.String(), newPassword: t.String({ minLength: 6 }) }) },
+      )
       .get('/api/auth/providers', ({ services }) => ({ providers: services.oidc.publicProviders() }))
       .post('/api/auth/totp/setup', ({ principal, services }) => {
         if (!principal) throw new HttpError(unauthorized())
@@ -503,7 +570,7 @@ export const createApp = ({
         '/api/auth/passkeys/login/verify',
         async ({ body, services, jwt }) => {
           const result = unwrap(await services.passkeys.verifyAuthentication(body))
-          const token = await jwt.sign({ sub: result.user.id, role: result.user.role })
+          const token = await signAuthToken(jwt, result.user)
           audit(logger, 'auth.passkey.login', {
             userId: result.user.id,
             passkeyId: result.passkey.id,
@@ -524,7 +591,7 @@ export const createApp = ({
         '/api/auth/oidc/:provider/callback',
         async ({ params, query, services, jwt }) => {
           const result = unwrap(await services.oidc.callback(params.provider, query.code, query.state))
-          const token = await jwt.sign({ sub: result.user.id, role: result.user.role })
+          const token = await signAuthToken(jwt, result.user)
           audit(logger, 'auth.oidc.login', {
             userId: result.user.id,
             provider: params.provider,
@@ -546,25 +613,40 @@ export const createApp = ({
       )
 
       // ── Pages: collection ─────────────────────────────────────────────────
-      .get('/api/pages', ({ services }) => ({ pages: services.pages.list() }))
-      .get('/api/spaces', ({ services }) => ({ spaces: services.pages.spaces() }))
+      .get('/api/pages', ({ services, principal }) => {
+        requirePageRead(principal)
+        return { pages: services.pages.list() }
+      })
+      .get('/api/spaces', ({ services, principal }) => {
+        requirePageRead(principal)
+        return { spaces: services.pages.spaces() }
+      })
       .get('/api/pages/trash', ({ services, principal }) => {
         if (!can(principal, 'page:delete')) throw new HttpError(forbidden())
         return { pages: services.pages.trash() }
       })
-      .get('/api/graph', ({ services }) => services.pages.graph())
-      .get('/api/events/index', ({ services }) => ({ events: services.pages.events() }))
+      .get('/api/graph', ({ services, principal }) => {
+        requirePageRead(principal)
+        return services.pages.graph()
+      })
+      .get('/api/events/index', ({ services, principal }) => {
+        requirePageRead(principal)
+        return { events: services.pages.events() }
+      })
       .post(
         '/api/pages',
         async ({ body, services, principal }) => {
           const page = unwrap(services.pages.create(body, principal))
-          bus.emit({ type: 'page:changed', action: 'created', path: page.path })
-          void git.savePage(page, gitAuthor(principal?.id))
-          audit(logger, 'page.create', { userId: principal?.id ?? null, path: page.path })
-          await publishAutomation({
-            type: 'page.created',
-            actorId: principal?.id ?? null,
-            data: { page: pageSnapshot(page) },
+          await pageWriteEffects({
+            action: 'created',
+            page,
+            principal,
+            auditAction: 'page.create',
+            automation: {
+              type: 'page.created',
+              actorId: principal?.id ?? null,
+              data: { page: pageSnapshot(page) },
+            },
           })
           return { page }
         },
@@ -592,33 +674,44 @@ export const createApp = ({
       // ── Pages: single (path is a query param so it may contain slashes) ───
       .get(
         '/api/page',
-        ({ query, services }) => {
-          const page = unwrap(services.pages.getByPath(query.path))
-          services.analytics.recordPageView(page.path)
-          return { page }
+        ({ query, services, principal }) => {
+          requirePageRead(principal, query.path)
+          const resolved = unwrap(services.pages.resolveByPath(query.path))
+          const page = resolved.page
+          unwrap(services.analytics.recordPageView(page.path, principal))
+          return { page, redirectedFrom: resolved.redirectedFrom }
         },
         { query: t.Object({ path: t.String() }) },
       )
       .get(
         '/api/page/backlinks',
-        ({ query, services }) => ({ backlinks: services.pages.backlinks(query.path) }),
+        ({ query, services, principal }) => {
+          requirePageRead(principal, query.path)
+          return { backlinks: services.pages.backlinks(query.path) }
+        },
         { query: t.Object({ path: t.String() }) },
       )
       .get(
         '/api/page/history',
-        ({ query, services }) => ({ revisions: unwrap(services.pages.history(query.path)) }),
+        ({ query, services, principal }) => {
+          requirePageRead(principal, query.path)
+          return { revisions: unwrap(services.pages.history(query.path)) }
+        },
         { query: t.Object({ path: t.String() }) },
       )
       .get(
         '/api/page/comments',
-        ({ query, services }) => ({ comments: unwrap(services.comments.list(query.path)) }),
+        ({ query, services, principal }) => {
+          requirePageRead(principal, query.path)
+          return { comments: unwrap(services.comments.list(query.path)) }
+        },
         { query: t.Object({ path: t.String() }) },
       )
       .post(
         '/api/page/comments',
         async ({ body, services, principal }) => {
           const comment = unwrap(services.comments.create(body.path, body.body, principal))
-          bus.emit({ type: 'page:changed', action: 'updated', path: comment.path })
+          emitPageChanged('updated', comment.path)
           audit(logger, 'comment.create', {
             userId: principal?.id ?? null,
             path: comment.path,
@@ -638,7 +731,7 @@ export const createApp = ({
         '/api/page/comments/:id',
         async ({ params, body, services, principal }) => {
           const comment = unwrap(services.comments.update(params.id, body.body, principal))
-          bus.emit({ type: 'page:changed', action: 'updated', path: comment.path })
+          emitPageChanged('updated', comment.path)
           audit(logger, 'comment.update', {
             userId: principal?.id ?? null,
             path: comment.path,
@@ -661,7 +754,7 @@ export const createApp = ({
         '/api/page/comments/:id/resolve',
         async ({ params, services, principal }) => {
           const comment = unwrap(services.comments.resolve(params.id, principal))
-          bus.emit({ type: 'page:changed', action: 'updated', path: comment.path })
+          emitPageChanged('updated', comment.path)
           audit(logger, 'comment.resolve', {
             userId: principal?.id ?? null,
             path: comment.path,
@@ -695,15 +788,18 @@ export const createApp = ({
         async ({ query, body, services, principal }) => {
           const previous = services.pages.getByPath(query.path)
           const page = unwrap(services.pages.update(query.path, body, principal))
-          bus.emit({ type: 'page:changed', action: 'updated', path: page.path })
-          void git.savePage(page, gitAuthor(principal?.id))
-          audit(logger, 'page.update', { userId: principal?.id ?? null, path: page.path })
-          await publishAutomation({
-            type: 'page.updated',
-            actorId: principal?.id ?? null,
-            data: {
-              page: pageSnapshot(page),
-              ...(previous.ok ? { previous: pageSnapshot(previous.value) } : {}),
+          await pageWriteEffects({
+            action: 'updated',
+            page,
+            principal,
+            auditAction: 'page.update',
+            automation: {
+              type: 'page.updated',
+              actorId: principal?.id ?? null,
+              data: {
+                page: pageSnapshot(page),
+                ...(previous.ok ? { previous: pageSnapshot(previous.value) } : {}),
+              },
             },
           })
           return { page }
@@ -732,20 +828,20 @@ export const createApp = ({
         async ({ body, services, principal }) => {
           const previous = services.pages.getByPath(body.path)
           const page = unwrap(services.pages.restoreRevision(body.path, body.revisionId, principal))
-          bus.emit({ type: 'page:changed', action: 'updated', path: page.path })
-          void git.savePage(page, gitAuthor(principal?.id))
-          audit(logger, 'page.revision.restore', {
-            userId: principal?.id ?? null,
-            path: page.path,
-            revisionId: body.revisionId,
-          })
-          await publishAutomation({
-            type: 'page.updated',
-            actorId: principal?.id ?? null,
-            data: {
-              page: pageSnapshot(page),
-              revisionId: body.revisionId,
-              ...(previous.ok ? { previous: pageSnapshot(previous.value) } : {}),
+          await pageWriteEffects({
+            action: 'updated',
+            page,
+            principal,
+            auditAction: 'page.revision.restore',
+            auditData: { revisionId: body.revisionId },
+            automation: {
+              type: 'page.updated',
+              actorId: principal?.id ?? null,
+              data: {
+                page: pageSnapshot(page),
+                revisionId: body.revisionId,
+                ...(previous.ok ? { previous: pageSnapshot(previous.value) } : {}),
+              },
             },
           })
           return { page }
@@ -756,13 +852,16 @@ export const createApp = ({
         '/api/page/archive',
         async ({ body, services, principal }) => {
           const page = unwrap(services.pages.archive(body.path, principal))
-          bus.emit({ type: 'page:changed', action: 'deleted', path: page.path })
-          void git.deletePage(page.path, gitAuthor(principal?.id))
-          audit(logger, 'page.archive', { userId: principal?.id ?? null, path: page.path })
-          await publishAutomation({
-            type: 'page.archived',
-            actorId: principal?.id ?? null,
-            data: { page: pageSnapshot(page) },
+          await pageWriteEffects({
+            action: 'deleted',
+            page,
+            principal,
+            auditAction: 'page.archive',
+            automation: {
+              type: 'page.archived',
+              actorId: principal?.id ?? null,
+              data: { page: pageSnapshot(page) },
+            },
           })
           return { page }
         },
@@ -772,13 +871,16 @@ export const createApp = ({
         '/api/page/restore',
         async ({ body, services, principal }) => {
           const page = unwrap(services.pages.restore(body.path, principal))
-          bus.emit({ type: 'page:changed', action: 'created', path: page.path })
-          void git.savePage(page, gitAuthor(principal?.id))
-          audit(logger, 'page.restore', { userId: principal?.id ?? null, path: page.path })
-          await publishAutomation({
-            type: 'page.restored',
-            actorId: principal?.id ?? null,
-            data: { page: pageSnapshot(page) },
+          await pageWriteEffects({
+            action: 'created',
+            page,
+            principal,
+            auditAction: 'page.restore',
+            automation: {
+              type: 'page.restored',
+              actorId: principal?.id ?? null,
+              data: { page: pageSnapshot(page) },
+            },
           })
           return { page }
         },
@@ -789,16 +891,21 @@ export const createApp = ({
         async ({ body, services, principal }) => {
           const previous = services.pages.getByPath(body.oldPath)
           const page = unwrap(services.pages.move(body.oldPath, body.newPath, principal))
-          bus.emit({ type: 'page:changed', action: 'moved', path: page.path, from: body.oldPath })
-          void git.movePage(body.oldPath, page, gitAuthor(principal?.id))
-          audit(logger, 'page.move', { userId: principal?.id ?? null, from: body.oldPath, path: page.path })
-          await publishAutomation({
-            type: 'page.moved',
-            actorId: principal?.id ?? null,
-            data: {
-              page: pageSnapshot(page),
-              previousPath: body.oldPath,
-              ...(previous.ok ? { previous: pageSnapshot(previous.value) } : {}),
+          await pageWriteEffects({
+            action: 'moved',
+            page,
+            from: body.oldPath,
+            principal,
+            auditAction: 'page.move',
+            auditData: { from: body.oldPath },
+            automation: {
+              type: 'page.moved',
+              actorId: principal?.id ?? null,
+              data: {
+                page: pageSnapshot(page),
+                previousPath: body.oldPath,
+                ...(previous.ok ? { previous: pageSnapshot(previous.value) } : {}),
+              },
             },
           })
           return { page }
@@ -815,15 +922,18 @@ export const createApp = ({
         async ({ query, services, principal }) => {
           const previous = services.pages.getByPath(query.path)
           const result = unwrap(services.pages.remove(query.path, principal))
-          bus.emit({ type: 'page:changed', action: 'deleted', path: result.path })
-          void git.deletePage(result.path, gitAuthor(principal?.id))
-          audit(logger, 'page.delete', { userId: principal?.id ?? null, path: result.path })
-          await publishAutomation({
-            type: 'page.deleted',
-            actorId: principal?.id ?? null,
-            data: {
-              path: result.path,
-              ...(previous.ok ? { page: pageSnapshot(previous.value) } : {}),
+          await pageWriteEffects({
+            action: 'deleted',
+            path: result.path,
+            principal,
+            auditAction: 'page.delete',
+            automation: {
+              type: 'page.deleted',
+              actorId: principal?.id ?? null,
+              data: {
+                path: result.path,
+                ...(previous.ok ? { page: pageSnapshot(previous.value) } : {}),
+              },
             },
           })
           return result
@@ -835,15 +945,18 @@ export const createApp = ({
         async ({ query, services, principal }) => {
           const previous = services.pages.getByPath(query.path)
           const result = unwrap(services.pages.purge(query.path, principal))
-          bus.emit({ type: 'page:changed', action: 'deleted', path: result.path })
-          void git.deletePage(result.path, gitAuthor(principal?.id))
-          audit(logger, 'page.purge', { userId: principal?.id ?? null, path: result.path })
-          await publishAutomation({
-            type: 'page.purged',
-            actorId: principal?.id ?? null,
-            data: {
-              path: result.path,
-              ...(previous.ok ? { page: pageSnapshot(previous.value) } : {}),
+          await pageWriteEffects({
+            action: 'deleted',
+            path: result.path,
+            principal,
+            auditAction: 'page.purge',
+            automation: {
+              type: 'page.purged',
+              actorId: principal?.id ?? null,
+              data: {
+                path: result.path,
+                ...(previous.ok ? { page: pageSnapshot(previous.value) } : {}),
+              },
             },
           })
           return result
@@ -854,7 +967,8 @@ export const createApp = ({
       // ── Export / Import ──────────────────────────────────────────────────
       .get(
         '/api/export/page',
-        ({ query, services }) => {
+        ({ query, services, principal }) => {
+          requirePageRead(principal, query.path)
           const page = unwrap(services.pages.getByPath(query.path))
           const filename = `${page.path.split('/').at(-1) || 'page'}.${query.format === 'html' ? 'html' : 'md'}`
           if (query.format === 'html') {
@@ -918,39 +1032,27 @@ export const createApp = ({
         async ({ body, services, principal }) => {
           if (!can(principal, 'page:write')) throw new HttpError(forbidden())
           const parsed = parsePageFile(body.content)
-          const title = (body.title ?? parsed.title).trim() || body.path.split('/').at(-1) || 'Imported page'
-          const description = body.description ?? parsed.description
-          const existing = services.pages.getByPath(body.path)
-          const page = unwrap(
-            existing.ok
-              ? services.pages.update(body.path, {
-                  title,
-                  description,
-                  content: parsed.content,
-                  labels: body.labels,
-                  status: body.status,
-                  locale: body.locale,
-                }, principal)
-              : services.pages.create({
-                  path: body.path,
-                  title,
-                  description,
-                  content: parsed.content,
-                  labels: body.labels,
-                  status: body.status,
-                  locale: body.locale,
-                }, principal),
-          )
-          bus.emit({ type: 'page:changed', action: existing.ok ? 'updated' : 'created', path: page.path })
-          void git.savePage(page, gitAuthor(principal?.id))
-          audit(logger, 'page.import_markdown', { userId: principal?.id ?? null, path: page.path })
-          await publishAutomation({
-            type: existing.ok ? 'page.updated' : 'page.created',
-            actorId: principal?.id ?? null,
-            data: {
-              page: pageSnapshot(page),
-              source: 'markdown-import',
-              ...(existing.ok ? { previous: pageSnapshot(existing.value) } : {}),
+          const result = unwrap(services.pages.upsertFromFile(body.path, parsed, {
+            title: body.title,
+            description: body.description,
+            labels: body.labels,
+            status: body.status,
+            locale: body.locale,
+          }, principal))
+          const page = result.page
+          await pageWriteEffects({
+            action: result.created ? 'created' : 'updated',
+            page,
+            principal,
+            auditAction: 'page.import_markdown',
+            automation: {
+              type: result.created ? 'page.created' : 'page.updated',
+              actorId: principal?.id ?? null,
+              data: {
+                page: pageSnapshot(page),
+                source: 'markdown-import',
+                ...(result.previous ? { previous: pageSnapshot(result.previous) } : {}),
+              },
             },
           })
           return { page }
@@ -974,14 +1076,16 @@ export const createApp = ({
       )
 
       // ── Search ────────────────────────────────────────────────────────────
-      .get('/api/search', ({ query, services }) =>
-        services.search.search(query.q ?? '', query.limit, {
+      .get('/api/search', ({ query, services, principal }) => {
+        requireSearchRead(principal)
+        return services.search.search(query.q ?? '', query.limit, {
           pathPrefix: query.pathPrefix,
           label: query.label,
           status: query.status,
           spaceKey: query.spaceKey,
           locale: query.locale,
-        }), {
+        })
+      }, {
         query: t.Object({
           q: t.Optional(t.String()),
           limit: t.Optional(t.Numeric()),
@@ -995,7 +1099,7 @@ export const createApp = ({
 
       // ── Realtime (Server-Sent Events; any transport subscribes to the bus) ─
       .get('/api/events', async ({ request, query, jwt }) => {
-        const principal = await verifyPrincipal(jwt, query.token)
+        const principal = await principalForToken(jwt, query.token)
         if (!principal) throw new HttpError(unauthorized())
         if (!can(principal, 'page:read')) throw new HttpError(forbidden())
 
@@ -1046,13 +1150,25 @@ export const createApp = ({
       .ws('/api/presence', {
         query: t.Object({
           path: t.String(),
+          token: t.Optional(t.String()),
           name: t.Optional(t.String()),
           userId: t.Optional(t.String()),
           mode: t.Optional(t.Union([t.Literal('viewing'), t.Literal('editing')])),
         }),
         open(ws) {
-          const { path, name, userId, mode } = ws.data.query
-          presenceRuntime.open(ws.id, ws, path, { name, userId, mode })
+          void (async () => {
+            const { path, token, name, userId, mode } = ws.data.query
+            const principal = await principalForToken(ws.data.jwt, token)
+            if (env.auth.privateWiki && !principal) {
+              ws.close(1008, 'Authentication required')
+              return
+            }
+            if (!can(principal, 'page:read', { path })) {
+              ws.close(1008, 'Read access required')
+              return
+            }
+            presenceRuntime.open(ws.id, ws, path, { name, userId: userId ?? principal?.id, mode })
+          })().catch(() => ws.close(1011, 'Presence authentication failed'))
         },
         close(ws) {
           presenceRuntime.close(ws.id)
@@ -1066,12 +1182,12 @@ export const createApp = ({
         }),
         open(ws) {
           void (async () => {
-            const principal = await verifyPrincipal(ws.data.jwt, ws.data.query.token)
-            if (!principal || !can(principal, 'page:write')) {
+            const principal = await principalForToken(ws.data.jwt, ws.data.query.token)
+            const room = decodeURIComponent(ws.data.params.room)
+            if (!principal || !can(principal, 'page:write', { path: room })) {
               ws.close(1008, 'Authentication required')
               return
             }
-            const room = decodeURIComponent(ws.data.params.room)
             const current = services.pages.getByPath(room)
             const seed = (): CollabSeed => ({
               text: current.ok ? current.value.content : '',
@@ -1091,10 +1207,7 @@ export const createApp = ({
 
       // ── Admin (each method gates on admin:access inside the service) ───────
       .get('/api/admin/stats', ({ services, principal }) => unwrap(services.admin.stats(principal)))
-      .get('/api/admin/analytics', ({ services, principal }) => {
-        if (!can(principal, 'admin:access')) throw new HttpError(forbidden())
-        return unwrap(services.analytics.summary(principal))
-      })
+      .get('/api/admin/analytics', ({ services, principal }) => unwrap(services.analytics.summary(principal)))
       .put(
         '/api/admin/settings',
         ({ body, services, principal }) => ({ settings: unwrap(services.settings.update(principal, body)) }),
@@ -1113,6 +1226,24 @@ export const createApp = ({
       .get('/api/admin/users', ({ services, principal }) => ({
         users: unwrap(services.admin.listUsers(principal)),
       }))
+      .put(
+        '/api/admin/users/password',
+        async ({ body, services, principal }) => {
+          const user = unwrap(await services.admin.setUserPassword(principal, body.userId, body.password))
+          audit(logger, 'admin.user.password.reset', { userId: principal?.id ?? null, targetUserId: user.id })
+          return { user }
+        },
+        { body: t.Object({ userId: t.String(), password: t.String({ minLength: 6 }) }) },
+      )
+      .post(
+        '/api/admin/users/deactivate',
+        ({ body, services, principal }) => {
+          const user = unwrap(services.admin.deactivateUser(principal, body.userId))
+          audit(logger, 'admin.user.deactivate', { userId: principal?.id ?? null, targetUserId: user.id })
+          return { user }
+        },
+        { body: t.Object({ userId: t.String() }) },
+      )
       .get('/api/admin/groups', ({ services, principal }) => ({
         groups: unwrap(services.authz.listGroups(principal)),
       }))
@@ -1344,8 +1475,8 @@ export const createApp = ({
           if (!assetExtensionForMime(file.type)) {
             throw new HttpError(validationError('Unsupported asset type', 'file'))
           }
-          if (file.size > ASSET_MAX_BYTES) {
-            throw new HttpError(validationError(`Asset must be ${ASSET_MAX_SIZE} or smaller`, 'file'))
+          if (file.size > env.assetUpload.maxBytes) {
+            throw new HttpError(validationError(`Asset must be ${formatBytes(env.assetUpload.maxBytes)} or smaller`, 'file'))
           }
           const id = crypto.randomUUID()
           const storageName = assetStorage.storageNameForUpload(id, file)
@@ -1373,7 +1504,7 @@ export const createApp = ({
         },
         {
           body: t.Object({
-            file: t.File({ maxSize: ASSET_MAX_SIZE, type: [...ALLOWED_ASSET_MIME_TYPES] }),
+            file: t.File({ maxSize: ASSET_HARD_MAX_SIZE }),
           }),
         },
       )

@@ -58,6 +58,8 @@ export const runMigrations = (sqlite: MigratableDatabase, options: MigrationOpti
       role          TEXT NOT NULL DEFAULT 'viewer',
       totp_secret   TEXT,
       totp_enabled  INTEGER NOT NULL DEFAULT 0,
+      disabled_at   INTEGER,
+      token_invalid_before INTEGER NOT NULL DEFAULT 0,
       created_at    INTEGER NOT NULL
     );
 
@@ -201,6 +203,12 @@ export const runMigrations = (sqlite: MigratableDatabase, options: MigrationOpti
       last_viewed_at INTEGER
     );
 
+    CREATE TABLE IF NOT EXISTS page_redirects (
+      from_path  TEXT PRIMARY KEY,
+      to_path    TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS site_settings (
       key        TEXT PRIMARY KEY,
       value      TEXT NOT NULL,
@@ -295,6 +303,8 @@ export const runMigrations = (sqlite: MigratableDatabase, options: MigrationOpti
   addColumn(sqlite, 'assets', 'storage_name', "TEXT NOT NULL DEFAULT ''")
   addColumn(sqlite, 'users', 'totp_secret', 'TEXT')
   addColumn(sqlite, 'users', 'totp_enabled', 'INTEGER NOT NULL DEFAULT 0')
+  addColumn(sqlite, 'users', 'disabled_at', 'INTEGER')
+  addColumn(sqlite, 'users', 'token_invalid_before', 'INTEGER NOT NULL DEFAULT 0')
 }
 
 /** Run migrations standalone: `bun src/db/migrate.ts`. */

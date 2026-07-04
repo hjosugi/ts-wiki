@@ -61,7 +61,14 @@ export interface AuthEnv {
   readonly siteName: string
   readonly publicOrigin: string
   readonly passkeyRpId: string
+  readonly tokenTtlSeconds: number
+  readonly registration: 'open' | 'off'
+  readonly privateWiki: boolean
   readonly oidcProviders: readonly OidcProviderEnv[]
+}
+
+export interface AssetUploadEnv {
+  readonly maxBytes: number
 }
 
 export interface Env {
@@ -76,6 +83,7 @@ export interface Env {
   readonly cors: CorsEnv
   readonly auth: AuthEnv
   readonly search: SearchEnv
+  readonly assetUpload: AssetUploadEnv
   readonly assetStorage: AssetStorageConfig
   readonly git: GitEnv
   readonly realtime: RealtimeEnv
@@ -112,6 +120,24 @@ const parseFtsTokenizer = (value: string | undefined): FtsTokenizer => {
   const tokenizer = value?.trim().toLowerCase() || 'unicode61'
   if (tokenizer === 'unicode61' || tokenizer === 'trigram') return tokenizer
   throw new Error('TS_WIKI_FTS_TOKENIZER must be either "unicode61" or "trigram".')
+}
+
+const parseBoolean = (value: string | undefined): boolean =>
+  value === 'true' || value === '1' || value === 'yes'
+
+const parsePositiveInteger = (value: string | undefined, fallback: number, name: string): number => {
+  if (!value?.trim()) return fallback
+  const parsed = Number(value)
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer.`)
+  }
+  return parsed
+}
+
+const parseRegistration = (value: string | undefined): AuthEnv['registration'] => {
+  const registration = value?.trim().toLowerCase() || 'open'
+  if (registration === 'open' || registration === 'off') return registration
+  throw new Error('TS_WIKI_REGISTRATION must be either "open" or "off".')
 }
 
 const loadJwtSecret = (source: EnvSource): string => {
@@ -244,6 +270,9 @@ const loadAuthEnv = (source: EnvSource): AuthEnv => {
     siteName: optionalTrimmed(source.TS_WIKI_SITE_NAME) ?? 'ts-wiki',
     publicOrigin,
     passkeyRpId: optionalTrimmed(source.PASSKEY_RP_ID) ?? originHost(publicOrigin),
+    tokenTtlSeconds: parsePositiveInteger(source.TS_WIKI_JWT_TTL_SECONDS, 30 * 24 * 60 * 60, 'TS_WIKI_JWT_TTL_SECONDS'),
+    registration: parseRegistration(source.TS_WIKI_REGISTRATION),
+    privateWiki: parseBoolean(source.TS_WIKI_PRIVATE),
     oidcProviders: providers,
   }
 }
@@ -270,6 +299,9 @@ export const loadEnv = (source: EnvSource = process.env): Env => {
     auth: loadAuthEnv(source),
     search: {
       ftsTokenizer: parseFtsTokenizer(source.TS_WIKI_FTS_TOKENIZER),
+    },
+    assetUpload: {
+      maxBytes: parsePositiveInteger(source.ASSET_MAX_BYTES, 25 * 1024 * 1024, 'ASSET_MAX_BYTES'),
     },
     assetStorage: loadAssetStorage(source, dataDir),
     git: {

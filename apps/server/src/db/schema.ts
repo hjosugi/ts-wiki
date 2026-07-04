@@ -18,6 +18,8 @@ export const users = sqliteTable('users', {
     .default('viewer'),
   totpSecret: text('totp_secret'),
   totpEnabled: integer('totp_enabled').notNull().default(0),
+  disabledAt: integer('disabled_at'),
+  tokenInvalidBefore: integer('token_invalid_before').notNull().default(0),
   createdAt: integer('created_at').notNull(),
 })
 
@@ -190,6 +192,12 @@ export const pageAnalytics = sqliteTable('page_analytics', {
   lastViewedAt: integer('last_viewed_at'),
 })
 
+export const pageRedirects = sqliteTable('page_redirects', {
+  fromPath: text('from_path').primaryKey(),
+  toPath: text('to_path').notNull(),
+  createdAt: integer('created_at').notNull(),
+})
+
 export const siteSettings = sqliteTable('site_settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
@@ -275,6 +283,7 @@ export type NewPage = typeof pages.$inferInsert
 export type PageRevision = typeof pageRevisions.$inferSelect
 export type PageComment = typeof pageComments.$inferSelect
 export type PageAnalytics = typeof pageAnalytics.$inferSelect
+export type PageRedirect = typeof pageRedirects.$inferSelect
 export type SiteSetting = typeof siteSettings.$inferSelect
 export type Asset = typeof assets.$inferSelect
 export type WebhookSubscription = typeof webhookSubscriptions.$inferSelect

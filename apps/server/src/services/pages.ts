@@ -32,10 +32,11 @@ import {
   isPageStatus,
   normalizeLocale,
   type PageStatus,
+  type PageFileData,
   type ExtractedCalendarEvent,
 } from '@ts-wiki/core'
 import type { DB } from '../db/client.ts'
-import { pageAnalytics, pageComments, pages, pageRevisions, type Page, type PageRevision } from '../db/schema.ts'
+import { pageAnalytics, pageComments, pageRedirects, pages, pageRevisions, type Page, type PageRevision } from '../db/schema.ts'
 
 export interface PageSummary {
   readonly path: string
@@ -92,6 +93,11 @@ export interface PageRevisionSummary {
   readonly createdAt: number
 }
 
+export interface ResolvedPage {
+  readonly page: Page
+  readonly redirectedFrom: readonly string[]
+}
+
 export interface UpdatePagePatch {
   readonly title?: string
   readonly content?: string
@@ -104,6 +110,20 @@ export interface UpdatePagePatch {
   readonly expectedUpdatedAt?: number | null
 }
 
+export interface UpsertPageFileOptions {
+  readonly title?: string
+  readonly description?: string
+  readonly labels?: readonly string[]
+  readonly status?: PageStatus
+  readonly locale?: string | null
+}
+
+export interface UpsertPageFileResult {
+  readonly page: Page
+  readonly created: boolean
+  readonly previous?: Page
+}
+
 export interface PageService {
   list(): PageSummary[]
   trash(): PageSummary[]
@@ -113,8 +133,15 @@ export interface PageService {
   events(): ExtractedCalendarEvent[]
   history(path: string): Result<PageRevisionSummary[], AppError>
   getByPath(path: string): Result<Page, AppError>
+  resolveByPath(path: string): Result<ResolvedPage, AppError>
   create(input: PageInput, principal: Principal | null): Result<Page, AppError>
   update(path: string, patch: UpdatePagePatch, principal: Principal | null): Result<Page, AppError>
+  upsertFromFile(
+    path: string,
+    file: PageFileData,
+    options: UpsertPageFileOptions,
+    principal: Principal | null,
+  ): Result<UpsertPageFileResult, AppError>
   /** Lightweight content save (no revision) — used by collaborative autosave. */
   saveContent(
     path: string,
@@ -147,6 +174,29 @@ export const createPageService = (db: DB): PageService => {
 
   const findById = (id: string): Page =>
     db.select().from(pages).where(eq(pages.id, id)).get()!
+
+  const findRedirect = (path: string): string | null =>
+    db.select().from(pageRedirects).where(eq(pageRedirects.fromPath, normalizePath(path))).get()?.toPath ?? null
+
+  const resolvePath = (path: string): Result<ResolvedPage, AppError> => {
+    let currentPath = normalizePath(path)
+    const redirectedFrom: string[] = []
+    const seen = new Set<string>()
+
+    for (let hop = 0; hop < 10; hop += 1) {
+      if (seen.has(currentPath)) return err(conflict(`Redirect loop detected for "${path}"`))
+      seen.add(currentPath)
+      const page = findByPath(currentPath)
+      if (page?.lifecycle === 'active') return ok({ page, redirectedFrom })
+
+      const nextPath = findRedirect(currentPath)
+      if (!nextPath) return err(notFound(`No page at "${path}"`))
+      redirectedFrom.push(currentPath)
+      currentPath = normalizePath(nextPath)
+    }
+
+    return err(conflict(`Redirect chain is too long for "${path}"`))
+  }
 
   const tombstoneConflict = (path: string): AppError =>
     conflict(`A deleted page exists here at "${normalizePath(path)}"; restore it from Trash or purge it first.`)
@@ -374,6 +424,10 @@ export const createPageService = (db: DB): PageService => {
       return ok(page)
     },
 
+    resolveByPath(path) {
+      return resolvePath(path)
+    },
+
     create(input, principal) {
       const validated = validatePageInput(input)
       if (!validated.ok) return validated
@@ -388,6 +442,7 @@ export const createPageService = (db: DB): PageService => {
       const id = crypto.randomUUID()
 
       const page = db.transaction((tx) => {
+        tx.delete(pageRedirects).where(eq(pageRedirects.fromPath, v.path)).run()
         tx.insert(pages)
           .values({
             id,
@@ -447,6 +502,36 @@ export const createPageService = (db: DB): PageService => {
       const page = writeExistingPage(current, v, principal, 'updated')
 
       return ok(page)
+    },
+
+    upsertFromFile(path, file, options, principal) {
+      const title = (options.title ?? file.title).trim() || normalizePath(path).split('/').at(-1) || 'Imported page'
+      const description = options.description ?? file.description
+      const existing = this.getByPath(path)
+      if (existing.ok) {
+        const page = this.update(path, {
+          title,
+          description,
+          content: file.content,
+          labels: options.labels,
+          status: options.status,
+          locale: options.locale,
+        }, principal)
+        if (!page.ok) return page
+        return ok({ page: page.value, created: false, previous: existing.value })
+      }
+
+      const page = this.create({
+        path,
+        title,
+        description,
+        content: file.content,
+        labels: options.labels,
+        status: options.status,
+        locale: options.locale,
+      }, principal)
+      if (!page.ok) return page
+      return ok({ page: page.value, created: true })
     },
 
     saveContent(path, content, principal, expectedUpdatedAt = null) {
@@ -579,6 +664,18 @@ export const createPageService = (db: DB): PageService => {
           .set({ path: v.path, updatedAt: now })
           .where(eq(pageComments.pageId, current.id))
           .run()
+        tx.delete(pageRedirects).where(eq(pageRedirects.fromPath, v.path)).run()
+        tx.update(pageRedirects)
+          .set({ toPath: v.path })
+          .where(eq(pageRedirects.toPath, current.path))
+          .run()
+        tx.insert(pageRedirects)
+          .values({ fromPath: current.path, toPath: v.path, createdAt: now })
+          .onConflictDoUpdate({
+            target: pageRedirects.fromPath,
+            set: { toPath: v.path, createdAt: now },
+          })
+          .run()
 
         for (const page of tx.select().from(pages).where(eq(pages.lifecycle, 'active')).all()) {
           const content = rewritePageLinks(page.content, current.path, v.path)
@@ -617,6 +714,8 @@ export const createPageService = (db: DB): PageService => {
           .set({ lifecycle: 'deleted', updatedAt: now })
           .where(eq(pages.id, current.id))
           .run()
+        tx.delete(pageRedirects).where(eq(pageRedirects.fromPath, current.path)).run()
+        tx.delete(pageRedirects).where(eq(pageRedirects.toPath, current.path)).run()
         ftsDelete.run(current.id)
         return findById(current.id)
       })
@@ -639,6 +738,8 @@ export const createPageService = (db: DB): PageService => {
         }
         for (const pagePath of paths) {
           tx.delete(pageAnalytics).where(eq(pageAnalytics.path, pagePath)).run()
+          tx.delete(pageRedirects).where(eq(pageRedirects.fromPath, pagePath)).run()
+          tx.delete(pageRedirects).where(eq(pageRedirects.toPath, pagePath)).run()
         }
         tx.delete(pageComments).where(eq(pageComments.pageId, current.id)).run()
         tx.delete(pageRevisions).where(eq(pageRevisions.pageId, current.id)).run()

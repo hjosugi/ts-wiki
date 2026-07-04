@@ -4,8 +4,8 @@ A **modern, lean, FP-leaning** open-source wiki — a deliberate, *finishable* r
 Bun + Elysia + Drizzle (SQLite/FTS5) server, Vue 3 front end, end-to-end type safety with **zero codegen**.
 
 > **Status: v0.3** — a small, complete, runnable wiki: Markdown pages with visual editing,
-> FTS search, local/OIDC/TOTP/passkey auth, groups/page rules, R2 assets, libSQL/Turso support,
-> webhooks, and a typed API.
+> FTS search, local/OIDC/TOTP/passkey auth, private-wiki mode, groups/page rules,
+> R2 assets, libSQL/Turso support, webhooks, and a typed API.
 
 ## Quick start
 
@@ -57,18 +57,18 @@ persistent volume, or Render Free backed by Turso/libSQL and R2. SQLite under
 Tagged releases publish a Docker image to GHCR:
 
 ```bash
-docker pull ghcr.io/hjosugi/ts-wiki:v0.3.1
+docker pull ghcr.io/hjosugi/ts-wiki:v0.3.2
 docker volume create ts-wiki-data
 export JWT_SECRET="$(openssl rand -hex 32)"
 docker run --rm -v ts-wiki-data:/data \
   -e JWT_SECRET="$JWT_SECRET" \
   -e TS_WIKI_SEED_ADMIN_PASSWORD="change-me-before-first-seed" \
-  ghcr.io/hjosugi/ts-wiki:v0.3.1 bun --filter '@ts-wiki/server' db:seed
+  ghcr.io/hjosugi/ts-wiki:v0.3.2 bun --filter '@ts-wiki/server' db:seed
 docker run -d --name ts-wiki --restart unless-stopped \
   -p 4000:4000 -v ts-wiki-data:/data \
   -e NODE_ENV=production \
   -e JWT_SECRET="$JWT_SECRET" \
-  ghcr.io/hjosugi/ts-wiki:v0.3.1
+  ghcr.io/hjosugi/ts-wiki:v0.3.2
 ```
 
 Put Caddy, nginx, or a free Cloudflare Tunnel in front of port `4000` for TLS
@@ -109,3 +109,10 @@ metadata.
 | Per-package guides | [`packages/core`](packages/core/README.md) · [`apps/server`](apps/server/README.md) · [`apps/web`](apps/web/README.md) |
 
 Run any task with `bun run <name>` (`dev`, `db:seed`, `db:reset`, `test`, `typecheck`, …) — full list in [docs/DESIGN.md](docs/DESIGN.md#scripts).
+
+## Security knobs
+
+Set `TS_WIKI_PRIVATE=true` to require login for page/search/realtime read routes.
+Set `TS_WIKI_REGISTRATION=off` to disable self-registration after the first
+admin bootstrap. JWT lifetime is configurable with `TS_WIKI_JWT_TTL_SECONDS`,
+and uploads are capped by `ASSET_MAX_BYTES` (default 25 MiB).

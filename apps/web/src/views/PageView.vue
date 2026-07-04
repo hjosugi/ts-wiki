@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { Api, type Page, type PageBacklink } from '@/lib/api'
 import { paramToPath } from '@/router'
 import { useAuth } from '@/stores/auth'
@@ -15,6 +15,7 @@ import type { PageGraph } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 
 const route = useRoute()
+const router = useRouter()
 const auth = useAuth()
 const { t } = useI18n()
 
@@ -23,8 +24,10 @@ const graph = ref<PageGraph>({ nodes: [], edges: [] })
 const backlinks = ref<PageBacklink[]>([])
 const error = ref<string | null>(null)
 const loading = ref(false)
+const redirectedFrom = ref<string[]>([])
 
 const path = computed(() => paramToPath(route.params.path) || 'home')
+const routeRedirectedFrom = computed(() => typeof route.query.redirectedFrom === 'string' ? route.query.redirectedFrom : null)
 const { viewers } = usePresence(path)
 const editors = computed(() => viewers.value.filter((v) => v.mode === 'editing'))
 const editorsLabel = computed(() => {
@@ -46,8 +49,14 @@ async function load(): Promise<void> {
   error.value = null
   page.value = null
   backlinks.value = []
+  redirectedFrom.value = routeRedirectedFrom.value ? [routeRedirectedFrom.value] : []
   try {
-    page.value = await Api.getPage(path.value)
+    const result = await Api.getPageResult(path.value)
+    page.value = result.page
+    redirectedFrom.value = result.redirectedFrom.length ? [...result.redirectedFrom] : redirectedFrom.value
+    if (result.redirectedFrom.length && result.page.path !== path.value) {
+      await router.replace({ path: `/${result.page.path}`, query: { redirectedFrom: result.redirectedFrom[0] } })
+    }
     try {
       const [nextGraph, nextBacklinks] = await Promise.all([
         Api.graph(),
@@ -72,10 +81,11 @@ watch(path, load, { immediate: true })
 async function reloadInPlace(): Promise<void> {
   try {
     const [nextPage, nextBacklinks] = await Promise.all([
-      Api.getPage(path.value),
+      Api.getPageResult(path.value),
       Api.backlinks(path.value),
     ])
-    page.value = nextPage
+    page.value = nextPage.page
+    redirectedFrom.value = nextPage.redirectedFrom
     backlinks.value = nextBacklinks
   } catch {
     page.value = null // deleted or moved away → show the empty state
@@ -94,6 +104,9 @@ onUnmounted(stopRealtime)
   <div v-else-if="page" class="flex gap-8">
     <article class="flex-1 min-w-0">
       <PageHeader :page="page" :can-edit="auth.canEdit" />
+      <p v-if="redirectedFrom.length" class="mb-4 text-sm text-gray-500">
+        Redirected from /{{ redirectedFrom[0] }}
+      </p>
       <div v-if="viewers.length > 1" class="flex items-center gap-2 -mt-2 mb-4">
         <div class="flex -space-x-2">
           <span

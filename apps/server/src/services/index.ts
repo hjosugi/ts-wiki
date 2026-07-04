@@ -42,6 +42,9 @@ const defaultAuth: AuthEnv = {
   siteName: 'ts-wiki',
   publicOrigin: 'http://localhost:4000',
   passkeyRpId: 'localhost',
+  tokenTtlSeconds: 30 * 24 * 60 * 60,
+  registration: 'open',
+  privateWiki: false,
   oidcProviders: [],
 }
 

@@ -11,11 +11,15 @@ describe('loadEnv', () => {
     expect(env.trustProxyHeaders).toBe(false)
     expect(env.cors.origins).toBeNull()
     expect(env.search).toEqual({ ftsTokenizer: 'unicode61' })
+    expect(env.assetUpload).toEqual({ maxBytes: 25 * 1024 * 1024 })
     expect(env.assetStorage).toEqual({
       type: 'local',
       dataDir: './data',
       publicBaseUrl: null,
     })
+    expect(env.auth.tokenTtlSeconds).toBe(30 * 24 * 60 * 60)
+    expect(env.auth.registration).toBe('open')
+    expect(env.auth.privateWiki).toBe(false)
     expect(env.auth.oidcProviders).toEqual([])
   })
 
@@ -98,6 +102,24 @@ describe('loadEnv', () => {
     expect(loadEnv({ TS_WIKI_FTS_TOKENIZER: 'trigram' }).search.ftsTokenizer).toBe('trigram')
     expect(loadEnv({ TS_WIKI_FTS_TOKENIZER: 'UNICODE61' }).search.ftsTokenizer).toBe('unicode61')
     expect(() => loadEnv({ TS_WIKI_FTS_TOKENIZER: 'kuromoji' })).toThrow(/TS_WIKI_FTS_TOKENIZER/)
+  })
+
+  test('parses auth lifecycle and upload limit settings', () => {
+    const env = loadEnv({
+      TS_WIKI_PRIVATE: 'true',
+      TS_WIKI_REGISTRATION: 'off',
+      TS_WIKI_JWT_TTL_SECONDS: '604800',
+      ASSET_MAX_BYTES: '1024',
+    })
+
+    expect(env.auth.privateWiki).toBe(true)
+    expect(env.auth.registration).toBe('off')
+    expect(env.auth.tokenTtlSeconds).toBe(604800)
+    expect(env.assetUpload.maxBytes).toBe(1024)
+
+    expect(() => loadEnv({ TS_WIKI_REGISTRATION: 'closed' })).toThrow(/TS_WIKI_REGISTRATION/)
+    expect(() => loadEnv({ TS_WIKI_JWT_TTL_SECONDS: '0' })).toThrow(/TS_WIKI_JWT_TTL_SECONDS/)
+    expect(() => loadEnv({ ASSET_MAX_BYTES: '-1' })).toThrow(/ASSET_MAX_BYTES/)
   })
 
   test('parses R2 asset storage with the official account endpoint', () => {

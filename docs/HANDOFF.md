@@ -21,7 +21,7 @@ things are the way they are, what bit us, and exactly where to plug in the next 
 | DB schema + FTS5 migration | ✅ | SQLite default plus libSQL/Turso embedded-replica support |
 | Pages service (CRUD) | ✅ | transactional: render + revision + FTS index together |
 | Search service (FTS5/BM25) | ✅ | weighted columns, snippets, prefix queries |
-| Users + auth | ✅ | local password, JWT, OIDC, TOTP, passkeys; first account → admin |
+| Users + auth | ✅ | local password, expiring/revocable JWT, OIDC, TOTP, passkeys, private mode; first account → admin |
 | Groups + page rules | ✅ | role default groups, memberships, path ACL rules, deny precedence |
 | Assets upload | ✅ | local or R2 bytes, DB metadata, upload/picker UI |
 | Elysia HTTP app + Eden type | ✅ | exports `App`; error mapping centralised |
@@ -103,8 +103,9 @@ Cross-cutting principles (the "FP-leaning architecture" the user asked for):
 4. **Auto-descriptions must be re-derived on update.** Carrying the old auto-summary forward left
    stale words in the search index. `pages.update` passes `description: patch.description`
    (undefined → re-summarise from new content). See the comment there.
-5. **`author_id` is a soft reference, not a FK.** A JWT can outlive its user; a hard FK made saves
-   500. It's a plain column (documented in `schema.ts`/`migrate.ts`).
+5. **`author_id` is a soft reference, not a FK.** Tokens are now revalidated against the user row
+   on every request, but historical pages/revisions still need to survive user deletion. It's a
+   plain column (documented in `schema.ts`/`migrate.ts`).
 6. **Slugs use an allow-list** (`[^\p{L}\p{N}]+ → -`), not a block-list, so Japanese/Unicode
    survive and arbitrary punctuation is handled uniformly. Don't "simplify" it back to ASCII.
 7. **FTS5 tokenizer & CJK.** Default `unicode61` doesn't segment Japanese. For CJK-heavy content,
@@ -117,8 +118,8 @@ Cross-cutting principles (the "FP-leaning architecture" the user asked for):
    Git mirroring is a content mirror, not a full system backup.
 10. **Structured logs are stdout JSON.** Request logs cover method/path/status/duration/IP/user;
    audit logs cover auth, page/admin mutations, asset uploads, Git sync, and collab autosave.
-11. **Realtime auth split.** SSE and Yjs collab require tokens; presence remains cosmetic and
-   unauthenticated display state.
+11. **Realtime auth split.** SSE and Yjs collab require tokens. Presence is cosmetic in public
+   mode, but private wiki mode requires a valid token before opening the socket.
 
 ---
 

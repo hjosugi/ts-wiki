@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import type { Principal } from '@ts-wiki/core'
 import { createDb } from './db/client.ts'
+import { pageRedirects } from './db/schema.ts'
 import { createServices } from './services/index.ts'
 
 const admin: Principal = { id: 'admin-1', role: 'admin' }
@@ -98,6 +99,54 @@ describe('page + search slice (in-memory db)', () => {
     if (current.ok) expect(current.value.title).toBe('First')
   })
 
+  test('upsertFromFile centralizes markdown import create/update fallback', () => {
+    const db = createDb(':memory:')
+    const { pages } = createServices(db)
+
+    const created = pages.upsertFromFile('docs/imported', {
+      title: '',
+      description: 'from file',
+      content: '# Imported\n\nBody',
+    }, {}, admin)
+    expect(created.ok).toBe(true)
+    if (created.ok) {
+      expect(created.value.created).toBe(true)
+      expect(created.value.page.title).toBe('imported')
+      expect(created.value.page.description).toBe('from file')
+    }
+
+    const updated = pages.upsertFromFile('docs/imported', {
+      title: 'Updated',
+      description: '',
+      content: 'Updated body',
+    }, { labels: ['Docs'], status: 'verified' }, admin)
+    expect(updated.ok).toBe(true)
+    if (updated.ok) {
+      expect(updated.value.created).toBe(false)
+      expect(updated.value.previous?.title).toBe('imported')
+      expect(updated.value.page.title).toBe('Updated')
+      expect(updated.value.page.labels).toBe('["docs"]')
+      expect(updated.value.page.status).toBe('verified')
+    }
+  })
+
+  test('saveContent and explicit save share validation and derived descriptions', () => {
+    const db = createDb(':memory:')
+    const { pages } = createServices(db)
+    pages.create({ path: 'docs/collab', title: 'Collab', content: 'initial' }, admin)
+
+    const autosaved = pages.saveContent('docs/collab', 'A shared description body for autosave.', admin)
+    expect(autosaved.ok).toBe(true)
+    expect(tableCount(db, 'page_revisions')).toBe(1)
+    const explicit = pages.update('docs/collab', { content: 'A shared description body for autosave.' }, admin)
+    expect(explicit.ok).toBe(true)
+    expect(tableCount(db, 'page_revisions')).toBe(2)
+    if (autosaved.ok && explicit.ok) {
+      expect(autosaved.value.description).toBe(explicit.value.description)
+      expect(autosaved.value.content).toBe(explicit.value.content)
+    }
+  })
+
   test('trigram tokenizer finds Japanese mid-run terms', () => {
     const db = createDb(':memory:', { ftsTokenizer: 'trigram' })
     const { pages, search } = createServices(db)
@@ -179,6 +228,41 @@ describe('page + search slice (in-memory db)', () => {
       { path: 'home', title: 'Home', label: 'old page', kind: 'wikilink' },
       { path: 'home', title: 'Home', label: 'new/path', kind: 'markdown' },
     ])
+  })
+
+  test('move records redirects and resolves old paths after chained moves', () => {
+    const db = createDb(':memory:')
+    const { pages } = createServices(db)
+    pages.create({ path: 'docs/old', title: 'Old', content: 'content' }, admin)
+
+    expect(pages.move('docs/old', 'docs/middle', admin).ok).toBe(true)
+    expect(pages.move('docs/middle', 'docs/new', admin).ok).toBe(true)
+
+    const old = pages.resolveByPath('docs/old')
+    expect(old.ok).toBe(true)
+    if (old.ok) {
+      expect(old.value.page.path).toBe('docs/new')
+      expect(old.value.redirectedFrom).toEqual(['docs/old'])
+    }
+
+    const middle = pages.resolveByPath('docs/middle')
+    expect(middle.ok).toBe(true)
+    if (middle.ok) {
+      expect(middle.value.page.path).toBe('docs/new')
+      expect(middle.value.redirectedFrom).toEqual(['docs/middle'])
+    }
+  })
+
+  test('redirect resolution detects loops', () => {
+    const db = createDb(':memory:')
+    const { pages } = createServices(db)
+    db.insert(pageRedirects).values({ fromPath: 'a', toPath: 'b', createdAt: Date.now() }).run()
+    db.insert(pageRedirects).values({ fromPath: 'b', toPath: 'a', createdAt: Date.now() }).run()
+
+    const resolved = pages.resolveByPath('a')
+
+    expect(resolved.ok).toBe(false)
+    if (!resolved.ok) expect(resolved.error.kind).toBe('conflict')
   })
 
   test('move refuses to overwrite an existing page', () => {
@@ -321,7 +405,7 @@ describe('page + search slice (in-memory db)', () => {
     expect(assets.remove('asset-1', viewer).ok).toBe(false)
     expect(assets.remove('asset-1', admin).ok).toBe(true)
 
-    analytics.recordPageView('docs/private')
+    analytics.recordPageView('docs/private', admin)
     expect(analytics.summary(viewer).ok).toBe(false)
     const summary = analytics.summary(admin)
     expect(summary.ok).toBe(true)
@@ -344,7 +428,7 @@ describe('page + search slice (in-memory db)', () => {
     const { pages, search, comments, analytics } = createServices(db)
     pages.create({ path: 'docs/archive-me', title: 'Archive me', content: 'durable kiwi' }, admin)
     comments.create('docs/archive-me', 'sensitive note', admin)
-    analytics.recordPageView('docs/archive-me')
+    analytics.recordPageView('docs/archive-me', admin)
 
     const archived = pages.archive('docs/archive-me', admin)
     expect(archived.ok).toBe(true)
@@ -363,5 +447,12 @@ describe('page + search slice (in-memory db)', () => {
     expect(tableCount(db, 'page_revisions')).toBe(0)
     expect(tableCount(db, 'page_comments')).toBe(0)
     expect(tableCount(db, 'page_analytics')).toBe(0)
+    const textDump = JSON.stringify({
+      pages: db.$client.prepare('SELECT * FROM pages').all(),
+      revisions: db.$client.prepare('SELECT * FROM page_revisions').all(),
+      comments: db.$client.prepare('SELECT * FROM page_comments').all(),
+    })
+    expect(textDump).not.toContain('durable kiwi')
+    expect(textDump).not.toContain('sensitive note')
   })
 })

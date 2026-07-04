@@ -50,6 +50,29 @@ async function removeUserFromGroup(user: AdminUserView, groupKey: string): Promi
   }
 }
 
+async function resetPassword(user: AdminUserView): Promise<void> {
+  const password = prompt(`New password for ${user.email}`)
+  if (!password) return
+  error.value = null
+  try {
+    const updated = await Api.adminSetPassword(user.id, password)
+    Object.assign(user, updated)
+  } catch (e) {
+    error.value = (e as Error).message
+  }
+}
+
+async function deactivateUser(user: AdminUserView): Promise<void> {
+  if (user.disabledAt || !confirm(`Deactivate ${user.email}?`)) return
+  error.value = null
+  try {
+    const updated = await Api.adminDeactivateUser(user.id)
+    Object.assign(user, updated)
+  } catch (e) {
+    error.value = (e as Error).message
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -66,11 +89,15 @@ onMounted(load)
             <th class="p-3 font-medium">Email</th>
             <th class="p-3 font-medium">Groups</th>
             <th class="p-3 font-medium w-44">Role</th>
+            <th class="p-3 font-medium w-48">Actions</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="u in users" :key="u.id" class="border-b border-gray-100 dark:border-gray-800/60 last:border-0">
-            <td class="p-3 font-medium">{{ u.name }}</td>
+            <td class="p-3 font-medium">
+              {{ u.name }}
+              <span v-if="u.disabledAt" class="ml-2 text-xs text-red-500">disabled</span>
+            </td>
             <td class="p-3 text-gray-500">{{ u.email }}</td>
             <td class="p-3">
               <div class="flex flex-wrap gap-1">
@@ -91,6 +118,19 @@ onMounted(load)
                 <option v-for="r in ROLES" :key="r" :value="r">{{ r }}</option>
               </select>
               <span v-if="u.id === auth.user?.id" class="text-xs text-gray-400 ml-2">(you)</span>
+            </td>
+            <td class="p-3">
+              <div class="flex flex-wrap gap-2">
+                <button class="btn-ghost py-1 text-xs" type="button" @click="resetPassword(u)">Reset password</button>
+                <button
+                  class="btn-danger py-1 text-xs"
+                  type="button"
+                  :disabled="Boolean(u.disabledAt) || u.id === auth.user?.id"
+                  @click="deactivateUser(u)"
+                >
+                  Deactivate
+                </button>
+              </div>
             </td>
           </tr>
         </tbody>

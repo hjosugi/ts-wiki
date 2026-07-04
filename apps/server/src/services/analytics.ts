@@ -15,7 +15,7 @@ export interface AnalyticsSummary {
 }
 
 export interface AnalyticsService {
-  recordPageView(path: string): void
+  recordPageView(path: string, principal: Principal | null): Result<void, AppError>
   summary(principal: Principal | null, limit?: number): Result<AnalyticsSummary, AppError>
 }
 
@@ -29,8 +29,10 @@ export const createAnalyticsService = (db: DB): AnalyticsService => {
   `)
 
   return {
-    recordPageView(path) {
+    recordPageView(path, principal) {
+      if (!can(principal, 'page:read', { path })) return err(forbidden())
       upsert.run(path, Date.now())
+      return ok(undefined)
     },
     summary(principal, limit = 10) {
       if (!can(principal, 'admin:access')) return err(forbidden())

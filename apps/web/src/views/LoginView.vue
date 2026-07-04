@@ -18,6 +18,7 @@ const totpCode = ref('')
 const error = ref<string | null>(null)
 const busy = ref(false)
 const providers = ref<PublicAuthProvider[]>([])
+const registration = ref<'open' | 'off'>('open')
 
 async function submit(): Promise<void> {
   busy.value = true
@@ -55,6 +56,11 @@ async function loadProviders(): Promise<void> {
   providers.value = await Api.authProviders().catch(() => [])
 }
 
+async function loadPublicSettings(): Promise<void> {
+  registration.value = await Api.publicSettings().then((settings) => settings.registration).catch(() => 'open')
+  if (registration.value === 'off' && mode.value === 'register') mode.value = 'login'
+}
+
 function startProvider(provider: PublicAuthProvider): void {
   window.location.href = `/api/auth/oidc/${encodeURIComponent(provider.id)}/start`
 }
@@ -69,7 +75,7 @@ onMounted(async () => {
     router.push('/')
     return
   }
-  await loadProviders()
+  await Promise.all([loadProviders(), loadPublicSettings()])
 })
 </script>
 
@@ -120,6 +126,7 @@ onMounted(async () => {
     </div>
 
     <button
+      v-if="registration === 'open' || mode === 'register'"
       class="text-sm link-quiet mt-4"
       @click="mode = mode === 'login' ? 'register' : 'login'"
     >

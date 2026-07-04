@@ -248,6 +248,13 @@ async function save(): Promise<void> {
       locale: locale.value,
     }
     if (isEdit.value) {
+      if (path.value !== originalPath.value) {
+        const inbound = await Api.backlinks(originalPath.value).catch(() => [])
+        if (inbound.length > 0 && !confirm(`${inbound.length} inbound link${inbound.length === 1 ? '' : 's'} point to /${originalPath.value}. Move anyway?`)) {
+          path.value = originalPath.value
+          return
+        }
+      }
       const updated = await Api.updatePage(originalPath.value, {
         title: title.value,
         content: content.value,

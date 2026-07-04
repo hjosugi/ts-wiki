@@ -26,6 +26,7 @@ import {
 import type { DB } from '../db/client.ts'
 import type { AuthEnv } from '../env.ts'
 import { passkeys, users, webauthnChallenges, type Passkey, type User } from '../db/schema.ts'
+import { isUserActive } from './users.ts'
 
 export interface PasskeyView {
   readonly id: string
@@ -152,7 +153,8 @@ export const createPasskeyService = (db: DB, auth: AuthEnv): PasskeyService => {
 
   const findUser = (principal: Principal | null): User | null => {
     if (!principal) return null
-    return db.select().from(users).where(eq(users.id, principal.id)).get() ?? null
+    const user = db.select().from(users).where(eq(users.id, principal.id)).get() ?? null
+    return isUserActive(user) ? user : null
   }
 
   const passkeysForUser = (userId: string): Passkey[] =>
@@ -237,16 +239,17 @@ export const createPasskeyService = (db: DB, auth: AuthEnv): PasskeyService => {
     async authenticationOptions(input = {}) {
       const email = input.email?.trim().toLowerCase()
       const user = email ? db.select().from(users).where(eq(users.email, email)).get() : null
-      const credentials = user ? passkeysForUser(user.id) : []
+      const activeUser = isUserActive(user) ? user : null
+      const credentials = activeUser ? passkeysForUser(activeUser.id) : []
       const options = await generateAuthenticationOptions({
         rpID: auth.passkeyRpId,
-        allowCredentials: user ? credentials.map((credential) => ({
+        allowCredentials: activeUser ? credentials.map((credential) => ({
           id: credential.id,
           transports: parseTransports(credential.transports),
         })) : undefined,
         userVerification: 'preferred',
       })
-      storeChallenge(options.challenge, 'authentication', user?.id ?? null)
+      storeChallenge(options.challenge, 'authentication', activeUser?.id ?? null)
       return ok({ options })
     },
 
@@ -282,7 +285,7 @@ export const createPasskeyService = (db: DB, auth: AuthEnv): PasskeyService => {
         .run()
 
       const user = db.select().from(users).where(eq(users.id, credential.userId)).get()
-      if (!user) return err(unauthorized('Passkey user was not found'))
+      if (!isUserActive(user)) return err(unauthorized('Passkey user was not found'))
       return ok({
         user,
         passkey: toView({

@@ -3,11 +3,20 @@ import type { Services } from '../services/index.ts'
 import type { EventBus } from '../realtime/bus.ts'
 import type { GitEnv } from '../env.ts'
 import type { GitStorage, GitSyncHandlers } from './git.ts'
+import type { Page } from '../db/schema.ts'
+
+export interface GitSyncPageWrite {
+  readonly action: 'created' | 'updated' | 'deleted'
+  readonly page?: Page
+  readonly path: string
+  readonly principal: Principal
+}
 
 export interface GitSyncRuntimeDeps {
   readonly services: Services
   readonly bus: EventBus
   readonly systemPrincipal?: Principal
+  readonly onPageWrite?: (write: GitSyncPageWrite) => void
 }
 
 const DEFAULT_SYSTEM: Principal = { id: 'git-sync', role: 'admin' }
@@ -16,21 +25,20 @@ export const createGitSyncHandlers = ({
   services,
   bus,
   systemPrincipal = DEFAULT_SYSTEM,
+  onPageWrite,
 }: GitSyncRuntimeDeps): GitSyncHandlers => ({
   upsert: (path, file) => {
-    const title = file.title || path.split('/').pop() || path
-    const existing = services.pages.getByPath(path)
-    const result = existing.ok
-      ? services.pages.update(path, { title, description: file.description, content: file.content }, systemPrincipal)
-      : services.pages.create({ path, title, content: file.content, description: file.description }, systemPrincipal)
-
+    const result = services.pages.upsertFromFile(path, file, {}, systemPrincipal)
     if (result.ok) {
-      bus.emit({ type: 'page:changed', action: existing.ok ? 'updated' : 'created', path: result.value.path })
+      const action = result.value.created ? 'created' : 'updated'
+      if (onPageWrite) onPageWrite({ action, page: result.value.page, path: result.value.page.path, principal: systemPrincipal })
+      else bus.emit({ type: 'page:changed', action, path: result.value.page.path })
     }
   },
   remove: (path) => {
     if (services.pages.remove(path, systemPrincipal).ok) {
-      bus.emit({ type: 'page:changed', action: 'deleted', path })
+      if (onPageWrite) onPageWrite({ action: 'deleted', path, principal: systemPrincipal })
+      else bus.emit({ type: 'page:changed', action: 'deleted', path })
     }
   },
 })

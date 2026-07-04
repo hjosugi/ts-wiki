@@ -9,6 +9,7 @@ import { assets, type Asset } from '../db/schema.ts'
 
 export const ASSET_MAX_SIZE = '25m' as const
 export const ASSET_MAX_BYTES = 25 * 1024 * 1024
+export const ASSET_HARD_MAX_SIZE = '100m' as const
 export const ALLOWED_ASSET_MIME_TYPES = [
   'image/png',
   'image/jpeg',

@@ -14,6 +14,8 @@ const settings = ref<PublicSettings>({
   accentColor: '#7c3aed',
   theme: 'system',
   navLinks: [],
+  privateWiki: false,
+  registration: 'open',
 })
 const accentStyle = computed(() => ({ color: settings.value.accentColor }))
 

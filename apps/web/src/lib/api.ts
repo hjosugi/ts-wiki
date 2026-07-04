@@ -11,7 +11,7 @@
  */
 import { treaty } from '@elysiajs/eden'
 import type { App } from '@ts-wiki/server/app'
-import type { ExtractedCalendarEvent } from '@ts-wiki/core'
+import type { Action, ExtractedCalendarEvent } from '@ts-wiki/core'
 import { API_BASE_URL } from './url'
 
 const memoryStorage = new Map<string, string>()
@@ -58,23 +58,6 @@ const call = async <T>(promise: Promise<{ data: unknown; error: unknown }>): Pro
   return res.data as T
 }
 
-const fetchJson = async <T>(path: string, init: RequestInit): Promise<T> => {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      ...(authToken ? { authorization: `Bearer ${authToken}` } : {}),
-      ...(init.headers ?? {}),
-    },
-  })
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as
-      | { error?: { message?: string }; message?: string }
-      | null
-    throw new Error(body?.error?.message ?? body?.message ?? `Request failed (${res.status})`)
-  }
-  return (await res.json()) as T
-}
-
 // ── Domain types (the shapes the server returns) ─────────────────────────────
 export interface PublicUser {
   id: string
@@ -116,6 +99,10 @@ export interface Page {
   authorId: string | null
   createdAt: number
   updatedAt: number
+}
+export interface PageLookup {
+  page: Page
+  redirectedFrom: string[]
 }
 export interface PageSummary {
   path: string
@@ -202,6 +189,8 @@ export interface AdminUserView {
   name: string
   role: 'admin' | 'editor' | 'viewer'
   groups: string[]
+  disabledAt: number | null
+  tokenInvalidBefore: number
   createdAt: number
 }
 export interface AdminStats {
@@ -221,7 +210,7 @@ export interface PageRuleView {
   id: string
   subjectType: 'user' | 'group' | 'anonymous'
   subjectId: string | null
-  action: string
+  action: Action
   effect: 'allow' | 'deny'
   matcher: 'exact' | 'prefix' | 'suffix' | 'regex'
   pattern: string
@@ -274,6 +263,8 @@ export interface PublicSettings {
   accentColor: string
   theme: 'system' | 'light' | 'dark'
   navLinks: Array<{ label: string; url: string }>
+  privateWiki: boolean
+  registration: 'open' | 'off'
 }
 interface AuthResult {
   token: string
@@ -282,7 +273,7 @@ interface AuthResult {
 
 export const Api = {
   health: () => call<{ ok: true; name: string; version: string }>(client().api.health.get()),
-  publicSettings: () => fetchJson<PublicSettings>('/api/settings/public', { method: 'GET' }),
+  publicSettings: () => call<PublicSettings>(client().api.settings.public.get()),
 
   // Auth
   register: (body: { email: string; name: string; password: string }) =>
@@ -290,52 +281,38 @@ export const Api = {
   login: (body: { email: string; password: string; totpCode?: string }) =>
     call<AuthResult>(client().api.auth.login.post(body)),
   me: () => call<{ user: PublicUser }>(client().api.auth.me.get()).then((d) => d.user),
+  updateProfile: (body: { name?: string }) =>
+    call<{ user: PublicUser }>(client().api.auth.profile.put(body)).then((d) => d.user),
+  changePassword: (body: { currentPassword: string; newPassword: string }) =>
+    call<{ user: PublicUser }>(client().api.auth.password.put(body)).then((d) => d.user),
   authProviders: () =>
-    fetchJson<{ providers: PublicAuthProvider[] }>('/api/auth/providers', { method: 'GET' }).then((d) => d.providers),
+    call<{ providers: PublicAuthProvider[] }>(client().api.auth.providers.get()).then((d) => d.providers),
   totpSetup: () =>
-    fetchJson<{ secret: string; otpauthUrl: string }>('/api/auth/totp/setup', { method: 'POST' }),
+    call<{ secret: string; otpauthUrl: string }>(client().api.auth.totp.setup.post()),
   totpEnable: (code: string) =>
-    fetchJson<{ user: PublicUser }>('/api/auth/totp/enable', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ code }),
-    }).then((d) => d.user),
+    call<{ user: PublicUser }>(client().api.auth.totp.enable.post({ code })).then((d) => d.user),
   totpDisable: (code?: string) =>
-    fetchJson<{ user: PublicUser }>('/api/auth/totp/disable', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ code }),
-    }).then((d) => d.user),
+    call<{ user: PublicUser }>(client().api.auth.totp.disable.post({ code })).then((d) => d.user),
   passkeys: () =>
-    fetchJson<{ passkeys: PasskeyView[] }>('/api/auth/passkeys', { method: 'GET' }).then((d) => d.passkeys),
+    call<{ passkeys: PasskeyView[] }>(client().api.auth.passkeys.get()).then((d) => d.passkeys),
   passkeyRegistrationOptions: () =>
-    fetchJson<{ options: unknown }>('/api/auth/passkeys/register/options', { method: 'POST' }).then((d) => d.options),
+    call<{ options: unknown }>(client().api.auth.passkeys.register.options.post()).then((d) => d.options),
   passkeyVerifyRegistration: (response: unknown, name?: string) =>
-    fetchJson<{ passkey: PasskeyView }>('/api/auth/passkeys/register/verify', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ response, name }),
-    }).then((d) => d.passkey),
+    call<{ passkey: PasskeyView }>(client().api.auth.passkeys.register.verify.post({ response, name })).then((d) => d.passkey),
   passkeyDelete: (id: string) =>
-    fetchJson<{ id: string }>(`/api/auth/passkeys/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    call<{ id: string }>(client().api.auth.passkeys({ id }).delete()),
   passkeyLoginOptions: (email?: string) =>
-    fetchJson<{ options: unknown }>('/api/auth/passkeys/login/options', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email }),
-    }).then((d) => d.options),
+    call<{ options: unknown }>(client().api.auth.passkeys.login.options.post({ email })).then((d) => d.options),
   passkeyLoginVerify: (response: unknown) =>
-    fetchJson<AuthResult & { passkey: PasskeyView }>('/api/auth/passkeys/login/verify', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ response }),
-    }),
+    call<AuthResult & { passkey: PasskeyView }>(client().api.auth.passkeys.login.verify.post({ response })),
 
   // Pages
   listPages: () => call<{ pages: PageSummary[] }>(client().api.pages.get()).then((d) => d.pages),
-  trashPages: () => fetchJson<{ pages: PageSummary[] }>('/api/pages/trash', { method: 'GET' }).then((d) => d.pages),
+  trashPages: () => call<{ pages: PageSummary[] }>(client().api.pages.trash.get()).then((d) => d.pages),
+  getPageResult: (path: string) =>
+    call<PageLookup>(client().api.page.get({ query: { path } })),
   getPage: (path: string) =>
-    call<{ page: Page }>(client().api.page.get({ query: { path } })).then((d) => d.page),
+    Api.getPageResult(path).then((d) => d.page),
   createPage: (body: {
     path: string
     title: string
@@ -361,25 +338,13 @@ export const Api = {
   }) =>
     call<{ page: Page }>(client().api.page.put(body, { query: { path } })).then((d) => d.page),
   restoreRevision: (path: string, revisionId: string) =>
-    fetchJson<{ page: Page }>('/api/page/restore-revision', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ path, revisionId }),
-    }).then((d) => d.page),
+    call<{ page: Page }>(client().api.page['restore-revision'].post({ path, revisionId })).then((d) => d.page),
   archivePage: (path: string) =>
-    fetchJson<{ page: Page }>('/api/page/archive', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ path }),
-    }).then((d) => d.page),
+    call<{ page: Page }>(client().api.page.archive.post({ path })).then((d) => d.page),
   restorePage: (path: string) =>
-    fetchJson<{ page: Page }>('/api/page/restore', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ path }),
-    }).then((d) => d.page),
+    call<{ page: Page }>(client().api.page.restore.post({ path })).then((d) => d.page),
   purgePage: (path: string) =>
-    fetchJson<{ path: string }>(`/api/page/purge?path=${encodeURIComponent(path)}`, { method: 'DELETE' }),
+    call<{ path: string }>(client().api.page.purge.delete(null, { query: { path } })),
   movePage: (oldPath: string, newPath: string) =>
     call<{ page: Page }>(client().api.page.move.post({ oldPath, newPath })).then((d) => d.page),
   deletePage: (path: string) =>
@@ -405,18 +370,12 @@ export const Api = {
       (d) => d.comment,
     ),
   updateComment: (id: string, body: string) =>
-    fetchJson<{ comment: PageComment }>(`/api/page/comments/${encodeURIComponent(id)}`, {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ body }),
-    }).then((d) => d.comment),
+    call<{ comment: PageComment }>(client().api.page.comments({ id }).put({ body })).then((d) => d.comment),
   resolveComment: (id: string) =>
-    fetchJson<{ comment: PageComment }>(`/api/page/comments/${encodeURIComponent(id)}/resolve`, {
-      method: 'POST',
-    }).then((d) => d.comment),
+    call<{ comment: PageComment }>(client().api.page.comments({ id }).resolve.post()).then((d) => d.comment),
   deleteComment: (id: string) =>
-    fetchJson<{ id: string }>(`/api/page/comments/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  exportSite: () => fetchJson<{
+    call<{ id: string }>(client().api.page.comments({ id }).delete()),
+  exportSite: () => call<{
     manifestVersion: number
     exportedAt: string
     pages: Array<{
@@ -434,7 +393,7 @@ export const Api = {
       updatedAt: number
     }>
     assets: AssetView[]
-  }>('/api/export/site', { method: 'GET' }),
+  }>(client().api.export.site.get()),
   importMarkdown: (body: {
     path: string
     title?: string
@@ -444,27 +403,15 @@ export const Api = {
     status?: Page['status']
     locale?: string | null
   }) =>
-    fetchJson<{ page: Page }>('/api/import/markdown', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    }).then((d) => d.page),
+    call<{ page: Page }>(client().api.import.markdown.post(body)).then((d) => d.page),
   uploadAsset: (file: File) => {
-    const form = new FormData()
-    form.append('file', file)
-    return fetchJson<AssetUpload>('/api/assets', { method: 'POST', body: form })
+    return call<AssetUpload>(client().api.assets.post({ file }))
   },
-  listAssets: () => fetchJson<{ assets: AssetView[] }>('/api/assets', { method: 'GET' }).then((d) => d.assets),
+  listAssets: () => call<{ assets: AssetView[] }>(client().api.assets.get()).then((d) => d.assets),
   deleteAsset: (id: string) =>
-    fetchJson<{ asset: AssetView }>(`/api/assets/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(
-      (d) => d.asset,
-    ),
+    call<{ asset: AssetView }>(client().api.assets({ id }).delete()).then((d) => d.asset),
   renameAsset: (id: string, filename: string) =>
-    fetchJson<{ asset: AssetView }>(`/api/assets/${encodeURIComponent(id)}`, {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ filename }),
-    }).then((d) => d.asset),
+    call<{ asset: AssetView }>(client().api.assets({ id }).put({ filename })).then((d) => d.asset),
 
   // Search
   search: (
@@ -478,7 +425,7 @@ export const Api = {
 
   // Admin
   adminStats: () => call<AdminStats>(client().api.admin.stats.get()),
-  adminAnalytics: () => fetchJson<AnalyticsSummary>('/api/admin/analytics', { method: 'GET' }),
+  adminAnalytics: () => call<AnalyticsSummary>(client().api.admin.analytics.get()),
   adminUsers: () =>
     call<{ users: AdminUserView[] }>(client().api.admin.users.get()).then((d) => d.users),
   adminGroups: () =>
@@ -486,35 +433,26 @@ export const Api = {
   adminCreateGroup: (body: { key: string; name: string; description?: string }) =>
     call<{ group: AuthzGroupView }>(client().api.admin.groups.post(body)).then((d) => d.group),
   adminAddUserToGroup: (body: { userId: string; groupKey: string }) =>
-    fetchJson<{ userId: string; groupKey: string }>('/api/admin/groups/members', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    }),
+    call<{ userId: string; groupKey: string }>(client().api.admin.groups.members.post(body)),
   adminRemoveUserFromGroup: (userId: string, groupKey: string) =>
-    fetchJson<{ userId: string; groupKey: string }>(
-      `/api/admin/groups/members?userId=${encodeURIComponent(userId)}&groupKey=${encodeURIComponent(groupKey)}`,
-      { method: 'DELETE' },
+    call<{ userId: string; groupKey: string }>(
+      client().api.admin.groups.members.delete(null, { query: { userId, groupKey } }),
     ),
   adminPageRules: () =>
-    fetchJson<{ rules: PageRuleView[] }>('/api/admin/page-rules', { method: 'GET' }).then((d) => d.rules),
+    call<{ rules: PageRuleView[] }>(client().api.admin['page-rules'].get()).then((d) => d.rules),
   adminCreatePageRule: (body: {
     subjectType: PageRuleView['subjectType']
     subjectId?: string | null
-    action: string
+    action: PageRuleView['action']
     effect: PageRuleView['effect']
     matcher: PageRuleView['matcher']
     pattern: string
   }) =>
-    fetchJson<{ rule: PageRuleView }>('/api/admin/page-rules', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    }).then((d) => d.rule),
+    call<{ rule: PageRuleView }>(client().api.admin['page-rules'].post(body)).then((d) => d.rule),
   adminDeletePageRule: (id: string) =>
-    fetchJson<{ id: string }>(`/api/admin/page-rules/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    call<{ id: string }>(client().api.admin['page-rules']({ id }).delete()),
   adminWebhooks: () =>
-    fetchJson<{ webhooks: WebhookSubscriptionView[] }>('/api/admin/webhooks', { method: 'GET' }).then((d) => d.webhooks),
+    call<{ webhooks: WebhookSubscriptionView[] }>(client().api.admin.webhooks.get()).then((d) => d.webhooks),
   adminCreateWebhook: (body: {
     name?: string
     targetUrl: string
@@ -522,11 +460,7 @@ export const Api = {
     eventTypes: string[]
     enabled?: boolean
   }) =>
-    fetchJson<{ webhook: WebhookSubscriptionView }>('/api/admin/webhooks', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    }).then((d) => d.webhook),
+    call<{ webhook: WebhookSubscriptionView }>(client().api.admin.webhooks.post(body)).then((d) => d.webhook),
   adminUpdateWebhook: (id: string, body: Partial<{
     name: string
     targetUrl: string
@@ -534,46 +468,40 @@ export const Api = {
     eventTypes: string[]
     enabled: boolean
   }>) =>
-    fetchJson<{ webhook: WebhookSubscriptionView }>(`/api/admin/webhooks/${encodeURIComponent(id)}`, {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    }).then((d) => d.webhook),
+    call<{ webhook: WebhookSubscriptionView }>(client().api.admin.webhooks({ id }).put(body)).then((d) => d.webhook),
   adminDeleteWebhook: (id: string) =>
-    fetchJson<{ id: string }>(`/api/admin/webhooks/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    call<{ id: string }>(client().api.admin.webhooks({ id }).delete()),
   adminWebhookDeliveries: (status?: WebhookDeliveryView['status']) =>
-    fetchJson<{ deliveries: WebhookDeliveryView[] }>(
-      `/api/admin/webhooks/deliveries${status ? `?status=${encodeURIComponent(status)}` : ''}`,
-      { method: 'GET' },
+    call<{ deliveries: WebhookDeliveryView[] }>(
+      client().api.admin.webhooks.deliveries.get({ query: { status } }),
     ).then((d) => d.deliveries),
   adminRetryWebhookDelivery: (id: string) =>
-    fetchJson<{ delivery: WebhookDeliveryView }>(
-      `/api/admin/webhooks/deliveries/${encodeURIComponent(id)}/retry`,
-      { method: 'POST' },
+    call<{ delivery: WebhookDeliveryView }>(
+      client().api.admin.webhooks.deliveries({ id }).retry.post(),
     ).then((d) => d.delivery),
   adminAutomationRules: () =>
-    fetchJson<{ rules: AutomationRuleView[] }>('/api/admin/automation-rules', { method: 'GET' }).then((d) => d.rules),
+    call<{ rules: AutomationRuleView[] }>(client().api.admin['automation-rules'].get()).then((d) => d.rules),
   adminCreateAutomationRule: (body: {
     name?: string
     type: 'page-updated-metadata'
     enabled?: boolean
     config: { pathPrefix: string; label?: string; status?: Page['status'] }
   }) =>
-    fetchJson<{ rule: AutomationRuleView }>('/api/admin/automation-rules', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    }).then((d) => d.rule),
+    call<{ rule: AutomationRuleView }>(client().api.admin['automation-rules'].post(body)).then((d) => d.rule),
   adminDeleteAutomationRule: (id: string) =>
-    fetchJson<{ id: string }>(`/api/admin/automation-rules/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    call<{ id: string }>(client().api.admin['automation-rules']({ id }).delete()),
   adminSetRole: (userId: string, role: 'admin' | 'editor' | 'viewer') =>
     call<{ user: AdminUserView }>(client().api.admin.users.role.put({ userId, role })).then(
       (d) => d.user,
     ),
+  adminSetPassword: (userId: string, password: string) =>
+    call<{ user: AdminUserView }>(client().api.admin.users.password.put({ userId, password })).then(
+      (d) => d.user,
+    ),
+  adminDeactivateUser: (userId: string) =>
+    call<{ user: AdminUserView }>(client().api.admin.users.deactivate.post({ userId })).then(
+      (d) => d.user,
+    ),
   adminUpdateSettings: (body: Partial<PublicSettings>) =>
-    fetchJson<{ settings: PublicSettings }>('/api/admin/settings', {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    }).then((d) => d.settings),
+    call<{ settings: PublicSettings }>(client().api.admin.settings.put(body)).then((d) => d.settings),
 }

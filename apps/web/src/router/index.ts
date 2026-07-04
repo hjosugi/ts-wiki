@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
-import { getToken } from '@/lib/api'
+import { Api, getToken } from '@/lib/api'
 import { useAuth } from '@/stores/auth'
 
 // Underscore-prefixed routes are reserved actions; everything else is a wiki
@@ -26,6 +26,7 @@ export const routes: RouteRecordRaw[] = [
 ]
 
 export const createWikiRouter = () => {
+  let privateWiki: boolean | null = null
   const router = createRouter({
     history: createWebHistory(),
     routes,
@@ -38,6 +39,12 @@ export const createWikiRouter = () => {
   router.beforeEach(async (to) => {
     const auth = useAuth()
     if (!auth.ready && getToken()) await auth.fetchMe()
+    if (!getToken() && to.name !== 'login') {
+      if (privateWiki === null) {
+        privateWiki = await Api.publicSettings().then((settings) => settings.privateWiki).catch(() => false)
+      }
+      if (privateWiki) return { name: 'login', query: { redirect: to.fullPath } }
+    }
     const requiresAdmin = Boolean(to.meta.requiresAdmin)
     const requiresEdit = Boolean(to.meta.requiresEdit)
     if ((requiresAdmin && !auth.isAdmin) || (requiresEdit && !auth.canEdit)) {

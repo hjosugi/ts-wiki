@@ -16,6 +16,7 @@ import type { DB } from '../db/client.ts'
 import { authAccounts, oauthStates, users, type User } from '../db/schema.ts'
 import { hashPassword } from './auth.ts'
 import type { AuthzService } from './authz.ts'
+import { isUserActive } from './users.ts'
 
 export interface PublicAuthProvider {
   readonly id: string
@@ -201,6 +202,8 @@ export const createOidcService = (db: DB, auth: AuthEnv, authz: AuthzService): O
       role: provider.defaultRole as Role,
       totpSecret: null,
       totpEnabled: 0,
+      disabledAt: null,
+      tokenInvalidBefore: 0,
       createdAt: now,
     }
     db.insert(users).values(user).run()
@@ -281,17 +284,21 @@ export const createOidcService = (db: DB, auth: AuthEnv, authz: AuthzService): O
 
       const existingByAccount = findAccount(provider.id, claims.value.subject)
       if (existingByAccount) {
+        if (!isUserActive(existingByAccount)) return err(unauthorized('Account is deactivated'))
         linkAccount(existingByAccount, provider, claims.value.subject, claims.value.email)
         return ok({ user: existingByAccount, isNewUser: false })
       }
 
       const existingByEmail = findUserByEmail(claims.value.email)
       if (existingByEmail) {
+        if (!isUserActive(existingByEmail)) return err(unauthorized('Account is deactivated'))
         linkAccount(existingByEmail, provider, claims.value.subject, claims.value.email)
         return ok({ user: existingByEmail, isNewUser: false })
       }
 
-      if (!provider.allowRegistration) return err(forbidden('OIDC self-registration is disabled'))
+      if (!provider.allowRegistration || auth.registration === 'off') {
+        return err(forbidden('OIDC self-registration is disabled'))
+      }
       const user = await createExternalUser(provider, claims.value.email, claims.value.name)
       linkAccount(user, provider, claims.value.subject, claims.value.email)
       return ok({ user, isNewUser: true })
