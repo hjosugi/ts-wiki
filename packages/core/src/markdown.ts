@@ -38,6 +38,12 @@ export interface CalendarEvent {
   readonly description?: string
 }
 
+export interface ExtractedCalendarEvent extends CalendarEvent {
+  readonly id: string
+  readonly sourcePath: string
+  readonly block: number
+}
+
 const escapeHtml = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
@@ -78,7 +84,7 @@ const formatDisplayDate = (value: string, timezone?: string): string => {
   return `${year}-${month}-${day} ${hour}:${minute}${timezone ? ` ${timezone}` : ''}`
 }
 
-const parseEventBlock = (content: string): CalendarEvent | null => {
+export const parseCalendarEventBlock = (content: string): CalendarEvent | null => {
   const data = new Map<string, string>()
   for (const line of content.split(/\r?\n/)) {
     const match = line.match(/^([A-Za-z][A-Za-z_-]*):\s*(.*)$/)
@@ -101,6 +107,45 @@ const parseEventBlock = (content: string): CalendarEvent | null => {
     url: data.get('url'),
     description: data.get('description'),
   }
+}
+
+const flattenFenceValue = (value: string): string => value.replace(/\r?\n/g, ' ').trim()
+
+export const calendarEventToFence = (event: CalendarEvent): string => {
+  const lines = [
+    '```event',
+    `title: ${flattenFenceValue(event.title)}`,
+    `start: ${flattenFenceValue(event.start)}`,
+    event.end ? `end: ${flattenFenceValue(event.end)}` : '',
+    event.timezone ? `timezone: ${flattenFenceValue(event.timezone)}` : '',
+    event.location ? `location: ${flattenFenceValue(event.location)}` : '',
+    event.url ? `url: ${flattenFenceValue(event.url)}` : '',
+    event.description ? `description: ${flattenFenceValue(event.description)}` : '',
+    '```',
+  ].filter(Boolean)
+  return `${lines.join('\n')}\n`
+}
+
+const EVENT_FENCE = /(?:^|\n)```event[^\n]*\n([\s\S]*?)\n```/gi
+
+export const extractCalendarEvents = (content: string, sourcePath = ''): ExtractedCalendarEvent[] => {
+  const events: ExtractedCalendarEvent[] = []
+  let match: RegExpExecArray | null = null
+  let block = 0
+  while ((match = EVENT_FENCE.exec(content ?? ''))) {
+    const event = parseCalendarEventBlock(match[1] ?? '')
+    if (event) {
+      const slug = slugifyHeading(event.title) || 'event'
+      events.push({
+        ...event,
+        id: `${sourcePath || 'page'}:${block}:${slug}`,
+        sourcePath,
+        block,
+      })
+    }
+    block += 1
+  }
+  return events
 }
 
 const googleCalendarUrl = (event: CalendarEvent): string => {
@@ -138,7 +183,7 @@ const icsDateLine = (field: string, value: string): string => {
   return `${field}:${parsed.date}T${parsed.time}`
 }
 
-const icsDataUrl = (event: CalendarEvent): string => {
+export const calendarEventToIcs = (event: CalendarEvent): string => {
   const start = parseDateParts(event.start)
   const allDay = Boolean(start && !start.time)
   const end = event.end ?? (start && allDay ? `${start.date.slice(0, 4)}-${start.date.slice(4, 6)}-${start.date.slice(6, 8)}` : event.start)
@@ -156,11 +201,111 @@ const icsDataUrl = (event: CalendarEvent): string => {
     'END:VEVENT',
     'END:VCALENDAR',
   ].filter(Boolean)
-  return `data:text/calendar;charset=utf-8,${encodeURIComponent(lines.join('\r\n'))}`
+  return `${lines.join('\r\n')}\r\n`
+}
+
+const icsDataUrl = (event: CalendarEvent): string => {
+  return `data:text/calendar;charset=utf-8,${encodeURIComponent(calendarEventToIcs(event))}`
+}
+
+const unfoldIcsLines = (input: string): string[] => {
+  const out: string[] = []
+  for (const line of (input ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')) {
+    if (/^[ \t]/.test(line) && out.length) {
+      out[out.length - 1] += line.slice(1)
+    } else {
+      out.push(line)
+    }
+  }
+  return out
+}
+
+const unescapeIcsText = (value: string): string =>
+  value
+    .replace(/\\n/gi, '\n')
+    .replace(/\\,/g, ',')
+    .replace(/\\;/g, ';')
+    .replace(/\\\\/g, '\\')
+
+interface IcsProperty {
+  readonly name: string
+  readonly params: Record<string, string>
+  readonly value: string
+}
+
+const parseIcsProperty = (line: string): IcsProperty | null => {
+  const index = line.indexOf(':')
+  if (index === -1) return null
+  const head = line.slice(0, index)
+  const value = line.slice(index + 1)
+  const [name = '', ...paramParts] = head.split(';')
+  const params: Record<string, string> = {}
+  for (const part of paramParts) {
+    const [key = '', raw = ''] = part.split('=')
+    if (key) params[key.toUpperCase()] = raw.replace(/^"|"$/g, '')
+  }
+  return { name: name.toUpperCase(), params, value }
+}
+
+const icsDateToEventDate = (value: string): string => {
+  const clean = value.trim()
+  const date = clean.match(/^(\d{4})(\d{2})(\d{2})$/)
+  if (date) return `${date[1]}-${date[2]}-${date[3]}`
+  const dateTime = clean.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(?:(\d{2}))?Z?$/)
+  if (dateTime) return `${dateTime[1]}-${dateTime[2]}-${dateTime[3]} ${dateTime[4]}:${dateTime[5]}`
+  return clean
+}
+
+const eventFromIcsProps = (props: IcsProperty[]): CalendarEvent | null => {
+  const first = (name: string): IcsProperty | undefined => props.find((prop) => prop.name === name)
+  const summary = first('SUMMARY')
+  const start = first('DTSTART')
+  if (!summary || !start) return null
+  const end = first('DTEND')
+  const description = first('DESCRIPTION')
+  const location = first('LOCATION')
+  const url = first('URL')
+  const timezone = start.params.TZID ?? end?.params.TZID
+
+  return {
+    title: unescapeIcsText(summary.value),
+    start: icsDateToEventDate(start.value),
+    end: end ? icsDateToEventDate(end.value) : undefined,
+    timezone,
+    location: location ? unescapeIcsText(location.value) : undefined,
+    url: url ? unescapeIcsText(url.value) : undefined,
+    description: description ? unescapeIcsText(description.value) : undefined,
+  }
+}
+
+export const parseIcsEvents = (input: string): CalendarEvent[] => {
+  const events: CalendarEvent[] = []
+  let current: IcsProperty[] | null = null
+
+  for (const line of unfoldIcsLines(input)) {
+    const normalized = line.trim().toUpperCase()
+    if (normalized === 'BEGIN:VEVENT') {
+      current = []
+      continue
+    }
+    if (normalized === 'END:VEVENT') {
+      if (current) {
+        const event = eventFromIcsProps(current)
+        if (event) events.push(event)
+      }
+      current = null
+      continue
+    }
+    if (!current) continue
+    const prop = parseIcsProperty(line)
+    if (prop) current.push(prop)
+  }
+
+  return events
 }
 
 const renderEventCard = (content: string): string | null => {
-  const event = parseEventBlock(content)
+  const event = parseCalendarEventBlock(content)
   if (!event) return null
   const start = formatDisplayDate(event.start, event.timezone)
   const end = event.end ? formatDisplayDate(event.end, event.timezone) : null
@@ -225,6 +370,39 @@ const headingLevel = (tag: string): number => Number.parseInt(tag.slice(1), 10) 
 
 const WIKI_LINK = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g
 
+const wikiLinkPath = (rawPath: string): string =>
+  rawPath
+    .trim()
+    .split('/')
+    .map((segment) => slugifyHeading(segment))
+    .filter(Boolean)
+    .join('/')
+
+md.inline.ruler.before('emphasis', 'wikilink', (state, silent) => {
+  if (state.src.charCodeAt(state.pos) !== 0x5b || state.src.charCodeAt(state.pos + 1) !== 0x5b) {
+    return false
+  }
+  const end = state.src.indexOf(']]', state.pos + 2)
+  if (end === -1) return false
+  const raw = state.src.slice(state.pos + 2, end)
+  const [rawPath = '', rawLabel = ''] = raw.split('|')
+  const path = wikiLinkPath(rawPath)
+  if (!path) return false
+
+  if (!silent) {
+    const open = state.push('link_open', 'a', 1)
+    open.attrs = [
+      ['href', `/${path}`],
+      ['data-wiki-link', path],
+    ]
+    const text = state.push('text', '', 0)
+    text.content = rawLabel.trim() || rawPath.trim()
+    state.push('link_close', 'a', -1)
+  }
+  state.pos = end + 2
+  return true
+})
+
 interface LinkToken {
   readonly type: string
   readonly content: string
@@ -285,11 +463,7 @@ export const extractPageLinks = (content: string): PageLink[] => {
   for (const match of (content ?? '').matchAll(WIKI_LINK)) {
     const rawPath = match[1]?.trim() ?? ''
     const label = (match[2]?.trim() || rawPath).trim()
-    const path = rawPath
-      .split('/')
-      .map((segment) => slugifyHeading(segment))
-      .filter(Boolean)
-      .join('/')
+    const path = wikiLinkPath(rawPath)
     addUniqueLink(links, seen, { path, label, kind: 'wikilink' })
   }
 
@@ -297,6 +471,7 @@ export const extractPageLinks = (content: string): PageLink[] => {
   const visit = (items: readonly LinkToken[]): void => {
     for (const token of items) {
       if (token.type === 'link_open') {
+        if (token.attrGet('data-wiki-link')) continue
         const href = token.attrGet('href')
         const path = href ? hrefToPagePath(href) : null
         if (path) {

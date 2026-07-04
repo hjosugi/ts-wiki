@@ -260,6 +260,7 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
       // ── Pages: collection ─────────────────────────────────────────────────
       .get('/api/pages', ({ services }) => ({ pages: services.pages.list() }))
       .get('/api/graph', ({ services }) => services.pages.graph())
+      .get('/api/events/index', ({ services }) => ({ events: services.pages.events() }))
       .post(
         '/api/pages',
         ({ body, services, principal }) => {
@@ -283,6 +284,16 @@ export const createApp = ({ db, env, logger = consoleStructuredLogger }: AppDeps
       .get(
         '/api/page',
         ({ query, services }) => ({ page: unwrap(services.pages.getByPath(query.path)) }),
+        { query: t.Object({ path: t.String() }) },
+      )
+      .get(
+        '/api/page/backlinks',
+        ({ query, services }) => ({ backlinks: services.pages.backlinks(query.path) }),
+        { query: t.Object({ path: t.String() }) },
+      )
+      .get(
+        '/api/page/history',
+        ({ query, services }) => ({ revisions: unwrap(services.pages.history(query.path)) }),
         { query: t.Object({ path: t.String() }) },
       )
       .put(

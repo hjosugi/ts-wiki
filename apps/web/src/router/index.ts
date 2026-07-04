@@ -7,8 +7,10 @@ import { useAuth } from '@/stores/auth'
 export const routes: RouteRecordRaw[] = [
   { path: '/_login', name: 'login', component: () => import('@/views/LoginView.vue') },
   { path: '/_search', name: 'search', component: () => import('@/views/SearchView.vue') },
+  { path: '/_events', name: 'events', component: () => import('@/views/EventsView.vue') },
   { path: '/_graph', name: 'graph', component: () => import('@/views/GraphView.vue') },
   { path: '/_admin', name: 'admin', component: () => import('@/views/AdminView.vue'), meta: { requiresAdmin: true } },
+  { path: '/_history/:path(.*)*', name: 'history', component: () => import('@/views/HistoryView.vue') },
   { path: '/_new', name: 'new', component: () => import('@/views/PageEdit.vue'), meta: { requiresEdit: true } },
   {
     path: '/_edit/:path(.*)*',

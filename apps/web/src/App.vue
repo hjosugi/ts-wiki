@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import AppHeader from '@/components/AppHeader.vue'
+import CommandPalette from '@/components/CommandPalette.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import PageTree from '@/components/PageTree.vue'
 import { useAuth } from '@/stores/auth'
@@ -14,6 +15,7 @@ onMounted(() => pages.refresh())
 <template>
   <div class="min-h-screen flex flex-col">
     <AppHeader />
+    <CommandPalette />
     <div class="flex-1 w-full max-w-7xl mx-auto px-4 flex gap-6">
       <aside class="hidden md:block w-60 shrink-0 py-6">
         <div class="flex items-center justify-between gap-2 mb-2 px-2">

@@ -11,6 +11,10 @@ function submitSearch(): void {
   const query = q.value.trim()
   if (query) router.push({ name: 'search', query: { q: query } })
 }
+
+function openCommandPalette(): void {
+  window.dispatchEvent(new Event('open-command-palette'))
+}
 </script>
 
 <template>
@@ -27,6 +31,10 @@ function submitSearch(): void {
       </form>
 
       <div class="flex items-center gap-2 ml-auto">
+        <button class="btn-ghost hidden sm:inline-flex" type="button" title="Command palette" @click="openCommandPalette">
+          Cmd K
+        </button>
+        <RouterLink to="/_events" class="btn-ghost">Events</RouterLink>
         <RouterLink to="/_graph" class="btn-ghost">Graph</RouterLink>
         <RouterLink v-if="auth.isAdmin" to="/_admin" class="btn-ghost">Admin</RouterLink>
         <RouterLink v-if="auth.canEdit" to="/_new" class="btn-primary">+ New page</RouterLink>

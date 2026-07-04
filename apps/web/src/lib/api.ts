@@ -11,6 +11,7 @@
  */
 import { treaty } from '@elysiajs/eden'
 import type { App } from '@ts-wiki/server/app'
+import type { ExtractedCalendarEvent } from '@ts-wiki/core'
 import { API_BASE_URL } from './url'
 
 const memoryStorage = new Map<string, string>()
@@ -55,6 +56,23 @@ const call = async <T>(promise: Promise<{ data: unknown; error: unknown }>): Pro
   const res = await promise
   if (res.error) throw new Error(messageOf(res.error))
   return res.data as T
+}
+
+const fetchJson = async <T>(path: string, init: RequestInit): Promise<T> => {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      ...(authToken ? { authorization: `Bearer ${authToken}` } : {}),
+      ...(init.headers ?? {}),
+    },
+  })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as
+      | { error?: { message?: string }; message?: string }
+      | null
+    throw new Error(body?.error?.message ?? body?.message ?? `Request failed (${res.status})`)
+  }
+  return (await res.json()) as T
 }
 
 // ── Domain types (the shapes the server returns) ─────────────────────────────
@@ -103,6 +121,27 @@ export interface PageGraph {
   nodes: PageGraphNode[]
   edges: PageGraphEdge[]
 }
+export interface PageBacklink {
+  path: string
+  title: string
+  label: string
+  kind: 'wikilink' | 'markdown'
+}
+export interface PageRevision {
+  id: string
+  path: string
+  title: string
+  description: string
+  content: string
+  authorId: string | null
+  action: 'created' | 'updated' | 'moved' | 'deleted'
+  createdAt: number
+}
+export interface AssetUpload {
+  id: string
+  filename: string
+  url: string
+}
 export interface AdminUserView {
   id: string
   email: string
@@ -143,6 +182,21 @@ export const Api = {
   deletePage: (path: string) =>
     call<{ path: string }>(client().api.page.delete(null, { query: { path } })),
   graph: () => call<PageGraph>(client().api.graph.get()),
+  events: () =>
+    call<{ events: ExtractedCalendarEvent[] }>(client().api.events.index.get()).then((d) => d.events),
+  backlinks: (path: string) =>
+    call<{ backlinks: PageBacklink[] }>(client().api.page.backlinks.get({ query: { path } })).then(
+      (d) => d.backlinks,
+    ),
+  history: (path: string) =>
+    call<{ revisions: PageRevision[] }>(client().api.page.history.get({ query: { path } })).then(
+      (d) => d.revisions,
+    ),
+  uploadAsset: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return fetchJson<AssetUpload>('/api/assets', { method: 'POST', body: form })
+  },
 
   // Search
   search: (q: string, limit = 20) =>

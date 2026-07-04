@@ -9,7 +9,7 @@
  * and aren't searchable; storage writes aren't transactional. Here a save is
  * atomic and the page is fully rendered and indexed the instant it returns.
  */
-import { eq, asc } from 'drizzle-orm'
+import { eq, asc, desc } from 'drizzle-orm'
 import {
   type Result,
   ok,
@@ -25,9 +25,12 @@ import {
   renderMarkdown,
   toPlainText,
   extractPageLinks,
+  extractCalendarEvents,
+  normalizePath,
+  type ExtractedCalendarEvent,
 } from '@ts-wiki/core'
 import type { DB } from '../db/client.ts'
-import { pages, pageRevisions, type Page } from '../db/schema.ts'
+import { pages, pageRevisions, type Page, type PageRevision } from '../db/schema.ts'
 
 export interface PageSummary {
   readonly path: string
@@ -53,6 +56,24 @@ export interface PageGraph {
   readonly edges: PageGraphEdge[]
 }
 
+export interface PageBacklink {
+  readonly path: string
+  readonly title: string
+  readonly label: string
+  readonly kind: 'wikilink' | 'markdown'
+}
+
+export interface PageRevisionSummary {
+  readonly id: string
+  readonly path: string
+  readonly title: string
+  readonly description: string
+  readonly content: string
+  readonly authorId: string | null
+  readonly action: PageRevision['action']
+  readonly createdAt: number
+}
+
 export interface UpdatePagePatch {
   readonly title?: string
   readonly content?: string
@@ -62,6 +83,9 @@ export interface UpdatePagePatch {
 export interface PageService {
   list(): PageSummary[]
   graph(): PageGraph
+  backlinks(path: string): PageBacklink[]
+  events(): ExtractedCalendarEvent[]
+  history(path: string): Result<PageRevisionSummary[], AppError>
   getByPath(path: string): Result<Page, AppError>
   create(input: PageInput, principal: Principal | null): Result<Page, AppError>
   update(path: string, patch: UpdatePagePatch, principal: Principal | null): Result<Page, AppError>
@@ -179,6 +203,56 @@ export const createPageService = (db: DB): PageService => {
       ]
 
       return { nodes, edges }
+    },
+
+    backlinks(path) {
+      const target = normalizePath(path)
+      const out: PageBacklink[] = []
+      const seen = new Set<string>()
+      for (const page of db.select().from(pages).orderBy(asc(pages.path)).all()) {
+        for (const link of extractPageLinks(page.content)) {
+          if (link.path !== target) continue
+          const key = `${page.path}\u0000${link.kind}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          out.push({ path: page.path, title: page.title, label: link.label, kind: link.kind })
+        }
+      }
+      return out
+    },
+
+    events() {
+      return db
+        .select({
+          path: pages.path,
+          content: pages.content,
+        })
+        .from(pages)
+        .orderBy(asc(pages.path))
+        .all()
+        .flatMap((page) => extractCalendarEvents(page.content, page.path))
+        .sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title))
+    },
+
+    history(path) {
+      const page = findByPath(path)
+      if (!page) return err(notFound(`No page at "${path}"`))
+      const revisions = db
+        .select({
+          id: pageRevisions.id,
+          path: pageRevisions.path,
+          title: pageRevisions.title,
+          description: pageRevisions.description,
+          content: pageRevisions.content,
+          authorId: pageRevisions.authorId,
+          action: pageRevisions.action,
+          createdAt: pageRevisions.createdAt,
+        })
+        .from(pageRevisions)
+        .where(eq(pageRevisions.pageId, page.id))
+        .orderBy(desc(pageRevisions.createdAt))
+        .all()
+      return ok(revisions)
     },
 
     getByPath(path) {

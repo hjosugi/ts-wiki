@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { Api, type Page } from '@/lib/api'
+import { Api, type Page, type PageBacklink } from '@/lib/api'
 import { paramToPath } from '@/router'
 import { useAuth } from '@/stores/auth'
 import { onWikiEvent } from '@/lib/realtime'
@@ -17,6 +17,7 @@ const auth = useAuth()
 
 const page = ref<Page | null>(null)
 const graph = ref<PageGraph>({ nodes: [], edges: [] })
+const backlinks = ref<PageBacklink[]>([])
 const error = ref<string | null>(null)
 const loading = ref(false)
 
@@ -41,12 +42,19 @@ async function load(): Promise<void> {
   loading.value = true
   error.value = null
   page.value = null
+  backlinks.value = []
   try {
     page.value = await Api.getPage(path.value)
     try {
-      graph.value = await Api.graph()
+      const [nextGraph, nextBacklinks] = await Promise.all([
+        Api.graph(),
+        Api.backlinks(path.value),
+      ])
+      graph.value = nextGraph
+      backlinks.value = nextBacklinks
     } catch {
       graph.value = { nodes: [], edges: [] }
+      backlinks.value = []
     }
   } catch (e) {
     error.value = (e as Error).message
@@ -60,9 +68,15 @@ watch(path, load, { immediate: true })
 // Realtime: when THIS page changes elsewhere, refresh it in place (no flash).
 async function reloadInPlace(): Promise<void> {
   try {
-    page.value = await Api.getPage(path.value)
+    const [nextPage, nextBacklinks] = await Promise.all([
+      Api.getPage(path.value),
+      Api.backlinks(path.value),
+    ])
+    page.value = nextPage
+    backlinks.value = nextBacklinks
   } catch {
     page.value = null // deleted or moved away → show the empty state
+    backlinks.value = []
   }
 }
 const stopRealtime = onWikiEvent((event) => {
@@ -98,6 +112,20 @@ onUnmounted(stopRealtime)
         </span>
       </div>
       <div class="prose dark:prose-invert max-w-none" v-html="page.renderedHtml"></div>
+      <section v-if="backlinks.length" class="mt-10 border-t border-gray-200 dark:border-gray-800 pt-5">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Linked from</h2>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <RouterLink
+            v-for="link in backlinks"
+            :key="`${link.path}:${link.kind}`"
+            :to="'/' + link.path"
+            class="btn-ghost"
+            :title="link.label"
+          >
+            {{ link.title }}
+          </RouterLink>
+        </div>
+      </section>
     </article>
 
     <aside class="hidden xl:block w-72 shrink-0 space-y-6">

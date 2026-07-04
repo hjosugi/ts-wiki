@@ -4,6 +4,9 @@ import {
   normalizePath,
   renderMarkdown,
   extractPageLinks,
+  extractCalendarEvents,
+  parseIcsEvents,
+  calendarEventToFence,
   slugifyHeading,
   toPlainText,
   validatePageInput,
@@ -64,6 +67,54 @@ description: Weekly checkpoint
     expect(html).toContain('Google Calendar')
     expect(html).toContain('Download .ics')
     expect(html).toContain('20260620T100000%2F20260620T103000')
+  })
+  test('extracts calendar events from event fences', () => {
+    const events = extractCalendarEvents(`Before
+\`\`\`event
+title: Planning
+start: 2026-07-05
+description: Roadmap
+\`\`\`
+After`, 'team/plan')
+
+    expect(events).toEqual([
+      {
+        id: 'team/plan:0:planning',
+        sourcePath: 'team/plan',
+        block: 0,
+        title: 'Planning',
+        start: '2026-07-05',
+        description: 'Roadmap',
+      },
+    ])
+  })
+  test('parses ICS events and converts them into event fences', () => {
+    const [event] = parseIcsEvents(`BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+SUMMARY:Team Sync
+DTSTART;TZID=Asia/Tokyo:20260705T103000
+DTEND;TZID=Asia/Tokyo:20260705T110000
+LOCATION:Zoom
+DESCRIPTION:Weekly\\ncheck
+END:VEVENT
+END:VCALENDAR`)
+
+    expect(event).toEqual({
+      title: 'Team Sync',
+      start: '2026-07-05 10:30',
+      end: '2026-07-05 11:00',
+      timezone: 'Asia/Tokyo',
+      location: 'Zoom',
+      description: 'Weekly\ncheck',
+      url: undefined,
+    })
+    expect(calendarEventToFence(event!)).toContain('title: Team Sync')
+  })
+  test('renders wiki links as internal page links', () => {
+    const { html } = renderMarkdown('See [[Docs/Intro|intro]].')
+    expect(html).toContain('href="/docs/intro"')
+    expect(html).toContain('data-wiki-link="docs/intro"')
   })
 })
 

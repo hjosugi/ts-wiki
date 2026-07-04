@@ -102,6 +102,53 @@ describe('page + search slice (in-memory db)', () => {
     expect(graph.edges).toContainEqual({ source: 'docs/intro', target: 'home', kind: 'markdown' })
   })
 
+  test('backlinks expose incoming page mentions', () => {
+    const db = createDb(':memory:')
+    const { pages } = createServices(db)
+    pages.create({ path: 'home', title: 'Home', content: 'See [[Docs/Intro|intro]].' }, admin)
+    pages.create({ path: 'docs/intro', title: 'Intro', content: 'Hello.' }, admin)
+
+    expect(pages.backlinks('docs/intro')).toEqual([
+      { path: 'home', title: 'Home', label: 'intro', kind: 'wikilink' },
+    ])
+  })
+
+  test('history returns stored revisions newest first', () => {
+    const db = createDb(':memory:')
+    const { pages } = createServices(db)
+    pages.create({ path: 'docs/history', title: 'History', content: 'one' }, admin)
+    pages.update('docs/history', { content: 'two' }, admin)
+
+    const history = pages.history('docs/history')
+
+    expect(history.ok).toBe(true)
+    if (history.ok) {
+      expect(history.value.length).toBe(2)
+      expect(history.value[0]?.action).toBe('updated')
+      expect(history.value[0]?.content).toBe('one')
+    }
+  })
+
+  test('events index extracts calendar fences across pages', () => {
+    const db = createDb(':memory:')
+    const { pages } = createServices(db)
+    pages.create({
+      path: 'calendar/sync',
+      title: 'Sync',
+      content: '```event\ntitle: Sync\nstart: 2026-07-05 10:00\n```',
+    }, admin)
+
+    expect(pages.events()).toEqual([
+      {
+        id: 'calendar/sync:0:sync',
+        sourcePath: 'calendar/sync',
+        block: 0,
+        title: 'Sync',
+        start: '2026-07-05 10:00',
+      },
+    ])
+  })
+
   test('delete removes from search', () => {
     const db = createDb(':memory:')
     const { pages, search } = createServices(db)

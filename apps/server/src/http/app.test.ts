@@ -292,6 +292,43 @@ describe('http app realtime', () => {
   }, HTTP_TEST_TIMEOUT_MS)
 })
 
+describe('http app page utilities', () => {
+  test('exposes history, backlinks, and event index routes', async () => {
+    const { app } = createFixture()
+    const { token } = await register(app, 'admin@example.com')
+    await createPage(app, token, 'docs/target', 'hello')
+    await createPage(app, token, 'docs/source', 'See [[Docs/Target]].\n\n```event\ntitle: Sync\nstart: 2026-07-05\n```')
+
+    const update = await app.handle(
+      new Request('http://localhost/api/page?path=docs/target', {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ content: 'hello again' }),
+      }),
+    )
+    expect(update.status).toBe(200)
+
+    const history = await app.handle(new Request('http://localhost/api/page/history?path=docs/target'))
+    expect(history.status).toBe(200)
+    expect((await history.json()).revisions.length).toBeGreaterThan(1)
+
+    const backlinks = await app.handle(new Request('http://localhost/api/page/backlinks?path=docs/target'))
+    expect(backlinks.status).toBe(200)
+    expect((await backlinks.json()).backlinks).toContainEqual(
+      expect.objectContaining({ path: 'docs/source', kind: 'wikilink' }),
+    )
+
+    const events = await app.handle(new Request('http://localhost/api/events/index'))
+    expect(events.status).toBe(200)
+    expect((await events.json()).events).toContainEqual(
+      expect.objectContaining({ sourcePath: 'docs/source', title: 'Sync' }),
+    )
+  }, HTTP_TEST_TIMEOUT_MS)
+})
+
 describe('http app assets', () => {
   test('accepts small allowed images and serves them with safe headers', async () => {
     const { app, dataDir } = createFixture()

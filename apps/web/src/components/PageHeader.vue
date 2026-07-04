@@ -48,6 +48,9 @@ async function copyPath(): Promise<void> {
         <RouterLink v-if="canEdit" :to="{ name: 'new', query: { path: childPath } }" class="btn-ghost">
           New child
         </RouterLink>
+        <RouterLink :to="'/_history/' + page.path" class="btn-ghost">
+          History
+        </RouterLink>
         <RouterLink v-if="canEdit" :to="'/_edit/' + page.path" class="btn-primary">
           Edit
         </RouterLink>

@@ -179,6 +179,41 @@ html {
   font-size: 0.875rem;
 }
 
+.page-tree-line {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  min-height: 1.875rem;
+}
+
+.page-tree-line .page-tree-row,
+.page-tree-line .page-tree-folder {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.page-tree-icon,
+.page-tree-spacer {
+  width: 1.35rem;
+  height: 1.35rem;
+  flex: 0 0 1.35rem;
+}
+
+.page-tree-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.25rem;
+  color: rgb(107 114 128);
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.page-tree-icon:hover {
+  background: rgb(243 244 246);
+  color: rgb(17 24 39);
+}
+
 .page-tree-row {
   color: rgb(75 85 99);
 }
@@ -194,6 +229,30 @@ html {
   font-weight: 600;
 }
 
+.history-added,
+.history-removed,
+.history-same {
+  display: block;
+  min-height: 1.5rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 0 1rem;
+}
+
+.history-added {
+  background: rgb(220 252 231);
+  color: rgb(22 101 52);
+}
+
+.history-removed {
+  background: rgb(254 226 226);
+  color: rgb(153 27 27);
+}
+
+.history-same {
+  color: rgb(75 85 99);
+}
+
 @media (prefers-color-scheme: dark) {
   .page-tree-row {
     color: rgb(209 213 219);
@@ -207,6 +266,29 @@ html {
 
   .page-tree-folder {
     color: rgb(107 114 128);
+  }
+
+  .page-tree-icon {
+    color: rgb(156 163 175);
+  }
+
+  .page-tree-icon:hover {
+    background: rgb(31 41 55);
+    color: rgb(249 250 251);
+  }
+
+  .history-added {
+    background: rgba(22, 101, 52, 0.35);
+    color: rgb(187 247 208);
+  }
+
+  .history-removed {
+    background: rgba(127, 29, 29, 0.38);
+    color: rgb(254 202 202);
+  }
+
+  .history-same {
+    color: rgb(209 213 219);
   }
 }
 
