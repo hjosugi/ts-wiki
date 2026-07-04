@@ -2,9 +2,11 @@
 import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Api, type SearchHit } from '@/lib/api'
+import { useI18n } from '@/lib/i18n'
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 
 const q = ref((route.query.q as string) ?? '')
 const pathPrefix = ref((route.query.pathPrefix as string) ?? '')
@@ -82,7 +84,7 @@ run()
       <input
         v-model="q"
         class="input text-lg"
-        placeholder="Search the wiki…"
+        :placeholder="t('searchTheWiki')"
         @input="onInput"
       />
       <div class="grid grid-cols-1 sm:grid-cols-5 gap-2">
@@ -100,8 +102,8 @@ run()
       </div>
     </div>
 
-    <p v-if="loading" class="text-gray-400">Searching…</p>
-    <p v-else-if="q && !hits.length" class="text-gray-400">No results for “{{ q }}”.</p>
+    <p v-if="loading" class="text-gray-400">{{ t('searching') }}</p>
+    <p v-else-if="q && !hits.length" class="text-gray-400">{{ t('noResults', { query: q }) }}</p>
 
     <ul class="space-y-3">
       <li

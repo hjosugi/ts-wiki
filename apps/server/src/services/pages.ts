@@ -101,6 +101,7 @@ export interface UpdatePagePatch {
   readonly ownerId?: string | null
   readonly reviewAt?: number | null
   readonly locale?: string | null
+  readonly expectedUpdatedAt?: number | null
 }
 
 export interface PageService {
@@ -147,6 +148,34 @@ export const createPageService = (db: DB): PageService => {
   const findById = (id: string): Page =>
     db.select().from(pages).where(eq(pages.id, id)).get()!
 
+  const tombstoneConflict = (path: string): AppError =>
+    conflict(`A deleted page exists here at "${normalizePath(path)}"; restore it from Trash or purge it first.`)
+
+  const pathConflict = (page: Page, path: string): AppError =>
+    page.lifecycle === 'active' ? conflict(`A page already exists at "${normalizePath(path)}"`) : tombstoneConflict(path)
+
+  const snapshotRevision = (
+    tx: { insert: DB['insert'] },
+    page: Pick<Page, 'id' | 'path' | 'title' | 'description' | 'content'>,
+    principal: Principal | null,
+    action: PageRevision['action'],
+    now: number,
+  ): void => {
+    tx.insert(pageRevisions)
+      .values({
+        id: crypto.randomUUID(),
+        pageId: page.id,
+        path: page.path,
+        title: page.title,
+        description: page.description,
+        content: page.content,
+        authorId: principal?.id ?? null,
+        action,
+        createdAt: now,
+      })
+      .run()
+  }
+
   const parseLabels = (value: string): string[] => {
     try {
       const labels = JSON.parse(value) as unknown
@@ -178,19 +207,7 @@ export const createPageService = (db: DB): PageService => {
       if (revisionAction) {
         // Snapshot the pre-update state into history. Collaborative autosave
         // uses the same write path but passes null to avoid revision spam.
-        tx.insert(pageRevisions)
-          .values({
-            id: crypto.randomUUID(),
-            pageId: current.id,
-            path: current.path,
-            title: current.title,
-            description: current.description,
-            content: current.content,
-            authorId: principal?.id ?? null,
-            action: revisionAction,
-            createdAt: now,
-          })
-          .run()
+        snapshotRevision(tx, current, principal, revisionAction, now)
       }
 
       tx.update(pages)
@@ -354,7 +371,7 @@ export const createPageService = (db: DB): PageService => {
     getByPath(path) {
       const page = findByPath(path)
       if (page?.lifecycle !== 'active') return err(notFound(`No page at "${path}"`))
-      return page ? ok(page) : err(notFound(`No page at "${path}"`))
+      return ok(page)
     },
 
     create(input, principal) {
@@ -363,7 +380,8 @@ export const createPageService = (db: DB): PageService => {
       const v = validated.value
       if (!can(principal, 'page:create', { path: v.path })) return err(forbidden())
 
-      if (findByPath(v.path)) return err(conflict(`A page already exists at "${v.path}"`))
+      const existing = findByPath(v.path)
+      if (existing) return err(pathConflict(existing, v.path))
 
       const { html, toc } = renderMarkdown(v.content)
       const now = Date.now()
@@ -393,19 +411,7 @@ export const createPageService = (db: DB): PageService => {
           })
           .run()
 
-        tx.insert(pageRevisions)
-          .values({
-            id: crypto.randomUUID(),
-            pageId: id,
-            path: v.path,
-            title: v.title,
-            description: v.description,
-            content: v.content,
-            authorId: principal?.id ?? null,
-            action: 'created',
-            createdAt: now,
-          })
-          .run()
+        snapshotRevision(tx, { id, path: v.path, title: v.title, description: v.description, content: v.content }, principal, 'created', now)
 
         reindex(id, v.title, v.description, v.content)
         return findById(id)
@@ -418,6 +424,9 @@ export const createPageService = (db: DB): PageService => {
       const current = findByPath(path)
       if (!current || current.lifecycle !== 'active') return err(notFound(`No page at "${path}"`))
       if (!can(principal, 'page:update', { path: current.path })) return err(forbidden())
+      if (patch.expectedUpdatedAt != null && current.updatedAt !== patch.expectedUpdatedAt) {
+        return err(conflict(`Page "${path}" changed since you opened it; reload the latest version before saving.`))
+      }
 
       const validated = validatePageInput({
         path: current.path,
@@ -502,19 +511,7 @@ export const createPageService = (db: DB): PageService => {
       if (!can(principal, 'page:delete', { path: current.path })) return err(forbidden())
       const now = Date.now()
       const page = db.transaction((tx) => {
-        tx.insert(pageRevisions)
-          .values({
-            id: crypto.randomUUID(),
-            pageId: current.id,
-            path: current.path,
-            title: current.title,
-            description: current.description,
-            content: current.content,
-            authorId: principal?.id ?? null,
-            action: 'archived',
-            createdAt: now,
-          })
-          .run()
+        snapshotRevision(tx, current, principal, 'archived', now)
         tx.update(pages)
           .set({ lifecycle: 'archived', updatedAt: now })
           .where(eq(pages.id, current.id))
@@ -532,19 +529,7 @@ export const createPageService = (db: DB): PageService => {
       if (current.lifecycle === 'active') return ok(current)
       const now = Date.now()
       const page = db.transaction((tx) => {
-        tx.insert(pageRevisions)
-          .values({
-            id: crypto.randomUUID(),
-            pageId: current.id,
-            path: current.path,
-            title: current.title,
-            description: current.description,
-            content: current.content,
-            authorId: principal?.id ?? null,
-            action: 'restored',
-            createdAt: now,
-          })
-          .run()
+        snapshotRevision(tx, current, principal, 'restored', now)
         tx.update(pages)
           .set({ lifecycle: 'active', updatedAt: now })
           .where(eq(pages.id, current.id))
@@ -575,23 +560,12 @@ export const createPageService = (db: DB): PageService => {
       const v = validated.value
 
       if (v.path === current.path) return ok(current)
-      if (findByPath(v.path)) return err(conflict(`A page already exists at "${v.path}"`))
+      const existing = findByPath(v.path)
+      if (existing) return err(pathConflict(existing, v.path))
 
       const now = Date.now()
       const page = db.transaction((tx) => {
-        tx.insert(pageRevisions)
-          .values({
-            id: crypto.randomUUID(),
-            pageId: current.id,
-            path: current.path,
-            title: current.title,
-            description: current.description,
-            content: current.content,
-            authorId: principal?.id ?? null,
-            action: 'moved',
-            createdAt: now,
-          })
-          .run()
+        snapshotRevision(tx, current, principal, 'moved', now)
 
         tx.update(pages)
           .set({
@@ -610,19 +584,7 @@ export const createPageService = (db: DB): PageService => {
           const content = rewritePageLinks(page.content, current.path, v.path)
           if (content === page.content) continue
           const { html, toc } = renderMarkdown(content)
-          tx.insert(pageRevisions)
-            .values({
-              id: crypto.randomUUID(),
-              pageId: page.id,
-              path: page.path,
-              title: page.title,
-              description: page.description,
-              content: page.content,
-              authorId: principal?.id ?? null,
-              action: 'updated',
-              createdAt: now,
-            })
-            .run()
+          snapshotRevision(tx, page, principal, 'updated', now)
           tx.update(pages)
             .set({
               content,
@@ -649,19 +611,7 @@ export const createPageService = (db: DB): PageService => {
 
       const now = Date.now()
       const deleted = db.transaction((tx) => {
-        tx.insert(pageRevisions)
-          .values({
-            id: crypto.randomUUID(),
-            pageId: current.id,
-            path: current.path,
-            title: current.title,
-            description: current.description,
-            content: current.content,
-            authorId: principal?.id ?? null,
-            action: 'deleted',
-            createdAt: now,
-          })
-          .run()
+        snapshotRevision(tx, current, principal, 'deleted', now)
 
         tx.update(pages)
           .set({ lifecycle: 'deleted', updatedAt: now })

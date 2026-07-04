@@ -1,6 +1,6 @@
 {
   "name": "@ts-wiki/server",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -13,6 +13,7 @@
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
     "db:migrate": "bun src/db/migrate.ts",
+    "db:reindex-search": "bun src/db/reindex-search.ts",
     "db:seed": "bun src/db/seed.ts",
     "db:reset": "bun src/db/reset.ts",
     "typecheck": "tsc --noEmit"

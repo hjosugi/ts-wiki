@@ -18,7 +18,7 @@ import { BetterSQLiteSession } from 'drizzle-orm/better-sqlite3/session'
 import { createTableRelationsHelpers, extractTablesRelationalConfig } from 'drizzle-orm/relations'
 import type { DatabaseConfig, DatabaseDriver, LibsqlDatabaseConfig } from './config.ts'
 import * as schema from './schema.ts'
-import { runMigrations } from './migrate.ts'
+import { runMigrations, type FtsTokenizer } from './migrate.ts'
 
 export interface RawStatement {
   run(...params: unknown[]): { readonly changes?: number; readonly lastInsertRowid?: number | bigint }
@@ -42,6 +42,8 @@ export type DB = BunSQLiteDatabase<typeof schema> & {
 export interface CreateDbOptions {
   /** Run migrations on open. Default true. */
   readonly migrate?: boolean
+  /** FTS5 tokenizer used when creating pages_fts. Default unicode61. */
+  readonly ftsTokenizer?: FtsTokenizer
 }
 
 export const createSqliteDb = (path: string, options: CreateDbOptions = {}): DB => {
@@ -49,7 +51,7 @@ export const createSqliteDb = (path: string, options: CreateDbOptions = {}): DB 
   const sqlite = new BunDatabase(path, { create: true })
   sqlite.exec('PRAGMA journal_mode = WAL;')
   sqlite.exec('PRAGMA foreign_keys = ON;')
-  if (options.migrate !== false) runMigrations(sqlite)
+  if (options.migrate !== false) runMigrations(sqlite, { ftsTokenizer: options.ftsTokenizer })
   const db = drizzle(sqlite, { schema }) as unknown as DB
   return Object.assign(db, { $client: sqlite, $driver: 'sqlite' as const })
 }
@@ -109,7 +111,7 @@ export const createLibsqlDb = (config: LibsqlDatabaseConfig, options: CreateDbOp
   } as never) as RawDatabase
 
   client.exec('PRAGMA foreign_keys = ON;')
-  if (options.migrate !== false) runMigrations(client)
+  if (options.migrate !== false) runMigrations(client, { ftsTokenizer: options.ftsTokenizer })
   if (target.syncUrl) client.sync?.()
 
   return drizzleLibsqlSync(client)

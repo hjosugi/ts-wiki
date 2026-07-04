@@ -3,9 +3,11 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Api, type PublicSettings } from '@/lib/api'
 import { useAuth } from '@/stores/auth'
+import { useI18n } from '@/lib/i18n'
 
 const router = useRouter()
 const auth = useAuth()
+const { t } = useI18n()
 const q = ref('')
 const settings = ref<PublicSettings>({
   siteTitle: 'ts-wiki',
@@ -45,11 +47,11 @@ onMounted(async () => {
       </RouterLink>
 
       <form class="flex-1 max-w-md" @submit.prevent="submitSearch">
-        <input v-model="q" class="input py-1.5" placeholder="Search…  (try: banana)" />
+        <input v-model="q" class="input py-1.5" :placeholder="t('search')" />
       </form>
 
       <div class="flex items-center gap-2 ml-auto">
-        <button class="btn-ghost hidden sm:inline-flex" type="button" title="Command palette" @click="openCommandPalette">
+        <button class="btn-ghost hidden sm:inline-flex" type="button" :title="t('commandPalette')" @click="openCommandPalette">
           Cmd K
         </button>
         <a
@@ -60,15 +62,15 @@ onMounted(async () => {
         >
           {{ link.label }}
         </a>
-        <RouterLink to="/_events" class="btn-ghost">Events</RouterLink>
-        <RouterLink to="/_graph" class="btn-ghost">Graph</RouterLink>
-        <RouterLink v-if="auth.isAdmin" to="/_admin" class="btn-ghost">Admin</RouterLink>
-        <RouterLink v-if="auth.canEdit" to="/_new" class="btn-primary">+ New page</RouterLink>
+        <RouterLink to="/_events" class="btn-ghost">{{ t('events') }}</RouterLink>
+        <RouterLink to="/_graph" class="btn-ghost">{{ t('graph') }}</RouterLink>
+        <RouterLink v-if="auth.isAdmin" to="/_admin" class="btn-ghost">{{ t('admin') }}</RouterLink>
+        <RouterLink v-if="auth.canEdit" to="/_new" class="btn-primary">{{ t('newPage') }}</RouterLink>
         <template v-if="auth.isAuthed">
           <span class="text-sm text-gray-500 hidden sm:inline">{{ auth.user?.name }}</span>
-          <button class="btn-ghost" @click="auth.logout()">Sign out</button>
+          <button class="btn-ghost" @click="auth.logout()">{{ t('signOut') }}</button>
         </template>
-        <RouterLink v-else to="/_login" class="btn-ghost">Sign in</RouterLink>
+        <RouterLink v-else to="/_login" class="btn-ghost">{{ t('signIn') }}</RouterLink>
       </div>
     </div>
   </header>

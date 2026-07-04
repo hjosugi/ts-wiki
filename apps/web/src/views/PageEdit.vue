@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, defineAsyncComponent, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
-import { Api } from '@/lib/api'
+import { Api, type Page } from '@/lib/api'
 import { paramToPath } from '@/router'
 import { useAuth } from '@/stores/auth'
 import { usePages } from '@/stores/pages'
 import { usePresence } from '@/composables/usePresence'
+import { useI18n } from '@/lib/i18n'
 
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/MarkdownEditor.vue'))
 const CollabEditor = defineAsyncComponent(() => import('@/components/CollabEditor.vue'))
@@ -15,11 +16,13 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuth()
 const pagesStore = usePages()
+const { t } = useI18n()
 
 const isEdit = computed(() => route.name === 'edit')
 const title = ref('')
 const path = ref('')
 const originalPath = ref('')
+const originalUpdatedAt = ref<number | null>(null)
 const content = ref('')
 const labelsText = ref('')
 const status = ref<'draft' | 'in-review' | 'verified' | 'outdated'>('draft')
@@ -34,6 +37,7 @@ const savedReviewAtDate = ref('')
 const savedLocale = ref('und')
 const saving = ref(false)
 const error = ref<string | null>(null)
+const conflictDraft = ref<DraftSnapshot | null>(null)
 const selectedTemplate = ref('blank')
 const editorMode = ref<'markdown' | 'visual'>('markdown')
 const collabDisabledForSession = ref(false)
@@ -87,14 +91,58 @@ const dirty = computed(
     locale.value !== savedLocale.value,
 )
 const saveStatus = computed(() => {
-  if (saving.value) return 'Saving...'
-  if (error.value) return 'Save failed'
-  if (dirty.value) return 'Unsaved changes'
-  return 'Saved'
+  if (saving.value) return t('saving')
+  if (error.value) return t('saveFailed')
+  if (dirty.value) return t('unsavedChanges')
+  return t('saved')
 })
 const useCollaborativeMarkdown = computed(
   () => isEdit.value && editorMode.value === 'markdown' && originalPath.value && !collabDisabledForSession.value,
 )
+
+interface DraftSnapshot {
+  title: string
+  path: string
+  content: string
+  labelsText: string
+  status: 'draft' | 'in-review' | 'verified' | 'outdated'
+  reviewAtDate: string
+  locale: string
+}
+
+function captureDraft(): DraftSnapshot {
+  return {
+    title: title.value,
+    path: path.value,
+    content: content.value,
+    labelsText: labelsText.value,
+    status: status.value,
+    reviewAtDate: reviewAtDate.value,
+    locale: locale.value,
+  }
+}
+
+function applyDraft(draft: DraftSnapshot): void {
+  title.value = draft.title
+  path.value = draft.path
+  content.value = draft.content
+  labelsText.value = draft.labelsText
+  status.value = draft.status
+  reviewAtDate.value = draft.reviewAtDate
+  locale.value = draft.locale
+}
+
+function applyPage(page: Page): void {
+  title.value = page.title
+  path.value = page.path
+  originalPath.value = page.path
+  originalUpdatedAt.value = page.updatedAt
+  content.value = page.content
+  labelsText.value = labelTextFromJson(page.labels)
+  status.value = page.status
+  reviewAtDate.value = dateInputValue(page.reviewAt)
+  locale.value = page.locale
+}
 
 function markSaved(): void {
   savedTitle.value = title.value
@@ -154,14 +202,7 @@ onMounted(async () => {
     const target = paramToPath(route.params.path)
     try {
       const page = await Api.getPage(target)
-      title.value = page.title
-      path.value = page.path
-      originalPath.value = page.path
-      content.value = page.content
-      labelsText.value = labelTextFromJson(page.labels)
-      status.value = page.status
-      reviewAtDate.value = dateInputValue(page.reviewAt)
-      locale.value = page.locale
+      applyPage(page)
       markSaved()
     } catch (e) {
       error.value = (e as Error).message
@@ -174,6 +215,7 @@ onMounted(async () => {
     status.value = 'draft'
     reviewAtDate.value = ''
     locale.value = 'und'
+    originalUpdatedAt.value = null
     markSaved()
   }
 })
@@ -192,7 +234,7 @@ window.addEventListener('beforeunload', beforeUnload)
 onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
 onBeforeRouteLeave(() => {
   if (!dirty.value || saving.value) return true
-  return confirm('Discard unsaved changes?')
+  return confirm(t('discardUnsavedChanges'))
 })
 
 async function save(): Promise<void> {
@@ -210,26 +252,53 @@ async function save(): Promise<void> {
         title: title.value,
         content: content.value,
         ...metadata,
+        expectedUpdatedAt: originalUpdatedAt.value,
       })
+      originalUpdatedAt.value = updated.updatedAt
       if (path.value !== originalPath.value) {
         const moved = await Api.movePage(originalPath.value, path.value)
         path.value = moved.path
         originalPath.value = moved.path
+        originalUpdatedAt.value = moved.updatedAt
       } else {
         path.value = updated.path
         originalPath.value = updated.path
       }
     } else {
-      await Api.createPage({ path: path.value, title: title.value, content: content.value, ...metadata })
+      const created = await Api.createPage({ path: path.value, title: title.value, content: content.value, ...metadata })
+      originalUpdatedAt.value = created.updatedAt
     }
+    conflictDraft.value = null
     await pagesStore.refresh()
     markSaved()
     router.push('/' + path.value)
   } catch (e) {
-    error.value = (e as Error).message
+    const message = (e as Error).message
+    if (isEdit.value && /changed since you opened|reload the latest/i.test(message)) {
+      conflictDraft.value = captureDraft()
+      try {
+        const latest = await Api.getPage(originalPath.value)
+        applyPage(latest)
+        markSaved()
+        error.value = `${message} Latest version loaded; merge from your saved draft below, then save again.`
+      } catch {
+        error.value = message
+      }
+    } else {
+      error.value = message
+    }
   } finally {
     saving.value = false
   }
+}
+
+function restoreConflictDraft(): void {
+  if (!conflictDraft.value) return
+  applyDraft(conflictDraft.value)
+}
+
+function discardConflictDraft(): void {
+  conflictDraft.value = null
 }
 
 async function remove(): Promise<void> {
@@ -258,12 +327,8 @@ async function archive(): Promise<void> {
 <template>
   <div>
     <div class="flex flex-wrap items-center gap-3 mb-4">
-      <input v-model="title" class="input flex-1 min-w-50 text-lg font-semibold" placeholder="Page title" />
-      <input
-        v-model="path"
-        class="input font-mono text-sm max-w-xs"
-        placeholder="path/to/page"
-      />
+      <input v-model="title" class="input flex-1 min-w-50 text-lg font-semibold" :placeholder="t('pageTitle')" />
+      <input v-model="path" class="input font-mono text-sm max-w-xs" :placeholder="t('pathPlaceholder')" />
       <select v-if="!isEdit" v-model="selectedTemplate" class="input max-w-48">
         <option v-for="template in templates" :key="template.key" :value="template.key">
           {{ template.label }}
@@ -275,13 +340,13 @@ async function archive(): Promise<void> {
         <option value="verified">verified</option>
         <option value="outdated">outdated</option>
       </select>
-      <input v-model="reviewAtDate" class="input max-w-42" type="date" title="Review date" />
-      <input v-model="locale" class="input max-w-28" placeholder="locale" title="Locale" />
+      <input v-model="reviewAtDate" class="input max-w-42" type="date" :title="t('reviewDate')" />
+      <input v-model="locale" class="input max-w-28" placeholder="locale" :title="t('locale')" />
       <button class="btn-primary" :disabled="saving || !title || !path" @click="save">
-        {{ saving ? 'Saving...' : 'Save' }}
+        {{ saving ? t('saving') : t('save') }}
       </button>
-      <button v-if="isEdit" class="btn-ghost" @click="archive">Archive</button>
-      <button v-if="isEdit" class="btn-danger" @click="remove">Delete</button>
+      <button v-if="isEdit" class="btn-ghost" @click="archive">{{ t('archive') }}</button>
+      <button v-if="isEdit" class="btn-danger" @click="remove">{{ t('delete') }}</button>
     </div>
     <input
       v-model="labelsText"
@@ -296,7 +361,7 @@ async function archive(): Promise<void> {
         {{ saveStatus }}
       </span>
       <RouterLink v-if="isEdit && originalPath" class="link-quiet" :to="'/_history/' + originalPath">
-        History
+        {{ t('history') }}
       </RouterLink>
       <div class="inline-flex rounded-md border border-gray-200 p-0.5 dark:border-gray-800" aria-label="Editor mode">
         <button
@@ -305,7 +370,7 @@ async function archive(): Promise<void> {
           :class="editorMode === 'markdown' ? 'bg-violet-600 text-white' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'"
           @click="setEditorMode('markdown')"
         >
-          Markdown
+          {{ t('markdown') }}
         </button>
         <button
           type="button"
@@ -313,16 +378,30 @@ async function archive(): Promise<void> {
           :class="editorMode === 'visual' ? 'bg-violet-600 text-white' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'"
           @click="setEditorMode('visual')"
         >
-          Visual
+          {{ t('visual') }}
         </button>
       </div>
     </div>
     <p v-if="error" class="text-sm text-red-600 mb-3">{{ error }}</p>
+    <section v-if="conflictDraft" class="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h2 class="text-sm font-semibold text-amber-900 dark:text-amber-100">{{ t('unsavedDraftKept') }}</h2>
+        <div class="flex flex-wrap gap-2">
+          <button class="btn-ghost" type="button" @click="restoreConflictDraft">{{ t('restoreDraft') }}</button>
+          <button class="btn-ghost" type="button" @click="discardConflictDraft">{{ t('keepLatest') }}</button>
+        </div>
+      </div>
+      <textarea
+        class="input mt-3 min-h-32 font-mono text-xs"
+        :value="conflictDraft.content"
+        readonly
+      ></textarea>
+    </section>
     <VisualEditor v-if="editorMode === 'visual'" v-model="content" />
     <template v-else-if="isEdit">
       <CollabEditor v-if="useCollaborativeMarkdown" :room="originalPath" @update:modelValue="content = $event" />
       <MarkdownEditor v-else-if="originalPath" v-model="content" />
-      <div v-else class="text-gray-400">Loading editor…</div>
+      <div v-else class="text-gray-400">{{ t('loadingEditor') }}</div>
     </template>
     <MarkdownEditor v-else v-model="content" />
   </div>

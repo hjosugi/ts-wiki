@@ -43,6 +43,16 @@ SQLite is the default database runtime:
 DATABASE_DRIVER=sqlite DATABASE_PATH=/data/ts-wiki.sqlite
 ```
 
+Search uses SQLite FTS5. The default tokenizer is `unicode61`, which is good
+for English/European prose but only matches Japanese/CJK token prefixes. For
+CJK-heavy deployments, set `TS_WIKI_FTS_TOKENIZER=trigram` before the first
+migration. For an existing database, back it up and rebuild the virtual search
+table:
+
+```bash
+TS_WIKI_FTS_TOKENIZER=trigram bun --filter '@ts-wiki/server' db:reindex-search
+```
+
 libSQL/Turso is also supported. Local libSQL can use a `file:` URL; remote
 Turso URLs run through a local embedded-replica file:
 
@@ -119,6 +129,7 @@ so Docker, systemd, or a hosted log pipeline can collect them without an agent.
 
 ```bash
 bun --filter '@ts-wiki/server' db:migrate
+bun --filter '@ts-wiki/server' db:reindex-search
 bun --filter '@ts-wiki/server' db:seed
 bun --filter '@ts-wiki/server' db:reset
 bun --filter '@ts-wiki/server' typecheck

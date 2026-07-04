@@ -79,9 +79,10 @@ setup — but with a single zero-dependency backend. User input is turned into a
 query so it feels good as-you-type.
 
 > **CJK / Japanese search note.** The default FTS5 tokenizer is `unicode61`, which ranks prose
-> (English/European) well but doesn't segment Japanese. For CJK-heavy content switch
-> `FTS_TOKENIZER` in `apps/server/src/db/migrate.ts` to `trigram` (substring matching, ≥3 chars)
-> and re-run `db:reset && db:seed`.
+> (English/European) well but doesn't segment Japanese. For CJK-heavy content set
+> `TS_WIKI_FTS_TOKENIZER=trigram` before first migration. Existing databases need the
+> FTS virtual table rebuilt: back up SQLite, then run
+> `TS_WIKI_FTS_TOKENIZER=trigram bun run db:reindex-search`.
 
 **Types** are shared without codegen. The server exports its `App` type; `apps/web/src/lib/api.ts`
 does `treaty<App>(...)`, so every request's path, query, and body is checked against the real

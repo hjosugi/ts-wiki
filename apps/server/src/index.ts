@@ -10,7 +10,7 @@ import { createApp } from './http/app.ts'
 const env = loadEnv()
 mkdirSync(join(env.dataDir, 'assets'), { recursive: true })
 
-const db = createDb(env.database)
+const db = createDb(env.database, { ftsTokenizer: env.search.ftsTokenizer })
 const app = createApp({ db, env }).listen(env.port)
 
 const shutdown = () => {

@@ -357,6 +357,7 @@ export const Api = {
     ownerId?: string | null
     reviewAt?: number | null
     locale?: string | null
+    expectedUpdatedAt?: number | null
   }) =>
     call<{ page: Page }>(client().api.page.put(body, { query: { path } })).then((d) => d.page),
   restoreRevision: (path: string, revisionId: string) =>

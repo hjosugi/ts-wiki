@@ -114,7 +114,7 @@ console.log(greet('ts-wiki'))
 
 export const runSeed = async (): Promise<void> => {
   const env = loadEnv()
-  const db = createDb(env.database)
+  const db = createDb(env.database, { ftsTokenizer: env.search.ftsTokenizer })
 
   try {
     const services = createServices(db)

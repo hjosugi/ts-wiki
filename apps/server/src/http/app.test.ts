@@ -38,6 +38,9 @@ const testEnv = (dataDir: string, cors: Env['cors'] = { origins: null }): Env =>
     passkeyRpId: 'localhost',
     oidcProviders: [],
   },
+  search: {
+    ftsTokenizer: 'unicode61',
+  },
   assetStorage: {
     type: 'local',
     dataDir,
@@ -1035,6 +1038,15 @@ describe('http app assets', () => {
     expect(deletes).toEqual([uploads[0]!.storageName])
     expect(stored.has(uploads[0]!.storageName)).toBe(false)
   }, HTTP_TEST_TIMEOUT_MS)
+
+  test('encoded traversal asset paths return 404', async () => {
+    const { app } = createFixture()
+
+    const response = await app.handle(new Request('http://localhost/assets/..%2Fts-wiki.sqlite'))
+
+    expect(response.status).toBe(404)
+    expect(await response.text()).toBe('Not found')
+  })
 
   test('accepts non-image document attachments', async () => {
     const { app } = createFixture()

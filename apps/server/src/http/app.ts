@@ -183,6 +183,18 @@ const assetResponse = (asset: AssetObject): Response => {
   return new Response(asset.body, { headers })
 }
 
+const safeAssetRequestPath = (rawPath: string): string | null => {
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(rawPath)
+  } catch {
+    return null
+  }
+  if (!decoded || decoded.startsWith('/') || decoded.includes('\\') || decoded.includes('\0')) return null
+  if (decoded.split('/').some((part) => part === '.' || part === '..' || part.length === 0)) return null
+  return decoded
+}
+
 const parsePageLabels = (value: string): string[] => {
   try {
     const parsed = JSON.parse(value) as unknown
@@ -572,6 +584,7 @@ export const createApp = ({
             ownerId: t.Optional(t.Union([t.String(), t.Null()])),
             reviewAt: t.Optional(t.Union([t.Number(), t.Null()])),
             locale: t.Optional(t.Union([t.String(), t.Null()])),
+            expectedUpdatedAt: t.Optional(t.Union([t.Number(), t.Null()])),
           }),
         },
       )
@@ -1410,7 +1423,9 @@ export const createApp = ({
         },
       )
       .get('/assets/*', async ({ params }) => {
-        const asset = await assetStorage.get(params['*'])
+        const storageName = safeAssetRequestPath(params['*'])
+        if (!storageName) return new Response('Not found', { status: 404 })
+        const asset = await assetStorage.get(storageName)
         return asset ? assetResponse(asset) : new Response('Not found', { status: 404 })
       })
       .get('/ui', () => {

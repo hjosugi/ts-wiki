@@ -17,9 +17,20 @@ interface MigratableDatabase {
   close?(): unknown
 }
 
-/** FTS5 tokenizer. `unicode61` ranks prose well; switch to `trigram` for
- *  substring/CJK-heavy content (see README "Search"). */
-export const FTS_TOKENIZER = "unicode61 remove_diacritics 2"
+export type FtsTokenizer = 'unicode61' | 'trigram'
+
+/** FTS5 tokenizer names exposed through TS_WIKI_FTS_TOKENIZER. */
+export const DEFAULT_FTS_TOKENIZER: FtsTokenizer = 'unicode61'
+export const FTS_TOKENIZER_SQL: Record<FtsTokenizer, string> = {
+  unicode61: 'unicode61 remove_diacritics 2',
+  trigram: 'trigram',
+}
+/** Back-compat constant for older docs/tests. */
+export const FTS_TOKENIZER = FTS_TOKENIZER_SQL[DEFAULT_FTS_TOKENIZER]
+
+export interface MigrationOptions {
+  readonly ftsTokenizer?: FtsTokenizer
+}
 
 const hasColumn = (sqlite: MigratableDatabase, table: string, column: string): boolean =>
   sqlite
@@ -33,7 +44,8 @@ const addColumn = (sqlite: MigratableDatabase, table: string, column: string, de
   }
 }
 
-export const runMigrations = (sqlite: MigratableDatabase): void => {
+export const runMigrations = (sqlite: MigratableDatabase, options: MigrationOptions = {}): void => {
+  const ftsTokenizer = FTS_TOKENIZER_SQL[options.ftsTokenizer ?? DEFAULT_FTS_TOKENIZER]
   sqlite.exec('PRAGMA journal_mode = WAL;')
   sqlite.exec('PRAGMA foreign_keys = ON;')
 
@@ -269,7 +281,7 @@ export const runMigrations = (sqlite: MigratableDatabase): void => {
       title,
       description,
       content,
-      tokenize = '${FTS_TOKENIZER}'
+      tokenize = '${ftsTokenizer}'
     );
   `)
 
@@ -290,7 +302,7 @@ if (import.meta.main) {
   const { loadEnv } = await import('../env.ts')
   const { createDb } = await import('./client.ts')
   const env = loadEnv()
-  const db = createDb(env.database)
+  const db = createDb(env.database, { ftsTokenizer: env.search.ftsTokenizer })
   db.$client.close()
   const target = env.database.driver === 'sqlite' ? env.database.path : env.database.replicaPath ?? env.database.url
   console.log(`✓ Migrations applied to ${target}`)

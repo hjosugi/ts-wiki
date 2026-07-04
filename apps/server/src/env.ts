@@ -10,6 +10,7 @@ import {
   type DatabaseConfig,
   type DatabaseDriver,
 } from './db/config.ts'
+import type { FtsTokenizer } from './db/migrate.ts'
 import type { AssetStorageConfig } from './storage/assets.ts'
 
 export const DEFAULT_JWT_SECRET = 'dev-insecure-secret-change-me'
@@ -37,6 +38,10 @@ export interface RealtimeEnv {
 export interface CorsEnv {
   /** null = permissive CORS, [] = no cross-origin allow-list, values = exact allowed origins. */
   readonly origins: readonly string[] | null
+}
+
+export interface SearchEnv {
+  readonly ftsTokenizer: FtsTokenizer
 }
 
 export interface OidcProviderEnv {
@@ -70,6 +75,7 @@ export interface Env {
   readonly trustProxyHeaders: boolean
   readonly cors: CorsEnv
   readonly auth: AuthEnv
+  readonly search: SearchEnv
   readonly assetStorage: AssetStorageConfig
   readonly git: GitEnv
   readonly realtime: RealtimeEnv
@@ -100,6 +106,12 @@ const parseDatabaseDriver = (value: string | undefined): DatabaseDriver => {
   const driver = value?.trim().toLowerCase() || 'sqlite'
   if (driver === 'sqlite' || driver === 'libsql') return driver
   throw new Error('DATABASE_DRIVER must be either "sqlite" or "libsql".')
+}
+
+const parseFtsTokenizer = (value: string | undefined): FtsTokenizer => {
+  const tokenizer = value?.trim().toLowerCase() || 'unicode61'
+  if (tokenizer === 'unicode61' || tokenizer === 'trigram') return tokenizer
+  throw new Error('TS_WIKI_FTS_TOKENIZER must be either "unicode61" or "trigram".')
 }
 
 const loadJwtSecret = (source: EnvSource): string => {
@@ -256,6 +268,9 @@ export const loadEnv = (source: EnvSource = process.env): Env => {
       origins: configuredCorsOrigins ?? (production ? [] : null),
     },
     auth: loadAuthEnv(source),
+    search: {
+      ftsTokenizer: parseFtsTokenizer(source.TS_WIKI_FTS_TOKENIZER),
+    },
     assetStorage: loadAssetStorage(source, dataDir),
     git: {
       // NB: namespaced TS_WIKI_GIT_* — plain GIT_DIR / GIT_AUTHOR_* are reserved

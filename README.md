@@ -22,6 +22,12 @@ Open the URL Vite prints, sign in as **`admin@example.com`** with the password p
 first registered account becomes admin. Search `banana`, open a page, and hit **Edit** for
 the live Markdown editor.
 
+Japanese/CJK search: the default SQLite FTS tokenizer is `unicode61`, which is
+best for English/European prose but only matches Japanese token prefixes. Set
+`TS_WIKI_FTS_TOKENIZER=trigram` before first migration/seed for CJK substring
+search. For an existing database, back it up and run
+`TS_WIKI_FTS_TOKENIZER=trigram bun run db:reindex-search`.
+
 ## Docker
 
 Build a production image with the Vue UI baked in:
@@ -30,10 +36,12 @@ Build a production image with the Vue UI baked in:
 docker build -t ts-wiki .
 docker run --rm -v ts-wiki-data:/data \
   -e JWT_SECRET="$(openssl rand -hex 32)" \
+  -e TS_WIKI_FTS_TOKENIZER=trigram \
   -e TS_WIKI_SEED_ADMIN_PASSWORD="change-me-before-first-seed" \
   ts-wiki bun --filter '@ts-wiki/server' db:seed
 docker run --rm -p 4000:4000 -v ts-wiki-data:/data \
   -e JWT_SECRET="$(openssl rand -hex 32)" \
+  -e TS_WIKI_FTS_TOKENIZER=trigram \
   ts-wiki
 ```
 
@@ -49,18 +57,18 @@ persistent volume, or Render Free backed by Turso/libSQL and R2. SQLite under
 Tagged releases publish a Docker image to GHCR:
 
 ```bash
-docker pull ghcr.io/hjosugi/ts-wiki:v0.3.0
+docker pull ghcr.io/hjosugi/ts-wiki:v0.3.1
 docker volume create ts-wiki-data
 export JWT_SECRET="$(openssl rand -hex 32)"
 docker run --rm -v ts-wiki-data:/data \
   -e JWT_SECRET="$JWT_SECRET" \
   -e TS_WIKI_SEED_ADMIN_PASSWORD="change-me-before-first-seed" \
-  ghcr.io/hjosugi/ts-wiki:v0.3.0 bun --filter '@ts-wiki/server' db:seed
+  ghcr.io/hjosugi/ts-wiki:v0.3.1 bun --filter '@ts-wiki/server' db:seed
 docker run -d --name ts-wiki --restart unless-stopped \
   -p 4000:4000 -v ts-wiki-data:/data \
   -e NODE_ENV=production \
   -e JWT_SECRET="$JWT_SECRET" \
-  ghcr.io/hjosugi/ts-wiki:v0.3.0
+  ghcr.io/hjosugi/ts-wiki:v0.3.1
 ```
 
 Put Caddy, nginx, or a free Cloudflare Tunnel in front of port `4000` for TLS

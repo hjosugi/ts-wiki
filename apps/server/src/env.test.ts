@@ -10,6 +10,7 @@ describe('loadEnv', () => {
     expect(env.databasePath).toBe('./data/ts-wiki.sqlite')
     expect(env.trustProxyHeaders).toBe(false)
     expect(env.cors.origins).toBeNull()
+    expect(env.search).toEqual({ ftsTokenizer: 'unicode61' })
     expect(env.assetStorage).toEqual({
       type: 'local',
       dataDir: './data',
@@ -91,6 +92,12 @@ describe('loadEnv', () => {
   test('rejects unknown or incomplete database config', () => {
     expect(() => loadEnv({ DATABASE_DRIVER: 'postgres' })).toThrow(/DATABASE_DRIVER/)
     expect(() => loadEnv({ DATABASE_DRIVER: 'libsql' })).toThrow(/LIBSQL_URL/)
+  })
+
+  test('parses and validates the FTS tokenizer', () => {
+    expect(loadEnv({ TS_WIKI_FTS_TOKENIZER: 'trigram' }).search.ftsTokenizer).toBe('trigram')
+    expect(loadEnv({ TS_WIKI_FTS_TOKENIZER: 'UNICODE61' }).search.ftsTokenizer).toBe('unicode61')
+    expect(() => loadEnv({ TS_WIKI_FTS_TOKENIZER: 'kuromoji' })).toThrow(/TS_WIKI_FTS_TOKENIZER/)
   })
 
   test('parses R2 asset storage with the official account endpoint', () => {

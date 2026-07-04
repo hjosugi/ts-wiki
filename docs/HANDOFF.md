@@ -108,7 +108,8 @@ Cross-cutting principles (the "FP-leaning architecture" the user asked for):
 6. **Slugs use an allow-list** (`[^\p{L}\p{N}]+ → -`), not a block-list, so Japanese/Unicode
    survive and arbitrary punctuation is handled uniformly. Don't "simplify" it back to ASCII.
 7. **FTS5 tokenizer & CJK.** Default `unicode61` doesn't segment Japanese. For CJK-heavy content,
-   switch `FTS_TOKENIZER` in `migrate.ts` to `trigram`, then `db:reset && db:seed`.
+   set `TS_WIKI_FTS_TOKENIZER=trigram` before first migration. For an existing DB,
+   back it up and run `TS_WIKI_FTS_TOKENIZER=trigram bun run db:reindex-search`.
 8. **No drizzle-kit.** The DDL (incl. the FTS5 virtual table, which drizzle-kit can't express) is
    hand-written in `migrate.ts` and must be kept in sync with `schema.ts`. Adopting drizzle-kit
    later is fine, but FTS5 will still need a manual migration step.
@@ -227,7 +228,7 @@ apps/server/src/
   env.ts           typed config (loadEnv)
   db/
     schema.ts      Drizzle tables + inferred types
-    migrate.ts     DDL incl. FTS5 (+ `bun src/db/migrate.ts`); FTS_TOKENIZER lives here
+    migrate.ts     DDL incl. FTS5 (+ `bun src/db/migrate.ts`); tokenizer comes from TS_WIKI_FTS_TOKENIZER
     client.ts      createDb() — SQLite/libSQL + drizzle, exposes $client for raw FTS
     seed.ts        admin + sample pages   (bun run db:seed)
     reset.ts       delete db files        (bun run db:reset)

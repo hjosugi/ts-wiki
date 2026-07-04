@@ -1,6 +1,6 @@
 {
   "name": "ts-wiki",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -15,6 +15,7 @@
     "dev:web": "bun --filter '@ts-wiki/web' dev",
     "build": "bun --filter '@ts-wiki/web' build",
     "db:migrate": "bun --filter '@ts-wiki/server' db:migrate",
+    "db:reindex-search": "bun --filter '@ts-wiki/server' db:reindex-search",
     "db:seed": "bun --filter '@ts-wiki/server' db:seed",
     "db:reset": "bun --filter '@ts-wiki/server' db:reset",
     "typecheck": "bun --filter '*' typecheck",

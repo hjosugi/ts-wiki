@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import type { Page } from '@/lib/api'
 import WikiBreadcrumbs from '@/components/WikiBreadcrumbs.vue'
+import { useI18n } from '@/lib/i18n'
 
 const props = defineProps<{
   page: Page
@@ -9,12 +10,10 @@ const props = defineProps<{
 }>()
 
 const copied = ref(false)
+const { formatDate, formatDateTime, t } = useI18n()
 
 const updated = computed(() =>
-  new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(props.page.updatedAt)),
+  formatDateTime(props.page.updatedAt),
 )
 
 const childPath = computed(() => `${props.page.path}/new-page`)
@@ -29,9 +28,7 @@ const labels = computed<string[]>(() => {
   }
 })
 const reviewDate = computed(() =>
-  props.page.reviewAt
-    ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(props.page.reviewAt))
-    : null,
+  props.page.reviewAt ? formatDate(props.page.reviewAt) : null,
 )
 
 async function copyPath(): Promise<void> {
@@ -52,13 +49,13 @@ async function copyPath(): Promise<void> {
         <h1 class="text-3xl font-bold tracking-tight text-gray-950 dark:text-gray-50">{{ page.title }}</h1>
         <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-500 dark:text-gray-400">
           <span class="font-mono">/{{ page.path }}</span>
-          <span>Space {{ page.spaceKey }}</span>
-          <span>Locale {{ page.locale }}</span>
-          <span>Updated {{ updated }}</span>
+          <span>{{ t('space', { space: page.spaceKey }) }}</span>
+          <span>{{ t('locale') }} {{ page.locale }}</span>
+          <span>{{ t('updated', { date: updated }) }}</span>
           <span class="rounded bg-gray-100 px-2 py-0.5 text-xs font-semibold capitalize text-gray-700 dark:bg-gray-800 dark:text-gray-200">
             {{ page.status }}
           </span>
-          <span v-if="reviewDate">Review {{ reviewDate }}</span>
+          <span v-if="reviewDate">{{ t('review', { date: reviewDate }) }}</span>
         </div>
         <div v-if="labels.length" class="mt-3 flex flex-wrap gap-1.5">
           <RouterLink
@@ -74,18 +71,18 @@ async function copyPath(): Promise<void> {
 
       <div class="flex flex-wrap gap-2 shrink-0">
         <button class="btn-ghost" type="button" @click="copyPath">
-          {{ copied ? 'Copied' : 'Copy path' }}
+          {{ copied ? t('copied') : t('copyPath') }}
         </button>
         <RouterLink v-if="canEdit" :to="{ name: 'new', query: { path: childPath } }" class="btn-ghost">
-          New child
+          {{ t('newChild') }}
         </RouterLink>
         <RouterLink :to="'/_history/' + page.path" class="btn-ghost">
-          History
+          {{ t('history') }}
         </RouterLink>
-        <a class="btn-ghost" :href="markdownExportUrl">Markdown</a>
-        <a class="btn-ghost" :href="htmlExportUrl">HTML</a>
+        <a class="btn-ghost" :href="markdownExportUrl">{{ t('markdown') }}</a>
+        <a class="btn-ghost" :href="htmlExportUrl">{{ t('html') }}</a>
         <RouterLink v-if="canEdit" :to="'/_edit/' + page.path" class="btn-primary">
-          Edit
+          {{ t('edit') }}
         </RouterLink>
       </div>
     </div>

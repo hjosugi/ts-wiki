@@ -53,6 +53,22 @@ describe('page + search slice (in-memory db)', () => {
     if (!second.ok) expect(second.error.kind).toBe('conflict')
   })
 
+  test('create reports a distinct conflict when trash holds the path', () => {
+    const db = createDb(':memory:')
+    const { pages } = createServices(db)
+    pages.create({ path: 'gone', title: 'Gone', content: 'old' }, admin)
+    pages.remove('gone', admin)
+
+    const recreated = pages.create({ path: 'gone', title: 'Gone again', content: 'new' }, admin)
+
+    expect(recreated.ok).toBe(false)
+    if (!recreated.ok) {
+      expect(recreated.error.kind).toBe('conflict')
+      expect(recreated.error.message).toContain('deleted page exists')
+      expect(recreated.error.message).toContain('restore it from Trash or purge it first')
+    }
+  })
+
   test('update snapshots history and re-indexes', () => {
     const db = createDb(':memory:')
     const { pages, search } = createServices(db)
@@ -61,6 +77,34 @@ describe('page + search slice (in-memory db)', () => {
 
     expect(search.search('apple').hits.length).toBe(0)
     expect(search.search('orange').hits.length).toBe(1)
+  })
+
+  test('update rejects stale expectedUpdatedAt', async () => {
+    const db = createDb(':memory:')
+    const { pages } = createServices(db)
+    const created = pages.create({ path: 'docs/conflict', title: 'Original', content: 'one' }, admin)
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    await Bun.sleep(2)
+
+    const first = pages.update('docs/conflict', { title: 'First', expectedUpdatedAt: created.value.updatedAt }, admin)
+    const second = pages.update('docs/conflict', { title: 'Second', expectedUpdatedAt: created.value.updatedAt }, admin)
+
+    expect(first.ok).toBe(true)
+    expect(second.ok).toBe(false)
+    if (!second.ok) expect(second.error.kind).toBe('conflict')
+    const current = pages.getByPath('docs/conflict')
+    expect(current.ok).toBe(true)
+    if (current.ok) expect(current.value.title).toBe('First')
+  })
+
+  test('trigram tokenizer finds Japanese mid-run terms', () => {
+    const db = createDb(':memory:', { ftsTokenizer: 'trigram' })
+    const { pages, search } = createServices(db)
+    pages.create({ path: 'jp/search', title: '日本語検索', content: 'これはテストです。天ぷら本文もあります。' }, admin)
+
+    expect(search.search('テスト').hits[0]?.path).toBe('jp/search')
+    expect(search.search('天ぷら').hits[0]?.path).toBe('jp/search')
   })
 
   test('page metadata supports labels, status, review dates, and filtered search', () => {

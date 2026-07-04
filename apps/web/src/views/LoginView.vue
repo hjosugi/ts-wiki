@@ -4,9 +4,11 @@ import { startAuthentication, type PublicKeyCredentialRequestOptionsJSON } from 
 import { useRouter } from 'vue-router'
 import { Api, setToken, type PublicAuthProvider } from '@/lib/api'
 import { useAuth } from '@/stores/auth'
+import { useI18n } from '@/lib/i18n'
 
 const auth = useAuth()
 const router = useRouter()
+const { t } = useI18n()
 
 const mode = ref<'login' | 'register'>('login')
 const email = ref('')
@@ -73,19 +75,19 @@ onMounted(async () => {
 
 <template>
   <div class="max-w-sm mx-auto card p-6 mt-8">
-    <h1 class="text-xl font-bold mb-1">{{ mode === 'login' ? 'Sign in' : 'Create account' }}</h1>
+    <h1 class="text-xl font-bold mb-1">{{ mode === 'login' ? t('signIn') : t('createAccount') }}</h1>
     <p class="text-sm text-gray-400 mb-5">
-      {{ mode === 'login' ? 'Welcome back.' : 'The first account to register becomes the admin.' }}
+      {{ mode === 'login' ? t('welcomeBack') : t('firstAccountAdmin') }}
     </p>
 
     <form class="space-y-3" @submit.prevent="submit">
-      <input v-model="email" class="input" placeholder="Email" autocomplete="username" />
-      <input v-if="mode === 'register'" v-model="name" class="input" placeholder="Display name" />
+      <input v-model="email" class="input" :placeholder="t('email')" autocomplete="username" />
+      <input v-if="mode === 'register'" v-model="name" class="input" :placeholder="t('displayName')" />
       <input
         v-model="password"
         type="password"
         class="input"
-        placeholder="Password"
+        :placeholder="t('password')"
         autocomplete="current-password"
       />
       <input
@@ -93,18 +95,18 @@ onMounted(async () => {
         v-model="totpCode"
         class="input"
         inputmode="numeric"
-        placeholder="2FA code if enabled"
+        :placeholder="t('twoFactorCodeIfEnabled')"
         autocomplete="one-time-code"
       />
       <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
       <button class="btn-primary w-full justify-center" :disabled="busy || !email || !password">
-        {{ busy ? '…' : mode === 'login' ? 'Sign in' : 'Create account' }}
+        {{ busy ? '...' : mode === 'login' ? t('signIn') : t('createAccount') }}
       </button>
     </form>
 
     <div v-if="mode === 'login'" class="mt-4 space-y-2">
       <button class="btn-ghost w-full justify-center" type="button" :disabled="busy" @click="signInWithPasskey">
-        Sign in with passkey
+        {{ t('signInWithPasskey') }}
       </button>
       <button
         v-for="provider in providers"
@@ -113,7 +115,7 @@ onMounted(async () => {
         type="button"
         @click="startProvider(provider)"
       >
-        Sign in with {{ provider.label }}
+        {{ t('signInWith', { provider: provider.label }) }}
       </button>
     </div>
 
@@ -121,11 +123,11 @@ onMounted(async () => {
       class="text-sm link-quiet mt-4"
       @click="mode = mode === 'login' ? 'register' : 'login'"
     >
-      {{ mode === 'login' ? 'Need an account? Register' : 'Have an account? Sign in' }}
+      {{ mode === 'login' ? t('needAccount') : t('haveAccount') }}
     </button>
 
     <p class="text-xs text-gray-400 mt-6">
-      Seeded admin: <code class="font-mono">admin@example.com</code>; password comes from
+      {{ t('seededAdmin') }} <code class="font-mono">admin@example.com</code>; password comes from
       <code class="font-mono">db:seed</code>.
     </p>
   </div>

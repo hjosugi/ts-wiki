@@ -12,9 +12,11 @@ import PageComments from '@/components/PageComments.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import PageToc from '@/components/PageToc.vue'
 import type { PageGraph } from '@/lib/api'
+import { useI18n } from '@/lib/i18n'
 
 const route = useRoute()
 const auth = useAuth()
+const { t } = useI18n()
 
 const page = ref<Page | null>(null)
 const graph = ref<PageGraph>({ nodes: [], edges: [] })
@@ -87,7 +89,7 @@ onUnmounted(stopRealtime)
 </script>
 
 <template>
-  <div v-if="loading" class="text-gray-400">Loading…</div>
+  <div v-if="loading" class="text-gray-400">{{ t('loading') }}</div>
 
   <div v-else-if="page" class="flex gap-8">
     <article class="flex-1 min-w-0">
@@ -138,14 +140,14 @@ onUnmounted(stopRealtime)
 
   <EmptyState
     v-else
-    title="This page does not exist yet"
+    :title="t('thisPageMissing')"
     :message="`/${path}`"
   >
     <template #actions>
       <RouterLink v-if="auth.canEdit" :to="{ name: 'new', query: { path } }" class="btn-primary">
-        Create this page
+        {{ t('createThisPage') }}
       </RouterLink>
-      <RouterLink v-else to="/_login" class="btn-ghost">Sign in to create it</RouterLink>
+      <RouterLink v-else to="/_login" class="btn-ghost">{{ t('signInCreate') }}</RouterLink>
     </template>
     <p v-if="error" class="text-xs text-gray-400 mt-4">{{ error }}</p>
   </EmptyState>
