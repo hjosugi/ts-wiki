@@ -116,3 +116,7 @@ Set `TS_WIKI_PRIVATE=true` to require login for page/search/realtime read routes
 Set `TS_WIKI_REGISTRATION=off` to disable self-registration after the first
 admin bootstrap. JWT lifetime is configurable with `TS_WIKI_JWT_TTL_SECONDS`,
 and uploads are capped by `ASSET_MAX_BYTES` (default 25 MiB).
+
+## License
+
+0BSD. You can use, copy, modify, and distribute this project for almost any purpose.

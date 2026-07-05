@@ -1,7 +1,7 @@
 {
   "name": "ts-wiki",
   "version": "0.3.2",
-  "license": "MIT",
+  "license": "0BSD",
   "private": true,
   "type": "module",
   "description": "A modern, lean, FP-leaning open-source wiki. Bun + Elysia + Drizzle (SQLite/FTS5) + Vue 3.",

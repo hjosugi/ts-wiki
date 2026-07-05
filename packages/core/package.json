@@ -1,7 +1,7 @@
 {
   "name": "@ts-wiki/core",
   "version": "0.3.2",
-  "license": "MIT",
+  "license": "0BSD",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
