@@ -83,6 +83,12 @@ const items = computed<CommandItem[]>(() => {
     run: () => router.push('/_changes'),
   })
   out.push({
+    key: 'shortcuts',
+    label: 'Keyboard shortcuts',
+    detail: 'Show help',
+    run: () => window.dispatchEvent(new Event('open-shortcuts-help')),
+  })
+  out.push({
     key: 'links',
     label: 'Broken links',
     detail: 'Find missing pages',
