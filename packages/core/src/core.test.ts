@@ -201,6 +201,37 @@ It was all a dream.
     expect(html).toContain('wiki-callout-spoiler')
     expect(html).toContain('Ending')
   })
+
+  test('renders a links/social row with provider detection and labels', () => {
+    const { html } = renderMarkdown(`\`\`\`links
+[Watch](https://www.youtube.com/@handle)
+https://x.com/handle
+https://booth.pm/en/items/1
+https://example.com/guide
+javascript:alert(1)
+\`\`\``)
+
+    expect(html).toContain('wiki-links')
+    // Explicit label kept; provider class applied from the host.
+    expect(html).toContain('wiki-links-youtube')
+    expect(html).toContain('>Watch<')
+    // Bare URL uses the provider's default label.
+    expect(html).toContain('wiki-links-x')
+    expect(html).toContain('>X<')
+    expect(html).toContain('wiki-links-booth')
+    // Unknown host, bare URL → neutral item labelled by hostname.
+    expect(html).toContain('>example.com<')
+    // Non-http(s) URLs are dropped.
+    expect(html).not.toContain('javascript:alert(1)')
+  })
+
+  test('`social` is an alias and an all-invalid block renders nothing', () => {
+    const withProvider = renderMarkdown('```social\nhttps://twitch.tv/handle\n```').html
+    expect(withProvider).toContain('wiki-links-twitch')
+
+    const empty = renderMarkdown('```links\nnot a url\nftp://x\n```').html
+    expect(empty).not.toContain('wiki-links')
+  })
 })
 
 describe('permissions', () => {

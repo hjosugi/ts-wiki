@@ -306,6 +306,80 @@ html {
   }
 }
 
+/* Link / social button row (lit.link-style). */
+.wiki-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1.25rem 0;
+}
+
+.wiki-links-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.95rem;
+  border-radius: 999px;
+  border: 1px solid rgb(229 231 235);
+  background: rgb(255 255 255);
+  color: rgb(31 41 55);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: filter 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.wiki-links-item:hover {
+  border-color: rgb(124 58 237);
+  color: rgb(91 33 182);
+}
+
+/* Branded variants: solid brand colour, white text, subtle darken on hover. */
+.wiki-links-youtube,
+.wiki-links-twitch,
+.wiki-links-x,
+.wiki-links-pixiv,
+.wiki-links-booth,
+.wiki-links-niconico,
+.wiki-links-twitcasting,
+.wiki-links-discord,
+.wiki-links-instagram,
+.wiki-links-tiktok,
+.wiki-links-note,
+.wiki-links-github {
+  color: rgb(255 255 255);
+  border-color: transparent;
+}
+
+.wiki-links-youtube:hover,
+.wiki-links-twitch:hover,
+.wiki-links-x:hover,
+.wiki-links-pixiv:hover,
+.wiki-links-booth:hover,
+.wiki-links-niconico:hover,
+.wiki-links-twitcasting:hover,
+.wiki-links-discord:hover,
+.wiki-links-instagram:hover,
+.wiki-links-tiktok:hover,
+.wiki-links-note:hover,
+.wiki-links-github:hover {
+  color: rgb(255 255 255);
+  filter: brightness(0.92);
+}
+
+.wiki-links-youtube { background: #ff0000; }
+.wiki-links-twitch { background: #9146ff; }
+.wiki-links-x { background: #000000; }
+.wiki-links-pixiv { background: #0096fa; }
+.wiki-links-booth { background: #fc4d50; }
+.wiki-links-niconico { background: #252525; }
+.wiki-links-twitcasting { background: #4c96d7; }
+.wiki-links-discord { background: #5865f2; }
+.wiki-links-instagram { background: #e1306c; }
+.wiki-links-tiktok { background: #010101; }
+.wiki-links-note { background: #41c9b4; }
+.wiki-links-github { background: #24292f; }
+
 .wiki-embed {
   display: block;
   margin: 1.25rem 0;
@@ -414,6 +488,16 @@ html {
 
   .wiki-infobox-body {
     color: rgb(209 213 219);
+  }
+
+  .wiki-links-item {
+    border-color: rgb(31 41 55);
+    background: rgb(17 24 39);
+    color: rgb(229 231 235);
+  }
+
+  .wiki-links-item:hover {
+    border-color: rgb(167 139 250);
   }
 
   .wiki-embed {

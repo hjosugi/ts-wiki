@@ -466,6 +466,75 @@ const renderInfoboxBlock = (content: string): string => {
   return `<aside class="wiki-infobox">${parts.join('')}</aside>`
 }
 
+interface SocialProvider {
+  readonly name: string
+  readonly cls: string
+}
+
+// Host → provider mapping for the links/social block. Order doesn't matter; each
+// pattern anchors to the registrable domain so subdomains (www., m.) still match.
+const SOCIAL_PROVIDERS: ReadonlyArray<readonly [RegExp, SocialProvider]> = [
+  [/(?:^|\.)youtube\.com$|(?:^|\.)youtu\.be$/, { name: 'YouTube', cls: 'youtube' }],
+  [/(?:^|\.)twitch\.tv$/, { name: 'Twitch', cls: 'twitch' }],
+  [/(?:^|\.)(?:x|twitter)\.com$/, { name: 'X', cls: 'x' }],
+  [/(?:^|\.)pixiv\.net$/, { name: 'pixiv', cls: 'pixiv' }],
+  [/(?:^|\.)booth\.pm$/, { name: 'BOOTH', cls: 'booth' }],
+  [/(?:^|\.)nicovideo\.jp$|(?:^|\.)nico\.ms$/, { name: 'niconico', cls: 'niconico' }],
+  [/(?:^|\.)twitcasting\.tv$/, { name: 'TwitCasting', cls: 'twitcasting' }],
+  [/(?:^|\.)discord\.(?:gg|com)$/, { name: 'Discord', cls: 'discord' }],
+  [/(?:^|\.)instagram\.com$/, { name: 'Instagram', cls: 'instagram' }],
+  [/(?:^|\.)tiktok\.com$/, { name: 'TikTok', cls: 'tiktok' }],
+  [/(?:^|\.)note\.com$/, { name: 'note', cls: 'note' }],
+  [/(?:^|\.)github\.com$/, { name: 'GitHub', cls: 'github' }],
+]
+
+const hostnameOf = (url: string): string => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return url
+  }
+}
+
+const detectProvider = (url: string): SocialProvider | null => {
+  let host: string
+  try {
+    host = new URL(url).hostname.toLowerCase()
+  } catch {
+    return null
+  }
+  for (const [pattern, provider] of SOCIAL_PROVIDERS) {
+    if (pattern.test(host)) return provider
+  }
+  return null
+}
+
+const LINKS_MD_LINK = /^\[([^\]]+)\]\(([^)]+)\)$/
+
+/**
+ * A row of link buttons (lit.link-style). Each line is a Markdown link
+ * `[Label](url)` or a bare `url`; known social hosts get a branded style and a
+ * default label. Only http(s) URLs render. Used for `links` and `social` fences.
+ */
+const renderLinksBlock = (content: string): string | null => {
+  const items: string[] = []
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line) continue
+    const match = line.match(LINKS_MD_LINK)
+    const label = match ? match[1]!.trim() : undefined
+    const url = (match ? match[2]! : line).trim()
+    if (!/^https?:\/\//i.test(url)) continue
+    const provider = detectProvider(url)
+    const text = label || provider?.name || hostnameOf(url)
+    const cls = provider ? ` wiki-links-${provider.cls}` : ''
+    items.push(
+      `<a class="wiki-links-item${cls}" href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(text)}</a>`,
+    )
+  }
+  return items.length ? `<div class="wiki-links">${items.join('')}</div>` : null
+}
+
 const renderEmbedBlock = (content: string): string | null => {
   const { fields } = parseKeyedBlock(content, EMBED_KEYS)
   const url = fields.get('url')
@@ -516,6 +585,10 @@ md.renderer.rules.fence = (tokens, idx, options, env, self): string => {
   }
   if (info === 'callout') return renderCalloutBlock(token.content)
   if (info === 'infobox' || info === 'profile') return renderInfoboxBlock(token.content)
+  if (info === 'links' || info === 'social') {
+    const rendered = renderLinksBlock(token.content)
+    if (rendered) return rendered
+  }
   if (info === 'embed') {
     const rendered = renderEmbedBlock(token.content)
     if (rendered) return rendered
