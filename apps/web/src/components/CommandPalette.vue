@@ -77,6 +77,12 @@ const items = computed<CommandItem[]>(() => {
     run: () => router.push('/_tags'),
   })
   out.push({
+    key: 'changes',
+    label: 'Recent changes',
+    detail: 'Activity feed',
+    run: () => router.push('/_changes'),
+  })
+  out.push({
     key: 'links',
     label: 'Broken links',
     detail: 'Find missing pages',

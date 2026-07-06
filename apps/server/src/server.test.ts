@@ -408,6 +408,23 @@ describe('page + search slice (in-memory db)', () => {
     expect(broken.some((b) => b.target === 'docs/intro')).toBe(false)
   })
 
+  test('recentChanges() returns revisions across pages, newest first, capped', () => {
+    const db = createDb(':memory:')
+    const { pages } = createServices(db)
+    pages.create({ path: 'a', title: 'A', content: 'one' }, admin)
+    pages.create({ path: 'b', title: 'B', content: 'two' }, admin)
+    pages.update('a', { content: 'one!' }, admin)
+
+    const changes = pages.recentChanges()
+    expect(changes.length).toBeGreaterThanOrEqual(3)
+    // Newest first: the update to 'a' is the most recent action.
+    expect(changes[0]?.path).toBe('a')
+    expect(changes[0]?.action).toBe('updated')
+    // The limit is respected and capped.
+    expect(pages.recentChanges(1).length).toBe(1)
+    expect(pages.recentChanges(9999).length).toBeLessThanOrEqual(200)
+  })
+
   test('history stays newest-first even when revisions share a timestamp', () => {
     const db = createDb(':memory:')
     const { pages } = createServices(db)

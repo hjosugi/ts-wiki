@@ -104,6 +104,16 @@ export interface BrokenLink {
   readonly kind: 'wikilink' | 'markdown'
 }
 
+export interface RecentChange {
+  readonly id: string
+  readonly path: string
+  readonly title: string
+  readonly action: PageRevision['action']
+  readonly authorId: string | null
+  readonly authorName: string | null
+  readonly createdAt: number
+}
+
 export interface PageRevisionSummary {
   readonly id: string
   readonly path: string
@@ -156,6 +166,7 @@ export interface PageService {
   backlinks(path: string): PageBacklink[]
   labels(): LabelCount[]
   brokenLinks(): BrokenLink[]
+  recentChanges(limit?: number): RecentChange[]
   events(): ExtractedCalendarEvent[]
   history(path: string): Result<PageRevisionSummary[], AppError>
   getByPath(path: string): Result<Page, AppError>
@@ -436,6 +447,26 @@ export const createPageService = (db: DB): PageService => {
         }
       }
       return out
+    },
+
+    recentChanges(limit = 50) {
+      const capped = Math.min(Math.max(limit, 1), 200)
+      const rows = db
+        .select({
+          id: pageRevisions.id,
+          path: pageRevisions.path,
+          title: pageRevisions.title,
+          action: pageRevisions.action,
+          authorId: pageRevisions.authorId,
+          authorName: users.name,
+          createdAt: pageRevisions.createdAt,
+        })
+        .from(pageRevisions)
+        .leftJoin(users, eq(users.id, pageRevisions.authorId))
+        .orderBy(desc(pageRevisions.createdAt), sql`page_revisions.rowid desc`)
+        .limit(capped)
+        .all()
+      return rows.map((row) => ({ ...row, authorName: row.authorName ?? null }))
     },
 
     events() {

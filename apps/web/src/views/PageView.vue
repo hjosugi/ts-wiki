@@ -5,6 +5,7 @@ import { Api, type Page, type PageBacklink } from '@/lib/api'
 import { paramToPath } from '@/router'
 import { useAuth } from '@/stores/auth'
 import { onWikiEvent } from '@/lib/realtime'
+import { vCodeCopy } from '@/lib/codeCopy'
 import { usePresence } from '@/composables/usePresence'
 import EmptyState from '@/components/EmptyState.vue'
 import InteractiveGraph from '@/components/InteractiveGraph.vue'
@@ -127,7 +128,7 @@ onUnmounted(stopRealtime)
           <template v-else>{{ viewers.length }} viewing now</template>
         </span>
       </div>
-      <div class="prose dark:prose-invert max-w-none" v-html="page.renderedHtml"></div>
+      <div v-code-copy class="prose dark:prose-invert max-w-none" v-html="page.renderedHtml"></div>
       <section v-if="backlinks.length" class="mt-10 border-t border-gray-200 dark:border-gray-800 pt-5">
         <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Linked from</h2>
         <div class="mt-3 flex flex-wrap gap-2">

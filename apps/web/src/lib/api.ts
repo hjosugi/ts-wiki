@@ -159,6 +159,15 @@ export interface BrokenLink {
   label: string
   kind: 'wikilink' | 'markdown'
 }
+export interface RecentChange {
+  id: string
+  path: string
+  title: string
+  action: 'created' | 'updated' | 'moved' | 'deleted' | 'archived' | 'restored' | 'purged'
+  authorId: string | null
+  authorName: string | null
+  createdAt: number
+}
 export interface PageRevision {
   id: string
   path: string
@@ -369,6 +378,10 @@ export const Api = {
   labels: () => call<{ labels: LabelCount[] }>(client().api.labels.get()).then((d) => d.labels),
   brokenLinks: () =>
     call<{ links: BrokenLink[] }>(client().api.links.broken.get()).then((d) => d.links),
+  recentChanges: (limit?: number) =>
+    call<{ changes: RecentChange[] }>(client().api.changes.get({ query: limit ? { limit } : {} })).then(
+      (d) => d.changes,
+    ),
   backlinks: (path: string) =>
     call<{ backlinks: PageBacklink[] }>(client().api.page.backlinks.get({ query: { path } })).then(
       (d) => d.backlinks,

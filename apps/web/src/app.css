@@ -380,6 +380,36 @@ html {
 .wiki-links-note { background: #41c9b4; }
 .wiki-links-github { background: #24292f; }
 
+/* Copy-to-clipboard button injected into rendered code blocks (v-code-copy). */
+.prose pre {
+  position: relative;
+}
+
+.wiki-code-copy {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border-radius: 0.35rem;
+  border: 1px solid rgb(255 255 255 / 0.18);
+  background: rgb(255 255 255 / 0.08);
+  color: rgb(229 231 235);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+
+.prose pre:hover .wiki-code-copy,
+.wiki-code-copy:focus-visible {
+  opacity: 1;
+}
+
+.wiki-code-copy:hover {
+  background: rgb(255 255 255 / 0.16);
+}
+
 /* Task lists (markdown-it-task-lists) and footnotes (markdown-it-footnote). */
 .prose .task-list-item {
   list-style: none;

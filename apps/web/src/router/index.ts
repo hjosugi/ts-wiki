@@ -11,6 +11,7 @@ export const routes: RouteRecordRaw[] = [
   { path: '/_graph', name: 'graph', component: () => import('@/views/GraphView.vue') },
   { path: '/_tags', name: 'tags', component: () => import('@/views/TagsView.vue') },
   { path: '/_links', name: 'links', component: () => import('@/views/LinksView.vue') },
+  { path: '/_changes', name: 'changes', component: () => import('@/views/ChangesView.vue') },
   { path: '/_admin', name: 'admin', component: () => import('@/views/AdminView.vue'), meta: { requiresAdmin: true } },
   { path: '/_history/:path(.*)*', name: 'history', component: () => import('@/views/HistoryView.vue') },
   { path: '/_new', name: 'new', component: () => import('@/views/PageEdit.vue'), meta: { requiresEdit: true } },

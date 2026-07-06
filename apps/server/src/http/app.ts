@@ -641,6 +641,12 @@ export const createApp = ({
         requirePageRead(principal)
         return { links: services.pages.brokenLinks() }
       })
+      .get('/api/changes', ({ query, services, principal }) => {
+        requirePageRead(principal)
+        return { changes: services.pages.recentChanges(query.limit) }
+      }, {
+        query: t.Object({ limit: t.Optional(t.Numeric()) }),
+      })
       .post(
         '/api/pages',
         async ({ body, services, principal }) => {
