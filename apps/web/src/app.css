@@ -1,5 +1,12 @@
 /* A few things UnoCSS utilities don't cover cleanly. */
 
+:root {
+  /* Accent colour — overridden at runtime from the admin "Accent colour"
+     setting (see AppHeader). The hover shade derives automatically. */
+  --accent: #7c3aed;
+  --accent-hover: color-mix(in srgb, var(--accent) 82%, #000);
+}
+
 html {
   scroll-behavior: smooth;
 }
