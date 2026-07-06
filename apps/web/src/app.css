@@ -427,7 +427,7 @@ html {
   color: rgb(75 85 99);
 }
 
-@media (prefers-color-scheme: dark) {
+html.dark {
   .prose .footnotes {
     border-top-color: rgb(31 41 55);
     color: rgb(156 163 175);
@@ -482,7 +482,7 @@ html {
   }
 }
 
-@media (prefers-color-scheme: dark) {
+html.dark {
   .wiki-event-card {
     border-color: rgb(31 41 55);
     border-left-color: rgb(167 139 250);
@@ -667,7 +667,7 @@ html {
   color: rgb(75 85 99);
 }
 
-@media (prefers-color-scheme: dark) {
+html.dark {
   .page-tree-row {
     color: rgb(209 213 219);
   }
@@ -870,7 +870,7 @@ html {
   text-transform: uppercase;
 }
 
-@media (prefers-color-scheme: dark) {
+html.dark {
   .interactive-graph {
     border-color: rgb(31 41 55);
     background: rgb(3 7 18);

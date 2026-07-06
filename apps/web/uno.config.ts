@@ -2,8 +2,9 @@ import { defineConfig, presetUno, presetTypography } from 'unocss'
 
 const unoConfig = defineConfig({
   presets: [
-    // `dark: 'media'` → dark mode follows the OS preference, no toggle needed.
-    presetUno({ dark: 'media' }),
+    // `dark: 'class'` → dark mode is driven by a `.dark` class on <html>, which
+    // useTheme() sets from the user's choice (or the OS in system mode).
+    presetUno({ dark: 'class' }),
     presetTypography(),
   ],
   theme: {

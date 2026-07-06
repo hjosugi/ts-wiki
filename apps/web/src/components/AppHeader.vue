@@ -4,10 +4,13 @@ import { useRouter } from 'vue-router'
 import { Api, type PublicSettings } from '@/lib/api'
 import { useAuth } from '@/stores/auth'
 import { useI18n } from '@/lib/i18n'
+import { useTheme, applySiteDefault } from '@/composables/useTheme'
 
 const router = useRouter()
 const auth = useAuth()
 const { t } = useI18n()
+const theme = useTheme()
+const themeIcon = computed(() => (theme.mode.value === 'light' ? '☀' : theme.mode.value === 'dark' ? '🌙' : '🖥'))
 const q = ref('')
 const settings = ref<PublicSettings>({
   siteTitle: 'ts-wiki',
@@ -32,6 +35,7 @@ onMounted(async () => {
   try {
     settings.value = await Api.publicSettings()
     document.title = settings.value.siteTitle
+    applySiteDefault(settings.value.theme)
   } catch {
     /* keep defaults */
   }
@@ -55,6 +59,15 @@ onMounted(async () => {
       <div class="flex items-center gap-2 ml-auto">
         <button class="btn-ghost hidden sm:inline-flex" type="button" :title="t('commandPalette')" @click="openCommandPalette">
           Cmd K
+        </button>
+        <button
+          class="btn-ghost"
+          type="button"
+          :title="`Theme: ${theme.mode.value}`"
+          :aria-label="`Theme: ${theme.mode.value}. Click to change.`"
+          @click="theme.cycle()"
+        >
+          {{ themeIcon }}
         </button>
         <a
           v-for="link in settings.navLinks"
