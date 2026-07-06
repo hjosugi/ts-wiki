@@ -57,18 +57,18 @@ persistent volume, or Render Free backed by Turso/libSQL and R2. SQLite under
 Tagged releases publish a Docker image to GHCR:
 
 ```bash
-docker pull ghcr.io/hjosugi/ts-wiki:v0.3.3
+docker pull ghcr.io/hjosugi/ts-wiki:v0.4.0
 docker volume create ts-wiki-data
 export JWT_SECRET="$(openssl rand -hex 32)"
 docker run --rm -v ts-wiki-data:/data \
   -e JWT_SECRET="$JWT_SECRET" \
   -e TS_WIKI_SEED_ADMIN_PASSWORD="change-me-before-first-seed" \
-  ghcr.io/hjosugi/ts-wiki:v0.3.3 bun --filter '@ts-wiki/server' db:seed
+  ghcr.io/hjosugi/ts-wiki:v0.4.0 bun --filter '@ts-wiki/server' db:seed
 docker run -d --name ts-wiki --restart unless-stopped \
   -p 4000:4000 -v ts-wiki-data:/data \
   -e NODE_ENV=production \
   -e JWT_SECRET="$JWT_SECRET" \
-  ghcr.io/hjosugi/ts-wiki:v0.3.3
+  ghcr.io/hjosugi/ts-wiki:v0.4.0
 ```
 
 Put Caddy, nginx, or a free Cloudflare Tunnel in front of port `4000` for TLS
