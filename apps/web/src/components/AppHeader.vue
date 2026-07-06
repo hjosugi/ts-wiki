@@ -36,6 +36,9 @@ onMounted(async () => {
     settings.value = await Api.publicSettings()
     document.title = settings.value.siteTitle
     applySiteDefault(settings.value.theme)
+    if (settings.value.accentColor) {
+      document.documentElement.style.setProperty('--accent', settings.value.accentColor)
+    }
   } catch {
     /* keep defaults */
   }
