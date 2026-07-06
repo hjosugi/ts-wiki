@@ -232,6 +232,20 @@ javascript:alert(1)
     const empty = renderMarkdown('```links\nnot a url\nftp://x\n```').html
     expect(empty).not.toContain('wiki-links')
   })
+
+  test('renders footnotes', () => {
+    const { html } = renderMarkdown('Cats are great.[^1]\n\n[^1]: Especially calicos.')
+    expect(html).toContain('footnote-ref')
+    expect(html).toContain('footnotes')
+    expect(html).toContain('Especially calicos')
+  })
+
+  test('renders task-list checkboxes with checked state', () => {
+    const { html } = renderMarkdown('- [ ] todo\n- [x] done')
+    expect(html).toContain('task-list-item')
+    expect(html).toContain('type="checkbox"')
+    expect(html).toContain('checked')
+  })
 })
 
 describe('permissions', () => {

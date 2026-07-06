@@ -6,8 +6,11 @@
  * single pure function returning both the HTML and a structured table of
  * contents, instead of mutating shared renderer state.
  */
+/// <reference path="./markdown-plugins.d.ts" />
 import MarkdownIt from 'markdown-it'
 import anchor from 'markdown-it-anchor'
+import footnote from 'markdown-it-footnote'
+import taskLists from 'markdown-it-task-lists'
 import hljs from 'highlight.js'
 import { slugifyHeading } from './slug.ts'
 
@@ -568,11 +571,14 @@ const md: MarkdownIt = new MarkdownIt({
     }
     return `<pre class="hljs"><code>${escapeHtml(code)}</code></pre>`
   },
-}).use(anchor, {
-  slugify: slugifyHeading,
-  level: [1, 2, 3],
-  tabIndex: false,
 })
+  .use(anchor, {
+    slugify: slugifyHeading,
+    level: [1, 2, 3],
+    tabIndex: false,
+  })
+  .use(footnote)
+  .use(taskLists, { label: true })
 
 const defaultFence = md.renderer.rules.fence
 md.renderer.rules.fence = (tokens, idx, options, env, self): string => {

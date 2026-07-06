@@ -380,6 +380,30 @@ html {
 .wiki-links-note { background: #41c9b4; }
 .wiki-links-github { background: #24292f; }
 
+/* Task lists (markdown-it-task-lists) and footnotes (markdown-it-footnote). */
+.prose .task-list-item {
+  list-style: none;
+}
+
+.prose .task-list-item-checkbox {
+  margin: 0 0.4rem 0 -1.4rem;
+}
+
+.prose .footnotes {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgb(229 231 235);
+  font-size: 0.9rem;
+  color: rgb(75 85 99);
+}
+
+@media (prefers-color-scheme: dark) {
+  .prose .footnotes {
+    border-top-color: rgb(31 41 55);
+    color: rgb(156 163 175);
+  }
+}
+
 .wiki-embed {
   display: block;
   margin: 1.25rem 0;
