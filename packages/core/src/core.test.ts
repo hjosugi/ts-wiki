@@ -246,6 +246,17 @@ javascript:alert(1)
     expect(html).toContain('type="checkbox"')
     expect(html).toContain('checked')
   })
+
+  test('supports image size syntax and still rejects unsafe URLs', () => {
+    const sized = renderMarkdown('![cat](/cat.png =120x80)').html
+    expect(sized).toContain('src="/cat.png"')
+    expect(sized).toContain('width="120"')
+    expect(sized).toContain('height="80"')
+
+    // Width-only is allowed; javascript: URLs never become an <img>.
+    expect(renderMarkdown('![c](/c.png =50x)').html).toContain('width="50"')
+    expect(renderMarkdown('![x](javascript:alert(1) =10x10)').html).not.toContain('<img')
+  })
 })
 
 describe('permissions', () => {

@@ -72,6 +72,7 @@
         "markdown-it": "^14.1.0",
         "markdown-it-anchor": "^9.2.0",
         "markdown-it-footnote": "^4.0.0",
+        "markdown-it-imsize": "^2.0.1",
         "markdown-it-task-lists": "^2.1.1",
       },
       "devDependencies": {
@@ -697,6 +698,8 @@
     "markdown-it-anchor": ["markdown-it-anchor@9.2.0", "", { "peerDependencies": { "@types/markdown-it": "*", "markdown-it": "*" } }, "sha512-sa2ErMQ6kKOA4l31gLGYliFQrMKkqSO0ZJgGhDHKijPf0pNFM9vghjAh3gn26pS4JDRs7Iwa9S36gxm3vgZTzg=="],
 
     "markdown-it-footnote": ["markdown-it-footnote@4.0.0", "", {}, "sha512-WYJ7urf+khJYl3DqofQpYfEYkZKbmXmwxQV8c8mO/hGIhgZ1wOe7R4HLFNwqx7TjILbnC98fuyeSsin19JdFcQ=="],
+
+    "markdown-it-imsize": ["markdown-it-imsize@2.0.1", "", {}, "sha512-5SH90ademqcR8ifQCBXRCfIR4HGfZZOh5pO0j2TglulfSQH+SBXM4Iw/QlTUbSoUwVZArCYgECoMvktDS2kP3w=="],
 
     "markdown-it-task-lists": ["markdown-it-task-lists@2.1.1", "", {}, "sha512-TxFAc76Jnhb2OUu+n3yz9RMu4CwGfaT788br6HhEDlvWfdeJcLUsxk1Hgw2yJio0OXsxv7pyIPmvECY7bMbluA=="],
 

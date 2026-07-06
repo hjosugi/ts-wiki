@@ -11,6 +11,7 @@ import MarkdownIt from 'markdown-it'
 import anchor from 'markdown-it-anchor'
 import footnote from 'markdown-it-footnote'
 import taskLists from 'markdown-it-task-lists'
+import imsize from 'markdown-it-imsize'
 import hljs from 'highlight.js'
 import { slugifyHeading } from './slug.ts'
 
@@ -579,6 +580,7 @@ const md: MarkdownIt = new MarkdownIt({
   })
   .use(footnote)
   .use(taskLists, { label: true })
+  .use(imsize)
 
 const defaultFence = md.renderer.rules.fence
 md.renderer.rules.fence = (tokens, idx, options, env, self): string => {

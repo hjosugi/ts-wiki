@@ -18,3 +18,9 @@ declare module 'markdown-it-task-lists' {
   const plugin: (md: MarkdownIt, options?: TaskListsOptions) => void
   export default plugin
 }
+
+declare module 'markdown-it-imsize' {
+  import type MarkdownIt from 'markdown-it'
+  const plugin: (md: MarkdownIt, options?: { readonly autofill?: boolean }) => void
+  export default plugin
+}
