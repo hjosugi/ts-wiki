@@ -50,7 +50,6 @@ const escapeHtml = (s: string): string =>
 const escapeAttr = (s: string): string => escapeHtml(s).replace(/'/g, '&#39;')
 
 const EVENT_KEYS = new Set(['title', 'start', 'end', 'timezone', 'location', 'url', 'description'])
-const CALLOUT_TYPES = new Set(['info', 'success', 'warning', 'danger'])
 const CALLOUT_KEYS = new Set(['type', 'title'])
 const EMBED_KEYS = new Set(['url', 'title', 'description'])
 
@@ -357,10 +356,21 @@ const parseKeyedBlock = (
   return { fields, body: body.join('\n').trim() }
 }
 
+/** Slugify a callout type to a safe CSS-class suffix (`info`, `note`, `my-tip`). */
+const calloutType = (raw: string | undefined): string => {
+  const slug = (raw ?? 'info')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return slug || 'info'
+}
+
 const renderCalloutBlock = (content: string): string => {
   const { fields, body } = parseKeyedBlock(content, CALLOUT_KEYS)
-  const requestedType = fields.get('type') ?? 'info'
-  const type = CALLOUT_TYPES.has(requestedType) ? requestedType : 'info'
+  // Callout types are open-ended: the four built-ins have styles, and any other
+  // name emits `wiki-callout-<name>` for custom theming (unknown → neutral base
+  // style, not silently coerced to info).
+  const type = calloutType(fields.get('type'))
   const title = fields.get('title') ?? type
   const renderedBody = body ? md.render(body) : ''
 
@@ -368,6 +378,92 @@ const renderCalloutBlock = (content: string): string => {
     <div class="wiki-callout-title">${escapeHtml(title)}</div>
     ${renderedBody ? `<div class="wiki-callout-body">${renderedBody}</div>` : ''}
   </aside>`
+}
+
+const isSafeMediaUrl = (url: string): boolean => /^https?:\/\//i.test(url) || url.startsWith('/')
+
+interface InfoboxField {
+  readonly label: string
+  readonly value: string
+}
+
+// `Label: value` where the label is a short word/phrase (letters first). The
+// required whitespace after the colon keeps bare URLs (`https://…`) out.
+const INFOBOX_FIELD = /^([A-Za-z][\w \-]{0,39}):(?:[ \t]+(.*))?$/
+
+interface InfoboxData {
+  readonly title?: string
+  readonly image?: string
+  readonly caption?: string
+  readonly fields: InfoboxField[]
+  readonly body: string
+}
+
+/**
+ * Parse a generic infobox: a few special keys (`title`, `image`,
+ * `caption`/`subtitle`) plus arbitrary `Label: value` fields in source order,
+ * then an optional free-form body after a blank or non-field line.
+ */
+const parseInfobox = (content: string): InfoboxData => {
+  let title: string | undefined
+  let image: string | undefined
+  let caption: string | undefined
+  const fields: InfoboxField[] = []
+  const body: string[] = []
+  let inBody = false
+  let started = false
+
+  for (const line of content.split(/\r?\n/)) {
+    if (inBody) {
+      body.push(line)
+      continue
+    }
+    if (line.trim() === '') {
+      if (started) inBody = true
+      continue
+    }
+    const match = line.match(INFOBOX_FIELD)
+    if (!match) {
+      inBody = true
+      body.push(line)
+      continue
+    }
+    started = true
+    const label = match[1]!.trim()
+    const value = (match[2] ?? '').trim()
+    const key = label.toLowerCase().replace(/\s+/g, '')
+    if (key === 'title') title = value
+    else if (key === 'image') image = value
+    else if (key === 'caption' || key === 'subtitle') caption = value
+    else fields.push({ label, value })
+  }
+
+  return { title, image, caption, fields, body: body.join('\n').trim() }
+}
+
+/**
+ * A reusable infobox/profile card (Wikipedia-style). Generic key/value fields
+ * make it work for talent profiles, game characters, projects, etc. Field
+ * values and title/caption render as inline Markdown so links and emphasis work.
+ */
+const renderInfoboxBlock = (content: string): string => {
+  const { title, image, caption, fields, body } = parseInfobox(content)
+  const parts: string[] = []
+  if (image && isSafeMediaUrl(image)) {
+    parts.push(
+      `<div class="wiki-infobox-media"><img src="${escapeAttr(image)}" alt="${escapeAttr(title ?? '')}" loading="lazy" /></div>`,
+    )
+  }
+  if (title) parts.push(`<div class="wiki-infobox-title">${md.renderInline(title)}</div>`)
+  if (caption) parts.push(`<div class="wiki-infobox-caption">${md.renderInline(caption)}</div>`)
+  if (fields.length) {
+    const rows = fields
+      .map((f) => `<div class="wiki-infobox-row"><dt>${escapeHtml(f.label)}</dt><dd>${md.renderInline(f.value)}</dd></div>`)
+      .join('')
+    parts.push(`<dl class="wiki-infobox-fields">${rows}</dl>`)
+  }
+  if (body) parts.push(`<div class="wiki-infobox-body">${md.render(body)}</div>`)
+  return `<aside class="wiki-infobox">${parts.join('')}</aside>`
 }
 
 const renderEmbedBlock = (content: string): string | null => {
@@ -419,6 +515,7 @@ md.renderer.rules.fence = (tokens, idx, options, env, self): string => {
     if (rendered) return rendered
   }
   if (info === 'callout') return renderCalloutBlock(token.content)
+  if (info === 'infobox' || info === 'profile') return renderInfoboxBlock(token.content)
   if (info === 'embed') {
     const rendered = renderEmbedBlock(token.content)
     if (rendered) return rendered

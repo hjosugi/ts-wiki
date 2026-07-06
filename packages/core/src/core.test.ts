@@ -151,6 +151,56 @@ flowchart TD
     expect(html).toContain('wiki-mermaid')
     expect(html).toContain('A --&gt; B')
   })
+
+  test('renders a generic infobox with title, media, fields, and body', () => {
+    const { html } = renderMarkdown(`\`\`\`infobox
+title: Hoshino Meguru
+image: /assets/hoshino.png
+caption: Hoshinoi Production
+Debut: 2023-04-01
+Fan name: Stargazers
+Links: [YouTube](https://youtube.com/@x)
+
+First stream was a **karaoke** night.
+\`\`\``)
+
+    expect(html).toContain('wiki-infobox')
+    expect(html).toContain('wiki-infobox-title')
+    expect(html).toContain('Hoshino Meguru')
+    expect(html).toContain('src="/assets/hoshino.png"')
+    expect(html).toContain('wiki-infobox-caption')
+    // Arbitrary field labels are preserved in source order...
+    expect(html).toContain('<dt>Debut</dt>')
+    expect(html).toContain('<dt>Fan name</dt>')
+    // ...and values render inline Markdown (links, emphasis).
+    expect(html).toContain('href="https://youtube.com/@x"')
+    // The free-form body renders block Markdown.
+    expect(html).toContain('<strong>karaoke</strong>')
+  })
+
+  test('infobox drops unsafe image URLs; `profile` is an alias', () => {
+    const { html } = renderMarkdown(`\`\`\`profile
+title: Test
+image: javascript:alert(1)
+Role: Tester
+\`\`\``)
+
+    expect(html).toContain('wiki-infobox')
+    expect(html).not.toContain('<img')
+    expect(html).not.toContain('javascript:alert(1)')
+    expect(html).toContain('<dt>Role</dt>')
+  })
+
+  test('callout types are open-ended (custom type keeps its class)', () => {
+    const { html } = renderMarkdown(`\`\`\`callout
+type: spoiler
+title: Ending
+It was all a dream.
+\`\`\``)
+
+    expect(html).toContain('wiki-callout-spoiler')
+    expect(html).toContain('Ending')
+  })
 })
 
 describe('permissions', () => {

@@ -205,6 +205,107 @@ html {
   border-left-color: rgb(220 38 38);
 }
 
+.wiki-callout-note {
+  border-left-color: rgb(100 116 139);
+}
+
+.wiki-callout-tip {
+  border-left-color: rgb(13 148 136);
+}
+
+.wiki-callout-quote {
+  border-left-color: rgb(139 92 246);
+  font-style: italic;
+}
+
+/* Generic infobox / profile card (Wikipedia-style, floats on wide screens). */
+.wiki-infobox {
+  float: right;
+  width: 18rem;
+  max-width: 100%;
+  margin: 0.25rem 0 1rem 1.25rem;
+  padding: 0.9rem;
+  border: 1px solid rgb(229 231 235);
+  border-radius: 0.75rem;
+  background: rgb(255 255 255);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+}
+
+.wiki-infobox-media {
+  margin: -0.9rem -0.9rem 0.75rem;
+}
+
+.wiki-infobox-media img {
+  display: block;
+  width: 100%;
+  max-height: 20rem;
+  object-fit: cover;
+  border-radius: 0.75rem 0.75rem 0 0;
+}
+
+.wiki-infobox-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: rgb(31 41 55);
+  text-align: center;
+}
+
+.wiki-infobox-caption {
+  margin-top: 0.15rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: rgb(107 114 128);
+}
+
+.wiki-infobox-fields {
+  display: grid;
+  gap: 0;
+  margin: 0.75rem 0 0;
+}
+
+.wiki-infobox-row {
+  display: grid;
+  grid-template-columns: minmax(4.5rem, 40%) minmax(0, 1fr);
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  border-top: 1px solid rgb(243 244 246);
+  font-size: 0.85rem;
+}
+
+.wiki-infobox-row dt {
+  margin: 0;
+  font-weight: 600;
+  color: rgb(75 85 99);
+}
+
+.wiki-infobox-row dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.wiki-infobox-body {
+  margin-top: 0.6rem;
+  font-size: 0.85rem;
+  color: rgb(55 65 81);
+}
+
+.wiki-infobox-body > :first-child {
+  margin-top: 0;
+}
+
+.wiki-infobox-body > :last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 720px) {
+  .wiki-infobox {
+    float: none;
+    width: 100%;
+    margin: 1.25rem 0;
+  }
+}
+
 .wiki-embed {
   display: block;
   margin: 1.25rem 0;
@@ -287,6 +388,32 @@ html {
 
   .wiki-callout-title {
     color: rgb(243 244 246);
+  }
+
+  .wiki-infobox {
+    border-color: rgb(31 41 55);
+    background: rgb(17 24 39);
+    box-shadow: none;
+  }
+
+  .wiki-infobox-title {
+    color: rgb(243 244 246);
+  }
+
+  .wiki-infobox-caption {
+    color: rgb(156 163 175);
+  }
+
+  .wiki-infobox-row {
+    border-top-color: rgb(31 41 55);
+  }
+
+  .wiki-infobox-row dt {
+    color: rgb(156 163 175);
+  }
+
+  .wiki-infobox-body {
+    color: rgb(209 213 219);
   }
 
   .wiki-embed {

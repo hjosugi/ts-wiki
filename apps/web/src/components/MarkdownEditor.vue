@@ -52,6 +52,16 @@ description:
 `
 }
 
+const infoboxSnippet = (): string => `\`\`\`infobox
+title: Name
+image:
+caption:
+Field: value
+
+Details go here.
+\`\`\`
+`
+
 function replaceSelection(insert: string): void {
   if (!view) return
   const selection = view.state.selection.main
@@ -217,6 +227,9 @@ onBeforeUnmount(() => view?.destroy())
       </button>
       <button class="btn-ghost" type="button" title="Event" @click="insertSnippet(eventSnippet())">
         Event
+      </button>
+      <button class="btn-ghost" type="button" title="Infobox / profile card" @click="insertSnippet(infoboxSnippet())">
+        Infobox
       </button>
       <button class="btn-ghost" type="button" title="Upload image" :disabled="uploading" @click="chooseImage">
         {{ uploading ? 'Uploading...' : 'Image' }}
