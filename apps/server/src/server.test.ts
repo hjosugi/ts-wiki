@@ -37,6 +37,35 @@ describe('page + search slice (in-memory db)', () => {
     expect(result.hits[0]?.snippet).toContain('<mark>')
   })
 
+  test('search omits pages the principal cannot read (page:read ACL)', () => {
+    const db = createDb(':memory:')
+    const { pages, search } = createServices(db)
+
+    pages.create({ path: 'public/a', title: 'Alpha', content: 'a shared banana note' }, admin)
+    pages.create({ path: 'secret/b', title: 'Beta', content: 'a secret banana note' }, admin)
+
+    // Without a read predicate, both match.
+    expect(search.search('banana').hits.length).toBe(2)
+
+    // With a predicate that denies the secret subtree, only the readable page
+    // surfaces — no title/path/snippet leak past the ACL.
+    const filtered = search.search('banana', 20, {}, (path) => !path.startsWith('secret/'))
+    expect(filtered.hits.length).toBe(1)
+    expect(filtered.hits[0]?.path).toBe('public/a')
+  })
+
+  test('snippets carry no live markup from page content', () => {
+    const db = createDb(':memory:')
+    const { pages, search } = createServices(db)
+
+    pages.create({ path: 'p', title: 'P', content: 'banana <script>alert(1)</script>' }, admin)
+    const snippet = search.search('banana').hits[0]?.snippet ?? ''
+    expect(snippet).toContain('<mark>')
+    // Raw HTML is disabled at render time and content is stored tag-stripped, so
+    // the script tag is entity-encoded — never live markup in the snippet.
+    expect(snippet).not.toContain('<script>')
+  })
+
   test('anonymous users cannot create pages', () => {
     const db = createDb(':memory:')
     const { pages } = createServices(db)

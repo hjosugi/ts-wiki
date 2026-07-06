@@ -1078,13 +1078,20 @@ export const createApp = ({
       // ── Search ────────────────────────────────────────────────────────────
       .get('/api/search', ({ query, services, principal }) => {
         requireSearchRead(principal)
-        return services.search.search(query.q ?? '', query.limit, {
-          pathPrefix: query.pathPrefix,
-          label: query.label,
-          status: query.status,
-          spaceKey: query.spaceKey,
-          locale: query.locale,
-        })
+        return services.search.search(
+          query.q ?? '',
+          query.limit,
+          {
+            pathPrefix: query.pathPrefix,
+            label: query.label,
+            status: query.status,
+            spaceKey: query.spaceKey,
+            locale: query.locale,
+          },
+          // Enforce per-page read ACLs: never surface a page the principal
+          // cannot read (page rules), even if it matches the query.
+          (path) => can(principal, 'page:read', { path }),
+        )
       }, {
         query: t.Object({
           q: t.Optional(t.String()),

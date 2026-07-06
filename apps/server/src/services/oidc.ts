@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, lt } from 'drizzle-orm'
 import {
   type AppError,
   type Result,
@@ -228,6 +228,10 @@ export const createOidcService = (db: DB, auth: AuthEnv, authz: AuthzService): O
       const nonce = randomUrlToken()
       const codeVerifier = randomUrlToken(48)
       const now = Date.now()
+      // Sweep abandoned OIDC starts so the table can't grow unbounded (rows are
+      // otherwise only deleted on a successful callback). Mirrors the WebAuthn
+      // challenge cleanup.
+      db.delete(oauthStates).where(lt(oauthStates.expiresAt, now)).run()
       db.insert(oauthStates)
         .values({
           state,

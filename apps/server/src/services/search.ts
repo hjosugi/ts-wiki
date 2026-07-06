@@ -29,7 +29,17 @@ export interface SearchResponse {
 }
 
 export interface SearchService {
-  search(query: string, limit?: number, filters?: SearchFilters): SearchResponse
+  /**
+   * @param canRead Optional per-page read predicate. When supplied, hits the
+   *   principal is not allowed to read (via page rules) are filtered out, so
+   *   search never leaks titles/paths/snippets past `page:read` ACLs.
+   */
+  search(
+    query: string,
+    limit?: number,
+    filters?: SearchFilters,
+    canRead?: (path: string) => boolean,
+  ): SearchResponse
 }
 
 /**
@@ -47,6 +57,9 @@ export const buildMatchQuery = (raw: string): string | null => {
 
 export const createSearchService = (db: DB): SearchService => {
   // bm25 weights line up with the FTS columns: page_id, title, description, content.
+  // Snippet markup is safe: the `content` column is stored via toPlainText(), which
+  // renders Markdown with raw-HTML disabled and strips tags, so it is already
+  // HTML-entity-encoded — the only live markup in a snippet is the <mark> we add.
   const stmt = db.$client.prepare(`
     SELECT
       p.path  AS path,
@@ -67,7 +80,7 @@ export const createSearchService = (db: DB): SearchService => {
   `)
 
   return {
-    search(query, limit = 20, filters = {}) {
+    search(query, limit = 20, filters = {}, canRead) {
       const match = buildMatchQuery(query)
       if (!match) return { query, hits: [] }
       const pathPrefix = filters.pathPrefix?.trim()
@@ -75,8 +88,11 @@ export const createSearchService = (db: DB): SearchService => {
       const status = filters.status?.trim()
       const spaceKey = filters.spaceKey?.trim()
       const locale = filters.locale?.trim()
+      // When we have to ACL-filter, over-fetch a bounded candidate window so a
+      // few denied pages don't shrink the visible result set below `limit`.
+      const fetchLimit = canRead ? Math.min(Math.max(limit * 8, 40), 400) : limit
       try {
-        const hits = stmt.all(
+        const rows = stmt.all(
           match,
           pathPrefix || null,
           pathPrefix ? `${pathPrefix.replace(/[%_]/g, '')}%` : null,
@@ -88,9 +104,10 @@ export const createSearchService = (db: DB): SearchService => {
           spaceKey || null,
           locale || null,
           locale || null,
-          limit,
+          fetchLimit,
         ) as SearchHit[]
-        return { query, hits }
+        const visible = canRead ? rows.filter((row) => canRead(row.path)) : rows
+        return { query, hits: visible.slice(0, limit) }
       } catch {
         // Malformed FTS expression — treat as no results rather than 500.
         return { query, hits: [] }
