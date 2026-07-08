@@ -22,6 +22,8 @@ export interface PageInput {
   readonly ownerId?: string | null
   readonly reviewAt?: number | null
   readonly locale?: string | null
+  readonly navOrder?: number | null
+  readonly pinned?: boolean
 }
 
 /** A validated, normalised page input ready to persist. */
@@ -36,12 +38,15 @@ export interface ValidPageInput {
   readonly ownerId: string | null
   readonly reviewAt: number | null
   readonly locale: string
+  readonly navOrder: number | null
+  readonly pinned: boolean
 }
 
 const MAX_PATH = 512
 const MAX_TITLE = 255
 const MAX_LABELS = 20
 const MAX_LABEL_LENGTH = 40
+const MAX_NAV_ORDER = 1_000_000
 const PAGE_STATUSES = new Set<PageStatus>(['draft', 'in-review', 'verified', 'outdated'])
 const DEFAULT_LOCALE = 'und'
 
@@ -88,6 +93,9 @@ export const validatePageInput = (input: PageInput): Result<ValidPageInput, AppE
   const ownerId = input.ownerId?.trim() || null
   const reviewAt = typeof input.reviewAt === 'number' && Number.isFinite(input.reviewAt) ? input.reviewAt : null
   const locale = normalizeLocale(input.locale)
+  const navOrder = typeof input.navOrder === 'number' && Number.isFinite(input.navOrder)
+    ? Math.max(-MAX_NAV_ORDER, Math.min(MAX_NAV_ORDER, Math.trunc(input.navOrder)))
+    : null
 
   return ok({
     path,
@@ -100,5 +108,7 @@ export const validatePageInput = (input: PageInput): Result<ValidPageInput, AppE
     ownerId,
     reviewAt,
     locale,
+    navOrder,
+    pinned: input.pinned === true,
   })
 }

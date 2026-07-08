@@ -16,6 +16,8 @@ const makePage = (overrides: Partial<Page> = {}): Page => ({
   labels: '[]',
   ownerId: null,
   reviewAt: null,
+  navOrder: null,
+  pinned: false,
   spaceKey: 'default',
   locale: 'en',
   authorId: null,

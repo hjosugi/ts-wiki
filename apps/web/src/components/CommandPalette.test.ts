@@ -24,6 +24,8 @@ const page = (path: string, title = path): PageSummary => ({
   labels: '[]',
   ownerId: null,
   reviewAt: null,
+  navOrder: null,
+  pinned: false,
   spaceKey: 'docs',
   locale: 'und',
   updatedAt: 1,

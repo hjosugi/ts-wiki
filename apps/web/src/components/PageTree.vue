@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import type { PageSummary } from '@/lib/api'
+import { Api, type PageSummary, type UserPreferenceKey, type UserPreferenceMap } from '@/lib/api'
 import { paramToPath } from '@/router'
+import { useAuth } from '@/stores/auth'
 
 interface TreeNode {
   key: string
@@ -27,6 +28,15 @@ const props = defineProps<{
 }>()
 
 const route = useRoute()
+const auth = useAuth()
+
+const COLLAPSED_STORAGE_KEY = 'ts-wiki:collapsed-folders'
+const STARRED_STORAGE_KEY = 'ts-wiki:starred-pages'
+const RECENT_STORAGE_KEY = 'ts-wiki:recent-pages'
+const ORDER_STORAGE_KEY = 'ts-wiki:page-order'
+const COLLAPSED_PREFERENCE_KEY: UserPreferenceKey = 'nav:collapsed'
+const STARRED_PREFERENCE_KEY: UserPreferenceKey = 'nav:starred'
+const ORDER_PREFERENCE_KEY: UserPreferenceKey = 'nav:page-order'
 
 const readStringList = (key: string): string[] => {
   if (typeof window === 'undefined') return []
@@ -41,20 +51,73 @@ const readStringList = (key: string): string[] => {
 const readOrder = (): Record<string, number> => {
   if (typeof window === 'undefined') return {}
   try {
-    const value = JSON.parse(window.localStorage.getItem('ts-wiki:page-order') ?? '{}')
-    return value && typeof value === 'object' ? (value as Record<string, number>) : {}
+    const value = JSON.parse(window.localStorage.getItem(ORDER_STORAGE_KEY) ?? '{}')
+    return coerceOrder(value) ?? {}
   } catch {
     return {}
   }
 }
 
-const collapsed = ref(readStringList('ts-wiki:collapsed-folders'))
-const starred = ref(readStringList('ts-wiki:starred-pages'))
-const recent = ref(readStringList('ts-wiki:recent-pages'))
+const coerceOrder = (value: unknown): Record<string, number> | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const entries = Object.entries(value as Record<string, unknown>)
+  const out: Record<string, number> = {}
+  for (const [path, order] of entries) {
+    if (typeof order !== 'number' || !Number.isFinite(order)) return null
+    out[path] = Math.trunc(order)
+  }
+  return out
+}
+
+const coerceStringList = (value: unknown): string[] | null =>
+  Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : null
+
+const hasPreference = (preferences: UserPreferenceMap, key: UserPreferenceKey): boolean =>
+  Object.prototype.hasOwnProperty.call(preferences, key)
+
+const collapsed = ref(readStringList(COLLAPSED_STORAGE_KEY))
+const starred = ref(readStringList(STARRED_STORAGE_KEY))
+const recent = ref(readStringList(RECENT_STORAGE_KEY))
 const manualOrder = ref(readOrder())
 
 const persist = (key: string, value: unknown): void => {
+  if (typeof window === 'undefined') return
   window.localStorage.setItem(key, JSON.stringify(value))
+}
+
+const persistPreference = (key: UserPreferenceKey, value: unknown): void => {
+  if (!auth.isAuthed) return
+  void Api.updatePreferences({ [key]: value } as UserPreferenceMap).catch(() => {})
+}
+
+const loadServerPreferences = async (): Promise<void> => {
+  if (!auth.isAuthed) return
+  try {
+    const preferences = await Api.preferences()
+    if (hasPreference(preferences, COLLAPSED_PREFERENCE_KEY)) {
+      const value = coerceStringList(preferences[COLLAPSED_PREFERENCE_KEY])
+      if (value) {
+        collapsed.value = value
+        persist(COLLAPSED_STORAGE_KEY, value)
+      }
+    }
+    if (hasPreference(preferences, STARRED_PREFERENCE_KEY)) {
+      const value = coerceStringList(preferences[STARRED_PREFERENCE_KEY])
+      if (value) {
+        starred.value = value
+        persist(STARRED_STORAGE_KEY, value)
+      }
+    }
+    if (hasPreference(preferences, ORDER_PREFERENCE_KEY)) {
+      const value = coerceOrder(preferences[ORDER_PREFERENCE_KEY])
+      if (value) {
+        manualOrder.value = value
+        persist(ORDER_STORAGE_KEY, value)
+      }
+    }
+  } catch {
+    // Keep localStorage as the offline/source-of-last-resort state.
+  }
 }
 
 const pageByPath = computed(() => new Map(props.pages.map((page) => [page.path, page])))
@@ -69,31 +132,65 @@ watch(
   (path) => {
     if (!path || !pageByPath.value.has(path)) return
     recent.value = [path, ...recent.value.filter((item) => item !== path)].slice(0, 6)
-    persist('ts-wiki:recent-pages', recent.value)
+    persist(RECENT_STORAGE_KEY, recent.value)
   },
   { immediate: true },
+)
+
+onMounted(() => {
+  void loadServerPreferences()
+})
+
+watch(
+  () => auth.isAuthed,
+  (isAuthed) => {
+    if (isAuthed) void loadServerPreferences()
+  },
 )
 
 function toggleCollapse(path: string): void {
   collapsed.value = isCollapsed(path)
     ? collapsed.value.filter((item) => item !== path)
     : [...collapsed.value, path]
-  persist('ts-wiki:collapsed-folders', collapsed.value)
+  persist(COLLAPSED_STORAGE_KEY, collapsed.value)
+  persistPreference(COLLAPSED_PREFERENCE_KEY, collapsed.value)
 }
 
 function toggleStar(path: string): void {
   starred.value = isStarred(path)
     ? starred.value.filter((item) => item !== path)
     : [path, ...starred.value]
-  persist('ts-wiki:starred-pages', starred.value)
+  persist(STARRED_STORAGE_KEY, starred.value)
+  persistPreference(STARRED_PREFERENCE_KEY, starred.value)
+}
+
+function comparePages(a: PageSummary, b: PageSummary): number {
+  const aManual = manualOrder.value[a.path]
+  const bManual = manualOrder.value[b.path]
+  if (aManual !== undefined || bManual !== undefined) {
+    return (aManual ?? Number.MAX_SAFE_INTEGER) - (bManual ?? Number.MAX_SAFE_INTEGER) || a.path.localeCompare(b.path)
+  }
+  if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
+  const aOrder = a.navOrder ?? Number.MAX_SAFE_INTEGER
+  const bOrder = b.navOrder ?? Number.MAX_SAFE_INTEGER
+  return aOrder - bOrder || a.path.localeCompare(b.path)
+}
+
+function compareNodes(a: TreeNode, b: TreeNode): number {
+  if (a.page && b.page) return comparePages(a.page, b.page)
+  if (a.page && !b.page) {
+    if (a.page.pinned) return -1
+    if (a.page.navOrder !== null) return -1
+  }
+  if (!a.page && b.page) {
+    if (b.page.pinned) return 1
+    if (b.page.navOrder !== null) return 1
+  }
+  return a.label.localeCompare(b.label)
 }
 
 function movePage(path: string, delta: -1 | 1): void {
-  const ordered = [...props.pages].sort((a, b) => {
-    const aOrder = manualOrder.value[a.path] ?? Number.MAX_SAFE_INTEGER
-    const bOrder = manualOrder.value[b.path] ?? Number.MAX_SAFE_INTEGER
-    return aOrder - bOrder || a.path.localeCompare(b.path)
-  })
+  const ordered = [...props.pages].sort(comparePages)
   const index = ordered.findIndex((page) => page.path === path)
   const next = index + delta
   if (index < 0 || next < 0 || next >= ordered.length) return
@@ -101,7 +198,8 @@ function movePage(path: string, delta: -1 | 1): void {
   if (!page) return
   ordered.splice(next, 0, page)
   manualOrder.value = Object.fromEntries(ordered.map((item, order) => [item.path, order]))
-  persist('ts-wiki:page-order', manualOrder.value)
+  persist(ORDER_STORAGE_KEY, manualOrder.value)
+  persistPreference(ORDER_PREFERENCE_KEY, manualOrder.value)
 }
 
 const rows = computed<TreeRow[]>(() => {
@@ -127,11 +225,7 @@ const rows = computed<TreeRow[]>(() => {
 
   const out: TreeRow[] = []
   const visit = (node: TreeNode, depth: number): void => {
-    const children = [...node.children.values()].sort((a, b) => {
-      const aOrder = a.page ? manualOrder.value[a.page.path] ?? Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER
-      const bOrder = b.page ? manualOrder.value[b.page.path] ?? Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER
-      return aOrder - bOrder || a.label.localeCompare(b.label)
-    })
+    const children = [...node.children.values()].sort(compareNodes)
     for (const child of children) {
       out.push({
         key: child.key,

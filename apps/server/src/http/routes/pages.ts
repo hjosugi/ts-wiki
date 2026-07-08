@@ -130,6 +130,8 @@ export const createPageRoutes = ({
           ownerId: t.Optional(t.Union([t.String(), t.Null()])),
           reviewAt: t.Optional(t.Union([t.Number(), t.Null()])),
           locale: t.Optional(t.Union([t.String(), t.Null()])),
+          navOrder: t.Optional(t.Union([t.Number(), t.Null()])),
+          pinned: t.Optional(t.Boolean()),
           expectedUpdatedAt: t.Optional(t.Union([t.Number(), t.Null()])),
         }),
       },
@@ -310,6 +312,8 @@ export const createPageRoutes = ({
           ownerId: t.Optional(t.Union([t.String(), t.Null()])),
           reviewAt: t.Optional(t.Union([t.Number(), t.Null()])),
           locale: t.Optional(t.Union([t.String(), t.Null()])),
+          navOrder: t.Optional(t.Union([t.Number(), t.Null()])),
+          pinned: t.Optional(t.Boolean()),
         }),
       },
     )

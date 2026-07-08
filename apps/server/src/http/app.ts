@@ -47,6 +47,7 @@ import { createAuthRoutes } from './routes/auth.ts'
 import { createExportImportRoutes } from './routes/export-import.ts'
 import { createGitRoutes } from './routes/git.ts'
 import { createPageRoutes } from './routes/pages.ts'
+import { createPreferenceRoutes } from './routes/preferences.ts'
 import { createRealtimeRoutes } from './routes/realtime.ts'
 import { createSearchRoutes } from './routes/search.ts'
 import { createStaticRoutes } from './routes/static.ts'
@@ -488,6 +489,7 @@ export const createApp = ({
       pageWriteEffects,
       publishAutomation,
     }))
+    .use(createPreferenceRoutes())
     .use(createTemplateRoutes({ logger }))
     .use(createExportImportRoutes({
       requirePageRead,

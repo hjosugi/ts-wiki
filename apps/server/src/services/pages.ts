@@ -61,6 +61,8 @@ export interface PageSummary {
   readonly labels: string
   readonly ownerId: string | null
   readonly reviewAt: number | null
+  readonly navOrder: number | null
+  readonly pinned: boolean
   readonly spaceKey: string
   readonly locale: string
   readonly updatedAt: number
@@ -152,6 +154,8 @@ export interface UpdatePagePatch {
   readonly ownerId?: string | null
   readonly reviewAt?: number | null
   readonly locale?: string | null
+  readonly navOrder?: number | null
+  readonly pinned?: boolean
   readonly expectedUpdatedAt?: number | null
 }
 
@@ -161,6 +165,8 @@ export interface UpsertPageFileOptions {
   readonly labels?: readonly string[]
   readonly status?: PageStatus
   readonly locale?: string | null
+  readonly navOrder?: number | null
+  readonly pinned?: boolean
 }
 
 export interface UpsertPageFileResult {
@@ -336,6 +342,8 @@ export const createPageService = (
       ownerId: string | null
       reviewAt: number | null
       locale: string
+      navOrder: number | null
+      pinned: boolean
     },
     principal: Principal | null,
     revisionAction: 'updated' | null,
@@ -362,6 +370,8 @@ export const createPageService = (
           ownerId: next.ownerId,
           reviewAt: next.reviewAt,
           locale: next.locale,
+          navOrder: next.navOrder,
+          pinned: next.pinned,
           updatedAt: now,
         })
         .where(eq(pages.id, current.id))
@@ -384,6 +394,8 @@ export const createPageService = (
           labels: pages.labels,
           ownerId: pages.ownerId,
           reviewAt: pages.reviewAt,
+          navOrder: pages.navOrder,
+          pinned: pages.pinned,
           spaceKey: pages.spaceKey,
           locale: pages.locale,
           updatedAt: pages.updatedAt,
@@ -405,6 +417,8 @@ export const createPageService = (
           labels: pages.labels,
           ownerId: pages.ownerId,
           reviewAt: pages.reviewAt,
+          navOrder: pages.navOrder,
+          pinned: pages.pinned,
           spaceKey: pages.spaceKey,
           locale: pages.locale,
           updatedAt: pages.updatedAt,
@@ -658,6 +672,8 @@ export const createPageService = (
             status: v.status,
             ownerId: v.ownerId,
             reviewAt: v.reviewAt,
+            navOrder: v.navOrder,
+            pinned: v.pinned,
             spaceKey: v.path.split('/')[0] || 'main',
             locale: v.locale,
             authorId: principal?.id ?? null,
@@ -696,6 +712,8 @@ export const createPageService = (
         ownerId: patch.ownerId === undefined ? current.ownerId : patch.ownerId,
         reviewAt: patch.reviewAt === undefined ? current.reviewAt : patch.reviewAt,
         locale: patch.locale ?? current.locale,
+        navOrder: patch.navOrder === undefined ? current.navOrder : patch.navOrder,
+        pinned: patch.pinned ?? current.pinned,
       })
       if (!validated.ok) return validated
       const v = validated.value
@@ -718,6 +736,8 @@ export const createPageService = (
           labels: options.labels,
           status: options.status,
           locale: options.locale,
+          navOrder: options.navOrder,
+          pinned: options.pinned,
         }, principal)
         if (!page.ok) return page
         return ok({ page: page.value, created: false, previous: existing.value })
@@ -731,6 +751,8 @@ export const createPageService = (
         labels: options.labels,
         status: options.status,
         locale: options.locale,
+        navOrder: options.navOrder,
+        pinned: options.pinned,
       }, principal)
       if (!page.ok) return page
       return ok({ page: page.value, created: true })
@@ -754,6 +776,8 @@ export const createPageService = (
         ownerId: current.ownerId,
         reviewAt: current.reviewAt,
         locale: current.locale,
+        navOrder: current.navOrder,
+        pinned: current.pinned,
       })
       if (!validated.ok) return validated
 
@@ -787,6 +811,8 @@ export const createPageService = (
           ownerId: current.ownerId,
           reviewAt: current.reviewAt,
           locale: normalizeLocale(current.locale),
+          navOrder: current.navOrder,
+          pinned: current.pinned,
         },
         principal,
         'updated',
@@ -847,6 +873,8 @@ export const createPageService = (
         ownerId: current.ownerId,
         reviewAt: current.reviewAt,
         locale: current.locale,
+        navOrder: current.navOrder,
+        pinned: current.pinned,
       })
       if (!validated.ok) return validated
       const v = validated.value

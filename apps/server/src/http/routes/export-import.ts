@@ -68,6 +68,8 @@ export const createExportImportRoutes = ({
           status: page.status,
           ownerId: page.ownerId,
           reviewAt: page.reviewAt,
+          navOrder: page.navOrder,
+          pinned: page.pinned,
           spaceKey: page.spaceKey,
           locale: page.locale,
           createdAt: page.createdAt,
@@ -92,6 +94,8 @@ export const createExportImportRoutes = ({
           labels: body.labels,
           status: body.status,
           locale: body.locale,
+          navOrder: body.navOrder,
+          pinned: body.pinned,
         }, principal))
         const page = result.page
         return runPageWrite(pageWriteEffects, {
@@ -118,6 +122,8 @@ export const createExportImportRoutes = ({
             t.Literal('outdated'),
           ])),
           locale: t.Optional(t.Union([t.String(), t.Null()])),
+          navOrder: t.Optional(t.Union([t.Number(), t.Null()])),
+          pinned: t.Optional(t.Boolean()),
         }),
       },
     )

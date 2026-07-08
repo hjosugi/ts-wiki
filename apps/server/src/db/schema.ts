@@ -6,7 +6,7 @@
  * NOTE: the actual DDL (including the FTS5 virtual table, which Drizzle can't
  * express) lives in ./migrate.ts and is kept in sync with these definitions.
  */
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, index, primaryKey } from 'drizzle-orm/sqlite-core'
 
 export const users = sqliteTable('users', {
   id: text('id').primaryKey(),
@@ -191,13 +191,15 @@ export const pages = sqliteTable(
     labels: text('labels').notNull().default('[]'),
     ownerId: text('owner_id'),
     reviewAt: integer('review_at'),
+    navOrder: integer('nav_order'),
+    pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
     spaceKey: text('space_key').notNull().default('main'),
     locale: text('locale').notNull().default('und'),
     authorId: text('author_id'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
-  (t) => [index('pages_updated_idx').on(t.updatedAt)],
+  (t) => [index('pages_updated_idx').on(t.updatedAt), index('pages_nav_idx').on(t.pinned, t.navOrder, t.path)],
 )
 
 export const pageRevisions = sqliteTable(
@@ -277,6 +279,20 @@ export const siteSettings = sqliteTable('site_settings', {
   value: text('value').notNull(),
   updatedAt: integer('updated_at').notNull(),
 })
+
+export const userPreferences = sqliteTable(
+  'user_preferences',
+  {
+    userId: text('user_id').notNull(),
+    key: text('key').notNull(),
+    value: text('value').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.key] }),
+    index('user_preferences_user_idx').on(t.userId),
+  ],
+)
 
 export const assets = sqliteTable('assets', {
   id: text('id').primaryKey(),
@@ -403,6 +419,7 @@ export type PageRedirect = typeof pageRedirects.$inferSelect
 export type PageShare = typeof pageShares.$inferSelect
 export type PageTemplate = typeof pageTemplates.$inferSelect
 export type SiteSetting = typeof siteSettings.$inferSelect
+export type UserPreference = typeof userPreferences.$inferSelect
 export type Asset = typeof assets.$inferSelect
 export type WikiEventRow = typeof wikiEvents.$inferSelect
 export type RateLimitHit = typeof rateLimitHits.$inferSelect

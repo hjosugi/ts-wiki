@@ -789,6 +789,98 @@ describe('http app auth', () => {
     expect((await authed.json()).page.path).toBe('docs/private')
   }, HTTP_TEST_TIMEOUT_MS)
 
+  test('pages expose shared sidebar pinning and manual order metadata', async () => {
+    const { app } = createFixture()
+    const { token } = await register(app, 'admin@example.com')
+    const created = await app.handle(
+      jsonRequest('/api/pages', {
+        path: 'docs/nav',
+        title: 'Navigation page',
+        content: 'shared nav metadata',
+        navOrder: 20.8,
+        pinned: true,
+      }, token),
+    )
+    expect(created.status).toBe(200)
+    expect((await created.json()).page).toMatchObject({
+      path: 'docs/nav',
+      navOrder: 20,
+      pinned: true,
+    })
+
+    const listed = await app.handle(new Request('http://localhost/api/pages', {
+      headers: { authorization: `Bearer ${token}` },
+    }))
+    expect(listed.status).toBe(200)
+    expect((await listed.json()).pages).toContainEqual(expect.objectContaining({
+      path: 'docs/nav',
+      navOrder: 20,
+      pinned: true,
+    }))
+
+    const updated = await app.handle(new Request('http://localhost/api/page?path=docs/nav', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ navOrder: null, pinned: false }),
+    }))
+    expect(updated.status).toBe(200)
+    expect((await updated.json()).page).toMatchObject({
+      path: 'docs/nav',
+      navOrder: null,
+      pinned: false,
+    })
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('authenticated nav preferences are persisted per user', async () => {
+    const { app } = createFixture()
+    const admin = await register(app, 'admin@example.com')
+    const viewer = await register(app, 'viewer@example.com')
+
+    const anonymous = await app.handle(new Request('http://localhost/api/me/preferences'))
+    expect(anonymous.status).toBe(401)
+
+    const saved = await app.handle(new Request('http://localhost/api/me/preferences', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${admin.token}` },
+      body: JSON.stringify({
+        preferences: {
+          'nav:collapsed': ['docs'],
+          'nav:starred': ['docs/alpha'],
+          'nav:page-order': { 'docs/alpha': 0, 'docs/beta': 1 },
+        },
+      }),
+    }))
+    expect(saved.status).toBe(200)
+    expect((await saved.json()).preferences).toEqual({
+      'nav:collapsed': ['docs'],
+      'nav:starred': ['docs/alpha'],
+      'nav:page-order': { 'docs/alpha': 0, 'docs/beta': 1 },
+    })
+
+    const reloaded = await app.handle(new Request('http://localhost/api/me/preferences', {
+      headers: { authorization: `Bearer ${admin.token}` },
+    }))
+    expect(reloaded.status).toBe(200)
+    expect((await reloaded.json()).preferences).toEqual({
+      'nav:collapsed': ['docs'],
+      'nav:starred': ['docs/alpha'],
+      'nav:page-order': { 'docs/alpha': 0, 'docs/beta': 1 },
+    })
+
+    const isolated = await app.handle(new Request('http://localhost/api/me/preferences', {
+      headers: { authorization: `Bearer ${viewer.token}` },
+    }))
+    expect(isolated.status).toBe(200)
+    expect((await isolated.json()).preferences).toEqual({})
+
+    const invalid = await app.handle(new Request('http://localhost/api/me/preferences', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${admin.token}` },
+      body: JSON.stringify({ preferences: { 'nav:starred': [42] } }),
+    }))
+    expect(invalid.status).toBe(422)
+  }, HTTP_TEST_TIMEOUT_MS)
+
   test('serves an Atom feed of recent page changes', async () => {
     const { app } = createFixture()
     const { token } = await register(app, 'admin@example.com')

@@ -239,6 +239,8 @@ export const runMigrations = (sqlite: MigratableDatabase, options: MigrationOpti
       labels        TEXT NOT NULL DEFAULT '[]',
       owner_id      TEXT,
       review_at     INTEGER,
+      nav_order     INTEGER,
+      pinned        INTEGER NOT NULL DEFAULT 0,
       space_key     TEXT NOT NULL DEFAULT 'main',
       locale        TEXT NOT NULL DEFAULT 'und',
       author_id     TEXT,
@@ -246,6 +248,7 @@ export const runMigrations = (sqlite: MigratableDatabase, options: MigrationOpti
       updated_at    INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS pages_updated_idx ON pages(updated_at);
+    CREATE INDEX IF NOT EXISTS pages_nav_idx ON pages(pinned, nav_order, path);
 
     CREATE TABLE IF NOT EXISTS page_revisions (
       id          TEXT PRIMARY KEY,
@@ -315,6 +318,15 @@ export const runMigrations = (sqlite: MigratableDatabase, options: MigrationOpti
       value      TEXT NOT NULL,
       updated_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS user_preferences (
+      user_id    TEXT NOT NULL,
+      key        TEXT NOT NULL,
+      value      TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY(user_id, key)
+    );
+    CREATE INDEX IF NOT EXISTS user_preferences_user_idx ON user_preferences(user_id);
 
     CREATE TABLE IF NOT EXISTS assets (
       id         TEXT PRIMARY KEY,
@@ -413,8 +425,11 @@ export const runMigrations = (sqlite: MigratableDatabase, options: MigrationOpti
   addColumn(sqlite, 'pages', 'labels', "TEXT NOT NULL DEFAULT '[]'")
   addColumn(sqlite, 'pages', 'owner_id', 'TEXT')
   addColumn(sqlite, 'pages', 'review_at', 'INTEGER')
+  addColumn(sqlite, 'pages', 'nav_order', 'INTEGER')
+  addColumn(sqlite, 'pages', 'pinned', 'INTEGER NOT NULL DEFAULT 0')
   addColumn(sqlite, 'pages', 'space_key', "TEXT NOT NULL DEFAULT 'main'")
   addColumn(sqlite, 'pages', 'locale', "TEXT NOT NULL DEFAULT 'und'")
+  sqlite.exec('CREATE INDEX IF NOT EXISTS pages_nav_idx ON pages(pinned, nav_order, path);')
   addColumn(sqlite, 'assets', 'storage_name', "TEXT NOT NULL DEFAULT ''")
   addColumn(sqlite, 'assets', 'folder', "TEXT NOT NULL DEFAULT ''")
   addColumn(sqlite, 'assets', 'deleted_at', 'INTEGER')

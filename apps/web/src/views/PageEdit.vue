@@ -36,6 +36,8 @@ const labelsText = ref('')
 const status = ref<'draft' | 'in-review' | 'verified' | 'outdated'>('draft')
 const reviewAtDate = ref('')
 const locale = ref('und')
+const navOrderText = ref('')
+const pinned = ref(false)
 const savedTitle = ref('')
 const savedPath = ref('')
 const savedContent = ref('')
@@ -43,6 +45,8 @@ const savedLabelsText = ref('')
 const savedStatus = ref(status.value)
 const savedReviewAtDate = ref('')
 const savedLocale = ref('und')
+const savedNavOrderText = ref('')
+const savedPinned = ref(false)
 const saving = ref(false)
 const error = ref<string | null>(null)
 const conflictDraft = ref<DraftSnapshot | null>(null)
@@ -70,7 +74,9 @@ const dirty = computed(
     labelsText.value !== savedLabelsText.value ||
     status.value !== savedStatus.value ||
     reviewAtDate.value !== savedReviewAtDate.value ||
-    locale.value !== savedLocale.value,
+    locale.value !== savedLocale.value ||
+    navOrderText.value !== savedNavOrderText.value ||
+    pinned.value !== savedPinned.value,
 )
 const saveStatus = computed(() => {
   if (saving.value) return t('saving')
@@ -90,6 +96,8 @@ interface DraftSnapshot {
   status: 'draft' | 'in-review' | 'verified' | 'outdated'
   reviewAtDate: string
   locale: string
+  navOrderText: string
+  pinned: boolean
 }
 
 function captureDraft(): DraftSnapshot {
@@ -101,6 +109,8 @@ function captureDraft(): DraftSnapshot {
     status: status.value,
     reviewAtDate: reviewAtDate.value,
     locale: locale.value,
+    navOrderText: navOrderText.value,
+    pinned: pinned.value,
   }
 }
 
@@ -112,6 +122,8 @@ function applyDraft(draft: DraftSnapshot): void {
   status.value = draft.status
   reviewAtDate.value = draft.reviewAtDate
   locale.value = draft.locale
+  navOrderText.value = draft.navOrderText
+  pinned.value = draft.pinned
 }
 
 function applyPage(page: Page): void {
@@ -124,6 +136,8 @@ function applyPage(page: Page): void {
   status.value = page.status
   reviewAtDate.value = dateInputValue(page.reviewAt)
   locale.value = page.locale
+  navOrderText.value = page.navOrder === null ? '' : String(page.navOrder)
+  pinned.value = page.pinned
 }
 
 function markSaved(): void {
@@ -134,6 +148,8 @@ function markSaved(): void {
   savedStatus.value = status.value
   savedReviewAtDate.value = reviewAtDate.value
   savedLocale.value = locale.value
+  savedNavOrderText.value = navOrderText.value
+  savedPinned.value = pinned.value
 }
 
 const labels = (): string[] =>
@@ -144,6 +160,13 @@ const labels = (): string[] =>
 
 const reviewAt = (): number | null =>
   reviewAtDate.value ? new Date(`${reviewAtDate.value}T00:00:00`).getTime() : null
+
+const navOrder = (): number | null => {
+  const trimmed = navOrderText.value.trim()
+  if (!trimmed) return null
+  const parsed = Number(trimmed)
+  return Number.isFinite(parsed) ? Math.trunc(parsed) : null
+}
 
 const labelTextFromJson = (value: string): string => {
   try {
@@ -266,6 +289,8 @@ onMounted(async () => {
     status.value = 'draft'
     reviewAtDate.value = ''
     locale.value = 'und'
+    navOrderText.value = ''
+    pinned.value = false
     originalUpdatedAt.value = null
     attachments.value = []
     attachmentsLoaded.value = false
@@ -299,6 +324,8 @@ async function save(): Promise<void> {
       status: status.value,
       reviewAt: reviewAt(),
       locale: locale.value,
+      navOrder: navOrder(),
+      pinned: pinned.value,
     }
     if (isEdit.value) {
       if (path.value !== originalPath.value) {
@@ -408,6 +435,17 @@ async function archive(): Promise<void> {
       </select>
       <input v-model="reviewAtDate" class="input max-w-42" type="date" :title="t('reviewDate')" />
       <input v-model="locale" class="input max-w-28" placeholder="locale" :title="t('locale')" />
+      <label class="inline-flex items-center gap-2 rounded-md border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-2 text-sm">
+        <input v-model="pinned" type="checkbox" />
+        <span>Pinned</span>
+      </label>
+      <input
+        v-model="navOrderText"
+        class="input max-w-30"
+        inputmode="numeric"
+        placeholder="Nav order"
+        title="Shared sidebar order"
+      />
       <button class="btn-primary" :disabled="saving || !title || !path" @click="save">
         {{ saving ? t('saving') : t('save') }}
       </button>

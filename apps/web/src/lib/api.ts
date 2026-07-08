@@ -95,6 +95,8 @@ export interface Page {
   labels: string
   ownerId: string | null
   reviewAt: number | null
+  navOrder: number | null
+  pinned: boolean
   spaceKey: string
   locale: string
   authorId: string | null
@@ -114,6 +116,8 @@ export interface PageSummary {
   labels: string
   ownerId: string | null
   reviewAt: number | null
+  navOrder: number | null
+  pinned: boolean
   spaceKey: string
   locale: string
   updatedAt: number
@@ -233,6 +237,8 @@ export interface PageRevision {
   action: 'created' | 'updated' | 'moved' | 'deleted' | 'archived' | 'restored' | 'purged'
   createdAt: number
 }
+export type UserPreferenceKey = 'nav:collapsed' | 'nav:starred' | 'nav:page-order'
+export type UserPreferenceMap = Partial<Record<UserPreferenceKey, unknown>>
 export interface AssetUpload {
   id: string
   filename: string
@@ -475,6 +481,10 @@ export const Api = {
   requestEmailVerification: () =>
     call<{ sent: boolean }>(client().api.auth.email.verification.post()),
   me: () => call<{ user: PublicUser }>(client().api.auth.me.get()).then((d) => d.user),
+  preferences: () =>
+    call<{ preferences: UserPreferenceMap }>(client().api.me.preferences.get()).then((d) => d.preferences),
+  updatePreferences: (preferences: UserPreferenceMap) =>
+    call<{ preferences: UserPreferenceMap }>(client().api.me.preferences.put({ preferences })).then((d) => d.preferences),
   updateProfile: (body: { name?: string }) =>
     call<{ user: PublicUser }>(client().api.auth.profile.put(body)).then((d) => d.user),
   changePassword: (body: { currentPassword: string; newPassword: string }) =>
@@ -525,6 +535,8 @@ export const Api = {
     ownerId?: string | null
     reviewAt?: number | null
     locale?: string | null
+    navOrder?: number | null
+    pinned?: boolean
   }) =>
     call<{ page: Page }>(client().api.pages.post(body)).then((d) => d.page),
   updatePage: (path: string, body: {
@@ -536,6 +548,8 @@ export const Api = {
     ownerId?: string | null
     reviewAt?: number | null
     locale?: string | null
+    navOrder?: number | null
+    pinned?: boolean
     expectedUpdatedAt?: number | null
   }) =>
     call<{ page: Page }>(client().api.page.put(body, { query: { path } })).then((d) => d.page),
@@ -622,6 +636,8 @@ export const Api = {
       status: Page['status']
       ownerId: string | null
       reviewAt: number | null
+      navOrder: number | null
+      pinned: boolean
       spaceKey: string
       locale: string
       createdAt: number
@@ -637,6 +653,8 @@ export const Api = {
     labels?: string[]
     status?: Page['status']
     locale?: string | null
+    navOrder?: number | null
+    pinned?: boolean
   }) =>
     call<{ page: Page }>(client().api.import.markdown.post(body)).then((d) => d.page),
   uploadAsset: (file: File, folder?: string) => {
