@@ -5,7 +5,9 @@ import { applyBranding } from '@/lib/branding'
 import { setMarkdownFeatureSettings } from '@/lib/markdownEnhance'
 import { setDateFormatSettings } from '@/lib/i18n'
 
-const settings = ref<PublicSettings | null>(null)
+type EditablePublicSettings = { -readonly [K in keyof PublicSettings]: PublicSettings[K] }
+
+const settings = ref<EditablePublicSettings | null>(null)
 const navLinksText = ref('')
 const navItemsText = ref('')
 const footerLinksText = ref('')
@@ -82,7 +84,7 @@ async function saveSettings(): Promise<void> {
   saving.value = true
   error.value = null
   try {
-    settings.value = await Api.adminUpdateSettings({
+    const saved = await Api.adminUpdateSettings({
       siteTitle: settings.value.siteTitle,
       accentColor: settings.value.accentColor,
       theme: settings.value.theme,
@@ -102,6 +104,7 @@ async function saveSettings(): Promise<void> {
       enableEmoji: settings.value.enableEmoji,
       enableMermaid: settings.value.enableMermaid,
     })
+    settings.value = { ...settings.value, ...saved }
     applyBranding(settings.value)
     setMarkdownFeatureSettings(settings.value)
     setDateFormatSettings(settings.value)

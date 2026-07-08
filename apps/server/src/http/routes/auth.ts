@@ -12,6 +12,7 @@ import type { DB } from '../../db/client.ts'
 import type { Services } from '../../services/index.ts'
 import { users, type User } from '../../db/schema.ts'
 import { otpauthUrl, randomBase32Secret, verifyPassword, verifyTotpCode } from '../../services/auth.ts'
+import type { AuthProviderCallbackParams } from '../../services/auth-providers.ts'
 import { isUserActive } from '../../services/users.ts'
 import type { AutomationEvent } from '../../services/webhooks.ts'
 import { audit, type StructuredLogger } from '../../observability/logging.ts'
@@ -40,6 +41,7 @@ const authenticatorTransport = t.Union([
   t.Literal('usb'),
 ])
 const clientExtensionResults = t.Object({}, { additionalProperties: true })
+const providerCallbackQuery = t.Object({}, { additionalProperties: true })
 
 const registrationResponse = t.Object({
   id: base64UrlString,
@@ -146,6 +148,37 @@ export const createAuthRoutes = ({
       return isUserActive(user) ? user : null
     }
     return userForMfaSetupToken(jwt, setupToken, services)
+  }
+
+  const authProviderCallbackParams = (query: Record<string, unknown>): AuthProviderCallbackParams => {
+    const params: Record<string, string | undefined> = {}
+    for (const [key, value] of Object.entries(query)) {
+      if (typeof value === 'string') params[key] = value
+    }
+    return params
+  }
+
+  const completeAuthProviderLogin = async (
+    providerId: string,
+    params: AuthProviderCallbackParams,
+    services: Services,
+    jwt: JwtSigner,
+  ): Promise<Response> => {
+    const result = unwrap(await services.authProviders.callback(providerId, params))
+    const token = await signAuthToken(jwt, result.user)
+    audit(logger, `auth.${result.identity.providerKind}.login`, {
+      userId: result.user.id,
+      provider: result.identity.providerId,
+      isNewUser: result.isNewUser,
+    })
+    if (result.isNewUser) {
+      await publishAutomation({
+        type: 'user.created',
+        actorId: result.user.id,
+        data: { user: publicUser(result.user) },
+      })
+    }
+    return Response.redirect(`/_login#token=${encodeURIComponent(token)}`, 302)
   }
 
   return (app: BaseApp) =>
@@ -271,7 +304,7 @@ export const createAuthRoutes = ({
 	        if (!user || !isUserActive(user)) throw new HttpError(unauthorized())
 	        return unwrap(await services.recovery.sendEmailVerification(user))
 	      })
-	      .get('/api/auth/providers', ({ services }) => ({ providers: services.oidc.publicProviders() }))
+	      .get('/api/auth/providers', ({ services }) => ({ providers: services.authProviders.publicProviders() }))
 	      .post('/api/auth/totp/setup', async ({ body, principal, services, jwt, request, server }) => {
 	        enforceCredentialLimit(request, server, 'totp-setup', principal)
 	        const user = await userForTotpEnrollment(jwt, principal, services, body?.setupToken)
@@ -377,10 +410,27 @@ export const createAuthRoutes = ({
         { body: t.Object({ response: authenticationResponse }) },
       )
       .get(
+        '/api/auth/:provider/start',
+        async ({ params, query, services, request, server }) => {
+          enforceCredentialLimit(request, server, `auth-provider-start:${params.provider}`)
+          const started = unwrap(await services.authProviders.start(params.provider, query.redirect))
+          return Response.redirect(started.url, 302)
+        },
+        { params: t.Object({ provider: t.String() }), query: t.Object({ redirect: t.Optional(t.String()) }) },
+      )
+      .get(
+        '/api/auth/:provider/callback',
+        async ({ params, query, services, jwt, request, server }) => {
+          enforceCredentialLimit(request, server, `auth-provider-callback:${params.provider}`)
+          return completeAuthProviderLogin(params.provider, authProviderCallbackParams(query), services, jwt)
+        },
+        { params: t.Object({ provider: t.String() }), query: providerCallbackQuery },
+      )
+      .get(
         '/api/auth/oidc/:provider/start',
         async ({ params, query, services, request, server }) => {
           enforceCredentialLimit(request, server, `oidc-start:${params.provider}`)
-          const started = unwrap(await services.oidc.start(params.provider, query.redirect))
+          const started = unwrap(await services.authProviders.start(params.provider, query.redirect))
           return Response.redirect(started.url, 302)
         },
         { params: t.Object({ provider: t.String() }), query: t.Object({ redirect: t.Optional(t.String()) }) },
@@ -389,21 +439,7 @@ export const createAuthRoutes = ({
         '/api/auth/oidc/:provider/callback',
         async ({ params, query, services, jwt, request, server }) => {
           enforceCredentialLimit(request, server, `oidc-callback:${params.provider}`)
-          const result = unwrap(await services.oidc.callback(params.provider, query.code, query.state))
-          const token = await signAuthToken(jwt, result.user)
-          audit(logger, 'auth.oidc.login', {
-            userId: result.user.id,
-            provider: params.provider,
-            isNewUser: result.isNewUser,
-          })
-          if (result.isNewUser) {
-            await publishAutomation({
-              type: 'user.created',
-              actorId: result.user.id,
-              data: { user: publicUser(result.user) },
-            })
-          }
-          return Response.redirect(`/_login#token=${encodeURIComponent(token)}`, 302)
+          return completeAuthProviderLogin(params.provider, query, services, jwt)
         },
         {
           params: t.Object({ provider: t.String() }),

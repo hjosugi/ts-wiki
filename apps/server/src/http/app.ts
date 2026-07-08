@@ -9,6 +9,7 @@ import {
   can,
   forbidden,
   type Principal,
+  type PublicSettings,
   unauthorized,
 } from '@ts-wiki/core'
 import type { Env } from '../env.ts'
@@ -165,7 +166,7 @@ export const createApp = ({
     })
   }
 
-  const publicSettings = () => ({
+  const publicSettings = (): PublicSettings => ({
     ...services.settings.public(),
     privateWiki: env.auth.privateWiki,
     registration: env.auth.registration,

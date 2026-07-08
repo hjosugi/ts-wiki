@@ -1,7 +1,18 @@
 import {
   type AppError,
+  BUILT_IN_NAV_KEYS,
+  DEFAULT_NAV_ITEMS,
+  SITE_SETTING_KEYS,
+  defaultSiteSettings,
+  type BuiltInNavItem,
+  type BuiltInNavKey,
+  type NavLink,
+  type NavLinkInput,
   type Principal,
   type Result,
+  type SettingsPatch,
+  type SiteSettingKey,
+  type SiteSettings,
   err,
   normalizeLocale,
   normalizePath,
@@ -12,130 +23,23 @@ import {
 import type { DB } from '../db/client.ts'
 import { siteSettings } from '../db/schema.ts'
 
-export interface NavLink {
-  readonly label: string
-  readonly url: string
-  readonly icon: string
-  readonly children: NavLink[]
-}
-
-export interface NavLinkInput {
-  readonly label: string
-  readonly url?: string
-  readonly icon?: string
-  readonly children?: readonly NavLinkInput[]
-}
-
-export type BuiltInNavKey = 'changes' | 'events' | 'graph' | 'redirects' | 'templates' | 'new'
-
-export interface BuiltInNavItem {
-  readonly key: BuiltInNavKey
-  readonly visible: boolean
-}
-
-export interface PublicSettings {
-  readonly siteTitle: string
-  readonly accentColor: string
-  readonly theme: 'system' | 'light' | 'dark'
-  readonly homePath: string
-  readonly defaultLocale: string
-  readonly timezone: string
-  readonly dateFormat: 'short' | 'medium' | 'long'
-  readonly navLinks: NavLink[]
-  readonly navItems: BuiltInNavItem[]
-  readonly logoUrl: string
-  readonly faviconUrl: string
-  readonly footerText: string
-  readonly footerLinks: NavLink[]
-  readonly customCss: string
-  readonly customHeadHtml: string
-  readonly enableMath: boolean
-  readonly enableEmoji: boolean
-  readonly enableMermaid: boolean
-}
-
-export interface SettingsPatch {
-  readonly siteTitle?: string
-  readonly accentColor?: string
-  readonly theme?: 'system' | 'light' | 'dark'
-  readonly homePath?: string
-  readonly defaultLocale?: string
-  readonly timezone?: string
-  readonly dateFormat?: 'short' | 'medium' | 'long'
-  readonly navLinks?: readonly NavLinkInput[]
-  readonly navItems?: readonly BuiltInNavItem[]
-  readonly logoUrl?: string
-  readonly faviconUrl?: string
-  readonly footerText?: string
-  readonly footerLinks?: readonly NavLinkInput[]
-  readonly customCss?: string
-  readonly customHeadHtml?: string
-  readonly enableMath?: boolean
-  readonly enableEmoji?: boolean
-  readonly enableMermaid?: boolean
-}
+export type { BuiltInNavItem, BuiltInNavKey, NavLink, NavLinkInput, SettingsPatch, SiteSettings }
 
 export interface SettingsService {
-  public(): PublicSettings
-  update(principal: Principal | null, patch: SettingsPatch): Result<PublicSettings, AppError>
-}
-
-const BUILT_IN_NAV_KEYS: readonly BuiltInNavKey[] = ['changes', 'events', 'graph', 'redirects', 'templates', 'new']
-
-const DEFAULT_NAV_ITEMS: BuiltInNavItem[] = BUILT_IN_NAV_KEYS.map((key) => ({ key, visible: true }))
-
-const DEFAULT_SETTINGS: PublicSettings = {
-  siteTitle: 'ts-wiki',
-  accentColor: '#7c3aed',
-  theme: 'system',
-  homePath: 'home',
-  defaultLocale: 'und',
-  timezone: 'UTC',
-  dateFormat: 'medium',
-  navLinks: [],
-  navItems: DEFAULT_NAV_ITEMS,
-  logoUrl: '',
-  faviconUrl: '',
-  footerText: '',
-  footerLinks: [],
-  customCss: '',
-  customHeadHtml: '',
-  enableMath: false,
-  enableEmoji: true,
-  enableMermaid: false,
+  public(): SiteSettings
+  update(principal: Principal | null, patch: SettingsPatch): Result<SiteSettings, AppError>
 }
 
 export interface SettingsServiceOptions {
   readonly defaults?: Partial<Pick<
-    PublicSettings,
+    SiteSettings,
     'siteTitle' | 'accentColor' | 'theme' | 'defaultLocale' | 'timezone' | 'dateFormat'
   >>
   readonly allowHeadInjection?: boolean
 }
 
-const SETTING_KEYS = [
-  'siteTitle',
-  'accentColor',
-  'theme',
-  'homePath',
-  'defaultLocale',
-  'timezone',
-  'dateFormat',
-  'navLinks',
-  'navItems',
-  'logoUrl',
-  'faviconUrl',
-  'footerText',
-  'footerLinks',
-  'customCss',
-  'customHeadHtml',
-  'enableMath',
-  'enableEmoji',
-  'enableMermaid',
-] as const
-type SettingKey = (typeof SETTING_KEYS)[number]
-
-const isSettingKey = (value: string): value is SettingKey => SETTING_KEYS.includes(value as SettingKey)
+const isSettingKey = (value: string): value is SiteSettingKey =>
+  SITE_SETTING_KEYS.includes(value as SiteSettingKey)
 
 const cleanHomePath = (value: string): string => normalizePath(value) || 'home'
 
@@ -157,7 +61,7 @@ const cleanTimezone = (value: string): string => {
   return validTimezone(timezone) ? timezone : 'UTC'
 }
 
-const cleanDateFormat = (value: string): PublicSettings['dateFormat'] =>
+const cleanDateFormat = (value: string): SiteSettings['dateFormat'] =>
   value === 'short' || value === 'medium' || value === 'long' ? value : 'medium'
 
 const cleanUrl = (value: string): string => {
@@ -193,7 +97,7 @@ const cleanNavItems = (items: readonly BuiltInNavItem[] = DEFAULT_NAV_ITEMS): Bu
   return out
 }
 
-const parseStoredValue = (key: SettingKey, value: string): unknown => {
+const parseStoredValue = (key: SiteSettingKey, value: string): unknown => {
   if (key === 'navLinks' || key === 'footerLinks') {
     try {
       const parsed = JSON.parse(value) as unknown
@@ -219,10 +123,10 @@ const parseStoredValue = (key: SettingKey, value: string): unknown => {
 }
 
 const validatePatch = (
-  current: PublicSettings,
+  current: SiteSettings,
   patch: SettingsPatch,
   allowHeadInjection: boolean,
-): Result<PublicSettings, AppError> => {
+): Result<SiteSettings, AppError> => {
   const siteTitle = patch.siteTitle === undefined ? current.siteTitle : patch.siteTitle.trim().slice(0, 80)
   if (!siteTitle) return err(validationError('Site title is required', 'siteTitle'))
 
@@ -270,20 +174,20 @@ const validatePatch = (
 }
 
 export const createSettingsService = (db: DB, options: SettingsServiceOptions = {}): SettingsService => {
-  const defaults = { ...DEFAULT_SETTINGS, ...options.defaults }
+  const defaults = { ...defaultSiteSettings(), ...options.defaults }
   const allowHeadInjection = options.allowHeadInjection ?? false
-  const read = (): PublicSettings => {
-    const next: Record<SettingKey, unknown> = { ...defaults }
+  const read = (): SiteSettings => {
+    const next: Record<SiteSettingKey, unknown> = { ...defaults }
     for (const row of db.select().from(siteSettings).all()) {
       if (isSettingKey(row.key)) next[row.key] = parseStoredValue(row.key, row.value)
     }
     if (!allowHeadInjection) next.customHeadHtml = ''
-    return next as unknown as PublicSettings
+    return next as unknown as SiteSettings
   }
 
-  const write = (settings: PublicSettings): void => {
+  const write = (settings: SiteSettings): void => {
     const now = Date.now()
-    const rows: Array<{ key: SettingKey; value: string; updatedAt: number }> = [
+    const rows: Array<{ key: SiteSettingKey; value: string; updatedAt: number }> = [
       { key: 'siteTitle', value: settings.siteTitle, updatedAt: now },
       { key: 'accentColor', value: settings.accentColor, updatedAt: now },
       { key: 'theme', value: settings.theme, updatedAt: now },

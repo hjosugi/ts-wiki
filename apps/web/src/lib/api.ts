@@ -12,8 +12,29 @@
 import { treaty } from '@elysiajs/eden'
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/browser'
 import type { App } from '@ts-wiki/server/app'
-import type { Action, ExtractedCalendarEvent, Role } from '@ts-wiki/core'
+import type {
+  Action,
+  BuiltInNavItem,
+  BuiltInNavKey,
+  ExtractedCalendarEvent,
+  NavLink,
+  PublicAuthProvider,
+  PublicSettings,
+  Role,
+  SettingsPatch,
+  SiteSettings,
+} from '@ts-wiki/core'
 import { API_BASE_URL } from './url'
+
+export type {
+  BuiltInNavItem,
+  BuiltInNavKey,
+  NavLink,
+  PublicAuthProvider,
+  PublicSettings,
+  SettingsPatch,
+  SiteSettings,
+} from '@ts-wiki/core'
 
 const memoryStorage = new Map<string, string>()
 const browserStorage = typeof window === 'undefined' ? undefined : window.localStorage
@@ -66,11 +87,6 @@ export interface PublicUser {
   name: string
   role: 'admin' | 'editor' | 'viewer'
   totpEnabled: boolean
-}
-export interface PublicAuthProvider {
-  id: string
-  label: string
-  type: 'oidc'
 }
 export interface PasskeyView {
   id: string
@@ -436,42 +452,6 @@ export type AutomationRuleInput = {
 export interface AnalyticsSummary {
   totalViews: number
   topPages: Array<{ path: string; views: number; lastViewedAt: number | null }>
-}
-export interface PublicSettings {
-  siteTitle: string
-  accentColor: string
-  theme: 'system' | 'light' | 'dark'
-  homePath: string
-  defaultLocale: string
-  timezone: string
-  dateFormat: 'short' | 'medium' | 'long'
-  navLinks: NavLink[]
-  navItems: BuiltInNavItem[]
-  logoUrl: string
-  faviconUrl: string
-  footerText: string
-  footerLinks: NavLink[]
-  customCss: string
-  customHeadHtml: string
-  enableMath: boolean
-  enableEmoji: boolean
-  enableMermaid: boolean
-  privateWiki: boolean
-  registration: 'open' | 'off'
-  mailConfigured: boolean
-  requireEmailVerification: boolean
-  requireTwoFactor: boolean
-}
-export type BuiltInNavKey = 'changes' | 'events' | 'graph' | 'redirects' | 'templates' | 'new'
-export interface BuiltInNavItem {
-  key: BuiltInNavKey
-  visible: boolean
-}
-export interface NavLink {
-  label: string
-  url: string
-  icon: string
-  children: NavLink[]
 }
 export interface RealtimeTicket {
   ticket: string
@@ -845,6 +825,6 @@ export const Api = {
     call<{ user: AdminUserView }>(client().api.admin.users.deactivate.post({ userId })).then(
       (d) => d.user,
     ),
-  adminUpdateSettings: (body: Partial<PublicSettings>) =>
-    call<{ settings: PublicSettings }>(client().api.admin.settings.put(body)).then((d) => d.settings),
+  adminUpdateSettings: (body: SettingsPatch) =>
+    call<{ settings: SiteSettings }>(client().api.admin.settings.put(body)).then((d) => d.settings),
 }

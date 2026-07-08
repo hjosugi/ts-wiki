@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { defaultPublicSettings } from '@ts-wiki/core'
 import { Api, type PublicSettings } from '@/lib/api'
 import { useAuth } from '@/stores/auth'
 import { setDateFormatSettings, useI18n } from '@/lib/i18n'
@@ -14,38 +15,7 @@ const { t } = useI18n()
 const theme = useTheme()
 const themeIcon = computed(() => (theme.mode.value === 'light' ? '☀' : theme.mode.value === 'dark' ? '🌙' : '🖥'))
 const q = ref('')
-const settings = ref<PublicSettings>({
-  siteTitle: 'ts-wiki',
-  accentColor: '#7c3aed',
-  theme: 'system',
-  homePath: 'home',
-  defaultLocale: 'und',
-  timezone: 'UTC',
-  dateFormat: 'medium',
-  navLinks: [],
-  navItems: [
-    { key: 'changes', visible: true },
-    { key: 'events', visible: true },
-    { key: 'graph', visible: true },
-    { key: 'redirects', visible: true },
-    { key: 'templates', visible: true },
-    { key: 'new', visible: true },
-  ],
-  logoUrl: '',
-  faviconUrl: '',
-  footerText: '',
-  footerLinks: [],
-  customCss: '',
-  customHeadHtml: '',
-  enableMath: false,
-  enableEmoji: true,
-  enableMermaid: false,
-  privateWiki: false,
-  registration: 'open',
-  mailConfigured: false,
-  requireEmailVerification: false,
-  requireTwoFactor: false,
-})
+const settings = ref<PublicSettings>(defaultPublicSettings())
 const accentStyle = computed(() => ({ color: settings.value.accentColor }))
 const homeTo = computed(() => `/${settings.value.homePath || 'home'}`)
 const builtInNav = computed(() => {

@@ -1,7 +1,8 @@
 import { computed, ref } from 'vue'
+import type { DateFormatStyle } from '@ts-wiki/core'
+export type { DateFormatStyle } from '@ts-wiki/core'
 
 export type Locale = 'en' | 'ja'
-export type DateFormatStyle = 'short' | 'medium' | 'long'
 
 const localeStorageKey = 'ts-wiki-locale'
 

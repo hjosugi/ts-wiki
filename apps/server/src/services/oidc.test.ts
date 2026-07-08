@@ -38,6 +38,22 @@ const discoveryResponse = () =>
   })
 
 describe('OIDC service', () => {
+  test('exposes OIDC providers through the generic public auth provider shape', () => {
+    const db = createDb(':memory:')
+    try {
+      const service = createOidcService(db, authEnv(), createAuthzService(db))
+      expect(service.publicProviders()).toEqual([{
+        id: 'oidc',
+        label: 'OIDC',
+        kind: 'oidc',
+        type: 'oidc',
+        loginUrl: '/api/auth/oidc/start',
+      }])
+    } finally {
+      db.$client.close()
+    }
+  })
+
   test('start sweeps expired oauth states before storing a new one', async () => {
     let now = 1_000_000
     const db = createDb(':memory:')

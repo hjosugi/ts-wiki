@@ -15,7 +15,8 @@ import { createCommentService, type CommentService } from './comments.ts'
 import { createAnalyticsService, type AnalyticsService } from './analytics.ts'
 import { createSettingsService, type SettingsService } from './settings.ts'
 import { createAuthzService, type AuthzService } from './authz.ts'
-import { createOidcService, type OidcService } from './oidc.ts'
+import { createAuthProviderService, type AuthProviderService } from './auth-providers.ts'
+import { createOidcAuthProviders, createOidcService, type OidcService } from './oidc.ts'
 import { createPasskeyService, type PasskeyService } from './passkeys.ts'
 import { createPageShareService, type PageShareService } from './shares.ts'
 import { createPageTemplateService, type PageTemplateService } from './templates.ts'
@@ -55,6 +56,7 @@ export interface Services {
   readonly analytics: AnalyticsService
   readonly settings: SettingsService
   readonly authz: AuthzService
+  readonly authProviders: AuthProviderService
   readonly oidc: OidcService
   readonly passkeys: PasskeyService
   readonly shares: PageShareService
@@ -150,6 +152,7 @@ export const createServices = (db: DB, options: ServiceOptions = {}): Services =
     renderMarkdown: (content) => rendererForSettings().renderMarkdown(content),
     defaultLocale: () => settings.public().defaultLocale,
   })
+  const authProviders = createAuthProviderService(db, auth, authz, createOidcAuthProviders(db, auth))
   return {
     pages: pageService,
     search: createSearchService(db, { configuredTokenizer: search.ftsTokenizer, indexer: searchIndexer }),
@@ -160,6 +163,7 @@ export const createServices = (db: DB, options: ServiceOptions = {}): Services =
     analytics: createAnalyticsService(db),
     settings,
     authz,
+    authProviders,
     oidc: createOidcService(db, auth, authz),
     passkeys: createPasskeyService(db, auth),
     shares: createPageShareService(db),
@@ -178,4 +182,4 @@ export const createServices = (db: DB, options: ServiceOptions = {}): Services =
   }
 }
 
-export type { PageService, SearchService, UserService, AssetService, AdminService, CommentService, AnalyticsService, SettingsService, AuthzService, OidcService, PasskeyService, PageShareService, PageTemplateService, UserPreferenceService, MailService, MailSender, AuthRecoveryService, ApiKeyService, WebhookService, WebhookFetcher, WebhookHostnameResolver }
+export type { PageService, SearchService, UserService, AssetService, AdminService, CommentService, AnalyticsService, SettingsService, AuthzService, AuthProviderService, OidcService, PasskeyService, PageShareService, PageTemplateService, UserPreferenceService, MailService, MailSender, AuthRecoveryService, ApiKeyService, WebhookService, WebhookFetcher, WebhookHostnameResolver }

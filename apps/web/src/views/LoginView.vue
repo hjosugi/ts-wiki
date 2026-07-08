@@ -153,7 +153,7 @@ async function loadPublicSettings(): Promise<void> {
 }
 
 function startProvider(provider: PublicAuthProvider): void {
-  window.location.href = `/api/auth/oidc/${encodeURIComponent(provider.id)}/start`
+  window.location.href = provider.loginUrl
 }
 
 onMounted(async () => {

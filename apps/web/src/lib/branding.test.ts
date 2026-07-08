@@ -1,38 +1,15 @@
 import { beforeEach, describe, expect, test } from 'vitest'
+import { defaultPublicSettings } from '@ts-wiki/core'
 import type { PublicSettings } from './api'
 import { applyBranding } from './branding'
 
 const makeSettings = (overrides: Partial<PublicSettings> = {}): PublicSettings => ({
+  ...defaultPublicSettings(),
   siteTitle: 'Docs Wiki',
   accentColor: '#2563eb',
-  theme: 'system',
-  homePath: 'home',
-  defaultLocale: 'und',
-  timezone: 'UTC',
-  dateFormat: 'medium',
-  navLinks: [],
-  navItems: [
-    { key: 'changes', visible: true },
-    { key: 'events', visible: true },
-    { key: 'graph', visible: true },
-    { key: 'redirects', visible: true },
-    { key: 'templates', visible: true },
-    { key: 'new', visible: true },
-  ],
-  logoUrl: '',
   faviconUrl: '/assets/favicon.png',
-  footerText: '',
-  footerLinks: [],
   customCss: ':root { --radius: 0.75rem; }',
   customHeadHtml: '<meta name="x-docs" content="ok"><script>window.__tsWikiBranding = true</script>',
-  enableMath: false,
-  enableEmoji: true,
-  enableMermaid: false,
-  privateWiki: false,
-  registration: 'open',
-  mailConfigured: false,
-  requireEmailVerification: false,
-  requireTwoFactor: false,
   ...overrides,
 })
 

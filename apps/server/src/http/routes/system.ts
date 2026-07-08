@@ -1,4 +1,4 @@
-import type { Principal } from '@ts-wiki/core'
+import type { Principal, PublicSettings } from '@ts-wiki/core'
 import type { Env } from '../../env.ts'
 import type { Services } from '../../services/index.ts'
 import type { PageSummary, RecentChange } from '../../services/pages.ts'
@@ -85,7 +85,7 @@ const robotsTxt = (origin: string, privateWiki: boolean): string =>
 export interface SystemRoutesContext {
   readonly env: Env
   readonly services: Services
-  readonly publicSettings: () => Record<string, unknown>
+  readonly publicSettings: () => PublicSettings
   readonly feedCache: Map<string, { createdAt: number; xml: string }>
   readonly requirePageRead: (principal: Principal | null, path?: string) => void
   readonly canReadPage: (principal: Principal | null, path?: string) => boolean
@@ -152,7 +152,7 @@ export const createSystemRoutes = ({
     })
 
   return app
-    .get('/api/health', () => ({ ok: true as const, name: 'ts-wiki', version: '0.4.8' }))
+    .get('/api/health', () => ({ ok: true as const, name: 'ts-wiki', version: '0.4.9' }))
     .get('/api/settings/public', () => publicSettings())
     .get('/feed.xml', ({ principal }) => feedResponse(principal))
     .get('/sitemap.xml', () => sitemapResponse())

@@ -1,10 +1,10 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { and, eq, lte } from 'drizzle-orm'
+import { eq, lte } from 'drizzle-orm'
 import {
   type AppError,
+  type PublicAuthProvider,
   type Result,
   type Role,
-  conflict,
   err,
   forbidden,
   ok,
@@ -13,26 +13,21 @@ import {
 } from '@ts-wiki/core'
 import type { AuthEnv, OidcProviderEnv } from '../env.ts'
 import type { DB } from '../db/client.ts'
-import { authAccounts, oauthStates, users, type User } from '../db/schema.ts'
-import { hashPassword } from './auth.ts'
+import { oauthStates } from '../db/schema.ts'
+import {
+  createAuthProviderService,
+  type AuthProvider,
+  type AuthProviderCallbackParams,
+  type AuthProviderCallbackResult,
+} from './auth-providers.ts'
 import type { AuthzService } from './authz.ts'
-import { isUserActive } from './users.ts'
-
-export interface PublicAuthProvider {
-  readonly id: string
-  readonly label: string
-  readonly type: 'oidc'
-}
 
 export interface OidcStart {
   readonly url: string
   readonly state: string
 }
 
-export interface OidcCallbackResult {
-  readonly user: User
-  readonly isNewUser: boolean
-}
+export type OidcCallbackResult = AuthProviderCallbackResult
 
 export interface OidcService {
   publicProviders(): PublicAuthProvider[]
@@ -82,9 +77,6 @@ const decodeJwtPart = <T>(part: string): T | null => {
     return null
   }
 }
-
-const providerById = (auth: AuthEnv, id: string): OidcProviderEnv | undefined =>
-  auth.oidcProviders.find((provider) => provider.id === id)
 
 const fetchJson = async <T>(url: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(url, init)
@@ -158,90 +150,31 @@ const safeRedirectAfter = (value: string | null | undefined): string | null =>
 
 const OIDC_STATE_TTL_MS = 10 * 60_000
 
-export const createOidcService = (
+const requiredCallbackParam = (
+  params: AuthProviderCallbackParams,
+  key: string,
+): Result<string, AppError> => {
+  const value = params[key]
+  return value ? ok(value) : err(validationError(`OIDC ${key} is required`, key))
+}
+
+export const createOidcAuthProviders = (
   db: DB,
   auth: AuthEnv,
-  authz: AuthzService,
   options: OidcServiceOptions = {},
-): OidcService => {
+): AuthProvider[] => {
   const now = options.now ?? (() => Date.now())
 
   const cleanupStates = (): void => {
     db.delete(oauthStates).where(lte(oauthStates.expiresAt, now())).run()
   }
 
-  const findUserByEmail = (email: string): User | undefined =>
-    db.select().from(users).where(eq(users.email, email)).get()
+  return auth.oidcProviders.map((provider): AuthProvider => ({
+    id: provider.id,
+    label: provider.label,
+    kind: 'oidc',
 
-  const findAccount = (provider: string, providerSubject: string): User | undefined => {
-    const row = db
-      .select({ user: users })
-      .from(authAccounts)
-      .innerJoin(users, eq(users.id, authAccounts.userId))
-      .where(and(eq(authAccounts.provider, provider), eq(authAccounts.providerSubject, providerSubject)))
-      .get()
-    return row?.user
-  }
-
-  const linkAccount = (user: User, provider: OidcProviderEnv, subject: string, email: string): void => {
-    const existing = db
-      .select()
-      .from(authAccounts)
-      .where(and(eq(authAccounts.provider, provider.id), eq(authAccounts.providerSubject, subject)))
-      .get()
-    const now = Date.now()
-    if (existing) {
-      db.update(authAccounts)
-        .set({ email, userId: user.id, updatedAt: now })
-        .where(eq(authAccounts.id, existing.id))
-        .run()
-      return
-    }
-    db.insert(authAccounts)
-      .values({
-        id: crypto.randomUUID(),
-        userId: user.id,
-        provider: provider.id,
-        providerSubject: subject,
-        email,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .run()
-  }
-
-  const createExternalUser = async (provider: OidcProviderEnv, email: string, name: string): Promise<User> => {
-    const now = Date.now()
-    const user: User = {
-      id: crypto.randomUUID(),
-      email,
-      name,
-      passwordHash: await hashPassword(randomUrlToken(48)),
-      role: provider.defaultRole as Role,
-      totpSecret: null,
-      totpEnabled: 0,
-      disabledAt: null,
-      tokenInvalidBefore: 0,
-      emailVerifiedAt: now,
-      createdAt: now,
-    }
-    db.insert(users).values(user).run()
-    authz.syncRoleGroup(user.id, user.role)
-    return user
-  }
-
-  return {
-    publicProviders() {
-      return auth.oidcProviders.map((provider) => ({
-        id: provider.id,
-        label: provider.label,
-        type: 'oidc' as const,
-      }))
-    },
-
-    async start(providerId, redirectAfter = null) {
-      const provider = providerById(auth, providerId)
-      if (!provider) return err(notFoundProvider())
+    async startLogin(redirectAfter = null) {
       cleanupStates()
       const discovery = await discover(provider)
       const state = randomUrlToken()
@@ -271,19 +204,21 @@ export const createOidcService = (
       return ok({ url: url.toString(), state })
     },
 
-    async callback(providerId, code, state) {
-      const provider = providerById(auth, providerId)
-      if (!provider) return err(notFoundProvider())
-      const stored = db.select().from(oauthStates).where(eq(oauthStates.state, state)).get()
+    async handleCallback(params) {
+      const code = requiredCallbackParam(params, 'code')
+      if (!code.ok) return code
+      const state = requiredCallbackParam(params, 'state')
+      if (!state.ok) return state
+      const stored = db.select().from(oauthStates).where(eq(oauthStates.state, state.value)).get()
       if (!stored || stored.provider !== provider.id) {
         return err(unauthorized('OIDC state is invalid or expired'))
       }
       const nowMs = now()
       if (stored.expiresAt <= nowMs) {
-        db.delete(oauthStates).where(eq(oauthStates.state, state)).run()
+        db.delete(oauthStates).where(eq(oauthStates.state, state.value)).run()
         return err(unauthorized('OIDC state is invalid or expired'))
       }
-      db.delete(oauthStates).where(eq(oauthStates.state, state)).run()
+      db.delete(oauthStates).where(eq(oauthStates.state, state.value)).run()
 
       const discovery = await discover(provider)
       const token = await fetchJson<TokenResponse>(discovery.token_endpoint, {
@@ -291,7 +226,7 @@ export const createOidcService = (
         headers: { 'content-type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
           grant_type: 'authorization_code',
-          code,
+          code: code.value,
           client_id: provider.clientId,
           client_secret: provider.clientSecret,
           redirect_uri: provider.redirectUri,
@@ -307,28 +242,31 @@ export const createOidcService = (
       const claims = validateClaims(provider, verified.claims, stored.nonce, now())
       if (!claims.ok) return claims
 
-      const existingByAccount = findAccount(provider.id, claims.value.subject)
-      if (existingByAccount) {
-        if (!isUserActive(existingByAccount)) return err(unauthorized('Account is deactivated'))
-        linkAccount(existingByAccount, provider, claims.value.subject, claims.value.email)
-        return ok({ user: existingByAccount, isNewUser: false })
-      }
-
-      const existingByEmail = findUserByEmail(claims.value.email)
-      if (existingByEmail) {
-        if (!isUserActive(existingByEmail)) return err(unauthorized('Account is deactivated'))
-        linkAccount(existingByEmail, provider, claims.value.subject, claims.value.email)
-        return ok({ user: existingByEmail, isNewUser: false })
-      }
-
-      if (!provider.allowRegistration || auth.registration === 'off') {
-        return err(forbidden('OIDC self-registration is disabled'))
-      }
-      const user = await createExternalUser(provider, claims.value.email, claims.value.name)
-      linkAccount(user, provider, claims.value.subject, claims.value.email)
-      return ok({ user, isNewUser: true })
+      return ok({
+        providerId: provider.id,
+        providerKind: 'oidc',
+        subject: claims.value.subject,
+        email: claims.value.email,
+        name: claims.value.name,
+        emailVerified: true,
+        allowRegistration: provider.allowRegistration,
+        defaultRole: provider.defaultRole as Role,
+      })
     },
-  }
+  }))
 }
 
-const notFoundProvider = (): AppError => validationError('Unknown auth provider', 'provider')
+export const createOidcService = (
+  db: DB,
+  auth: AuthEnv,
+  authz: AuthzService,
+  options: OidcServiceOptions = {},
+): OidcService => {
+  const service = createAuthProviderService(db, auth, authz, createOidcAuthProviders(db, auth, options))
+  return {
+    publicProviders: () => service.publicProviders(),
+    start: (providerId, redirectAfter = null): Promise<Result<OidcStart, AppError>> =>
+      service.start(providerId, redirectAfter) as Promise<Result<OidcStart, AppError>>,
+    callback: (providerId, code, state) => service.callback(providerId, { code, state }),
+  }
+}

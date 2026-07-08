@@ -168,6 +168,15 @@ const base64UrlJson = (value: unknown): string =>
 const base64UrlBytes = (value: string): string =>
   Buffer.from(value).toString('base64url')
 
+const oidcDiscoveryResponse = () =>
+  new Response(JSON.stringify({
+    authorization_endpoint: 'https://idp.example.com/auth',
+    token_endpoint: 'https://idp.example.com/token',
+    jwks_uri: 'https://idp.example.com/jwks',
+  }), {
+    headers: { 'content-type': 'application/json' },
+  })
+
 const passkeyAuthenticationVerifyBody = (challenge = 'missing') => ({
   response: {
     id: 'missing',
@@ -375,6 +384,61 @@ describe('http app auth', () => {
     expect((await app.handle(
       new Request('http://localhost/api/auth/oidc/unknown/callback?code=x&state=y'),
     )).status).toBe(429)
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('routes configured OIDC providers through the generic auth provider seam', async () => {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async () => oidcDiscoveryResponse()) as unknown as typeof fetch
+    try {
+      const { app } = createFixture(undefined, {
+        env: (env) => ({
+          ...env,
+          auth: {
+            ...env.auth,
+            oidcProviders: [{
+              id: 'acme',
+              label: 'Acme ID',
+              issuer: 'https://idp.example.com',
+              clientId: 'client-id',
+              clientSecret: 'client-secret',
+              redirectUri: 'http://localhost/api/auth/acme/callback',
+              scopes: ['openid', 'email', 'profile'],
+              allowRegistration: true,
+              allowedEmailDomains: [],
+              defaultRole: 'viewer',
+            }],
+          },
+        }),
+      })
+
+      const providers = await app.handle(new Request('http://localhost/api/auth/providers'))
+      expect(providers.status).toBe(200)
+      expect(await providers.json()).toEqual({
+        providers: [{
+          id: 'acme',
+          label: 'Acme ID',
+          kind: 'oidc',
+          type: 'oidc',
+          loginUrl: '/api/auth/acme/start',
+        }],
+      })
+
+      const genericStart = await app.handle(new Request('http://localhost/api/auth/acme/start?redirect=/docs'))
+      expect(genericStart.status).toBe(302)
+      const location = new URL(genericStart.headers.get('location') ?? '')
+      expect(location.origin).toBe('https://idp.example.com')
+      expect(location.searchParams.get('client_id')).toBe('client-id')
+      expect(location.searchParams.get('redirect_uri')).toBe('http://localhost/api/auth/acme/callback')
+      expect(location.searchParams.get('state')).toBeTruthy()
+
+      const missingCallbackParams = await app.handle(new Request('http://localhost/api/auth/acme/callback'))
+      expect(missingCallbackParams.status).toBe(422)
+
+      const legacyStart = await app.handle(new Request('http://localhost/api/auth/oidc/acme/start'))
+      expect(legacyStart.status).toBe(302)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   }, HTTP_TEST_TIMEOUT_MS)
 
   test('rate limits TOTP enable and disable attempts', async () => {

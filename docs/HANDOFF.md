@@ -5,7 +5,7 @@ A practical guide for whoever picks this up next (human or AI). The user-facing 
 things are the way they are, what bit us, and exactly where to plug in the next features.
 
 - **As of:** 2026-07-08
-- **State:** v0.4.8 — a small but *complete and verified* vertical slice. Everything below marked ✅
+- **State:** v0.4.9 — a small but *complete and verified* vertical slice. Everything below marked ✅
   has been run and confirmed (tests + live HTTP + typed client + build + typecheck).
 - **Stack:** Bun 1.3 · Elysia · Drizzle ORM · SQLite/libSQL + FTS5 · Vue 3 · Vite ·
   UnoCSS · Pinia · CodeMirror 6 · Eden Treaty · SimpleWebAuthn (no codegen).
@@ -17,18 +17,18 @@ things are the way they are, what bit us, and exactly where to plug in the next 
 | Area | Status | Notes |
 |---|---|---|
 | Monorepo + Bun workspaces | ✅ | `packages/*`, `apps/*`; root scripts orchestrate via `bun --filter` |
-| `@ts-wiki/core` (pure domain) | ✅ | Result, errors, slug, permissions, markdown+TOC/link extraction, renderer plugin seam, validation |
+| `@ts-wiki/core` (pure domain) | ✅ | Result, errors, slug, permissions, markdown+TOC/link extraction, renderer plugin seam, validation, shared public settings/auth-provider contracts |
 | DB schema + FTS5 migration | ✅ | SQLite default plus libSQL/Turso embedded-replica support |
 | Pages service (CRUD) | ✅ | transactional: render + revision + FTS index together |
 | Search service (FTS5/BM25) | ✅ | weighted columns, snippets, prefix queries |
-| Users + auth | ✅ | local password, expiring/revocable JWT, multi-provider OIDC, TOTP, passkeys, private mode; first account → admin |
+| Users + auth | ✅ | local password, expiring/revocable JWT, generic auth-provider registry with OIDC implementation, TOTP, passkeys, private mode; first account → admin |
 | Groups + page rules | ✅ | role default groups, memberships, path ACL rules, deny precedence |
 | Assets upload | ✅ | local or R2 bytes, DB metadata, upload/picker UI, logo/favicon reuse |
 | Elysia HTTP app + Eden type | ✅ | exports `App`; error mapping centralised |
 | Vue app: view/edit/search/graph/login | ✅ | breadcrumbs, page header actions, tree sidebar, graph view, empty states, runtime branding |
 | Markdown editor (CodeMirror + visual mode) | ✅ | Markdown remains canonical; visual mode round-trips common blocks |
 | Webhooks + automation | ✅ | signed deliveries, retry history, event automation rules with priority/conditions/actions |
-| Site configuration | ✅ | runtime branding, nav settings, default locale/timezone/date format, webhook retry policy |
+| Site configuration | ✅ | runtime branding, nav settings, default locale/timezone/date format, webhook retry policy, shared `PublicSettings` shape |
 | Tests / typecheck / build | ✅ | core/server Bun tests + web Vitest tests; all 3 packages typecheck; web builds |
 | Auth route guards in router | ✅ | global router guard gates editor/admin routes |
 
@@ -85,8 +85,9 @@ Cross-cutting principles (the "FP-leaning architecture" the user asked for):
   return plain data. New error kinds go in `packages/core/src/errors.ts` + `httpStatus()`.
 - **Page path is a query param** (`/api/page?path=...`), not a route segment, because wiki paths
   contain slashes. The Eden client mirrors this.
-- **The web client re-states response shapes** in `apps/web/src/lib/api.ts` (see §4 gotcha). Keep
-  new methods in that file; components/stores never call `treaty` directly.
+- **The web client centralises API shapes** in `apps/web/src/lib/api.ts`; shared contracts such as
+  `PublicSettings` and `PublicAuthProvider` come from `@ts-wiki/core`. Keep new methods in that
+  file; components/stores never call `treaty` directly.
 
 ---
 

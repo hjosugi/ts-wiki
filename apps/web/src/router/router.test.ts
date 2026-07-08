@@ -1,82 +1,24 @@
 import { describe, expect, test, beforeEach, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { defaultPublicSettings } from '@ts-wiki/core'
 import { createWikiRouter } from './index'
 import { Api, setToken } from '@/lib/api'
 import type { PublicSettings } from '@/lib/api'
 import { useAuth } from '@/stores/auth'
 
 const makePublicSettings = (overrides: Partial<PublicSettings> = {}): PublicSettings => ({
-  siteTitle: 'ts-wiki',
-  accentColor: '#7c3aed',
-  theme: 'system',
-  homePath: 'home',
-  defaultLocale: 'und',
-  timezone: 'UTC',
-  dateFormat: 'medium',
-  navLinks: [],
-  navItems: [
-    { key: 'changes', visible: true },
-    { key: 'events', visible: true },
-    { key: 'graph', visible: true },
-    { key: 'redirects', visible: true },
-    { key: 'templates', visible: true },
-    { key: 'new', visible: true },
-  ],
-  logoUrl: '',
-  faviconUrl: '',
-  footerText: '',
-  footerLinks: [],
-  customCss: '',
-  customHeadHtml: '',
-  enableMath: false,
-  enableEmoji: true,
-  enableMermaid: false,
-  privateWiki: false,
-  registration: 'open',
-  mailConfigured: false,
-  requireEmailVerification: false,
-  requireTwoFactor: false,
+  ...defaultPublicSettings(),
   ...overrides,
 })
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
+  const core = await import('@ts-wiki/core')
   return {
     ...actual,
     Api: {
       ...actual.Api,
-      publicSettings: vi.fn(async () => ({
-        siteTitle: 'ts-wiki',
-        accentColor: '#7c3aed',
-        theme: 'system',
-        homePath: 'home',
-        defaultLocale: 'und',
-        timezone: 'UTC',
-        dateFormat: 'medium',
-        navLinks: [],
-        navItems: [
-          { key: 'changes', visible: true },
-          { key: 'events', visible: true },
-          { key: 'graph', visible: true },
-          { key: 'redirects', visible: true },
-          { key: 'templates', visible: true },
-          { key: 'new', visible: true },
-        ],
-        logoUrl: '',
-        faviconUrl: '',
-        footerText: '',
-        footerLinks: [],
-        customCss: '',
-        customHeadHtml: '',
-        enableMath: false,
-        enableEmoji: true,
-        enableMermaid: false,
-        privateWiki: false,
-        registration: 'open',
-        mailConfigured: false,
-        requireEmailVerification: false,
-        requireTwoFactor: false,
-      })),
+      publicSettings: vi.fn(async () => core.defaultPublicSettings()),
     },
   }
 })
