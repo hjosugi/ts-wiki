@@ -14,6 +14,7 @@ import { Api } from '@/lib/api'
 import { useMarkdownFeatures } from '@/composables/useMarkdownFeatures'
 import { vMarkdownEnhance } from '@/lib/markdownEnhance'
 import AssetPicker from '@/components/AssetPicker.vue'
+import ModalDialog from '@/components/ModalDialog.vue'
 
 const props = defineProps<{ modelValue: string; assetFolder?: string }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
@@ -26,6 +27,7 @@ const uploadError = ref<string | null>(null)
 const showIcs = ref(false)
 const showAssets = ref(false)
 const icsText = ref('')
+const mode = ref<'write' | 'preview'>('write')
 let view: EditorView | null = null
 const { markdownFeatures, markdownRenderer } = useMarkdownFeatures()
 
@@ -256,24 +258,46 @@ onBeforeUnmount(() => view?.destroy())
       <input ref="icsInput" class="hidden" type="file" accept=".ics,text/calendar" @change="onIcsInput" />
     </div>
     <p v-if="uploadError" class="text-sm text-red-600">{{ uploadError }}</p>
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 h-[65vh]">
+    <div class="inline-flex rounded-[var(--radius)] border border-[var(--c-border)] bg-[var(--c-surface)] p-1 text-sm lg:hidden">
+      <button
+        class="rounded px-3 py-1.5"
+        :class="mode === 'write' ? 'bg-[var(--c-accent)] text-white' : 'text-[var(--c-text-muted)]'"
+        type="button"
+        :aria-pressed="mode === 'write'"
+        @click="mode = 'write'"
+      >
+        Write
+      </button>
+      <button
+        class="rounded px-3 py-1.5"
+        :class="mode === 'preview' ? 'bg-[var(--c-accent)] text-white' : 'text-[var(--c-text-muted)]'"
+        type="button"
+        :aria-pressed="mode === 'preview'"
+        @click="mode = 'preview'"
+      >
+        Preview
+      </button>
+    </div>
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:h-[65vh]">
       <div
         ref="host"
-        class="rounded-lg overflow-hidden border border-gray-200 dark:border-gray-800"
+        class="h-[calc(100dvh-18rem)] min-h-[24rem] overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800 lg:block lg:h-auto"
+        :class="mode === 'write' ? 'block' : 'hidden'"
       ></div>
       <div
-        class="prose dark:prose-invert max-w-none rounded-lg border border-gray-200 dark:border-gray-800 p-5 overflow-auto bg-white dark:bg-gray-900"
+        class="prose dark:prose-invert h-[calc(100dvh-18rem)] min-h-[24rem] max-w-none overflow-auto rounded-lg border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900 lg:block lg:h-auto"
+        :class="mode === 'preview' ? 'block' : 'hidden'"
         v-markdown-enhance="markdownFeatures"
         v-html="preview"
       ></div>
     </div>
 
-    <div
-      v-if="showIcs"
-      class="fixed inset-0 z-40 bg-black/40 flex items-center justify-center p-4"
-      @click.self="showIcs = false"
+    <ModalDialog
+      :open="showIcs"
+      title="Import .ics"
+      panel-class="card w-full max-w-2xl p-4 space-y-4"
+      @close="showIcs = false"
     >
-      <section class="card w-full max-w-2xl p-4 space-y-4">
         <div class="flex items-center justify-between gap-3">
           <h2 class="text-lg font-semibold">Import .ics</h2>
           <button class="btn-ghost" type="button" @click="showIcs = false">Close</button>
@@ -294,8 +318,7 @@ onBeforeUnmount(() => view?.destroy())
           </div>
         </div>
         <p v-else class="text-sm text-gray-500">No events found.</p>
-      </section>
-    </div>
+    </ModalDialog>
     <AssetPicker :open="showAssets" :folder="props.assetFolder" @close="showAssets = false" @insert="insertAsset" />
   </div>
 </template>

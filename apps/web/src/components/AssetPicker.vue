@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import { Api, type AssetView } from '@/lib/api'
 import { displayAssetFolder } from '@/lib/assets'
+import ModalDialog from '@/components/ModalDialog.vue'
 
 const props = defineProps<{ open: boolean; folder?: string }>()
 const emit = defineEmits<{
@@ -86,14 +87,13 @@ watch(() => props.folder, (folder) => {
 </script>
 
 <template>
-  <div
-    v-if="open"
-    class="fixed inset-0 z-40 bg-gray-950/50 flex items-center justify-center p-4"
-    role="dialog"
-    aria-modal="true"
-    @click.self="emit('close')"
+  <ModalDialog
+    :open="open"
+    title="Assets"
+    container-class="items-center justify-center p-4"
+    panel-class="w-full max-w-4xl max-h-[84vh] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-950"
+    @close="emit('close')"
   >
-    <section class="w-full max-w-4xl max-h-[84vh] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-950">
       <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
         <div class="min-w-0">
           <h2 class="font-semibold">Assets</h2>
@@ -159,6 +159,5 @@ watch(() => props.folder, (folder) => {
           </div>
         </div>
       </div>
-    </section>
-  </div>
+  </ModalDialog>
 </template>

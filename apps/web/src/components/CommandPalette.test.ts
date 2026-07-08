@@ -1,4 +1,4 @@
-import { mount, flushPromises } from '@vue/test-utils'
+import { DOMWrapper, mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { createRouter, createMemoryHistory, type Router } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
@@ -72,6 +72,8 @@ const installStorage = (): void => {
 }
 
 describe('CommandPalette', () => {
+  const wrappers: VueWrapper[] = []
+
   beforeEach(() => {
     vi.useFakeTimers()
     installStorage()
@@ -80,24 +82,46 @@ describe('CommandPalette', () => {
   })
 
   afterEach(() => {
+    for (const wrapper of wrappers.splice(0)) wrapper.unmount()
+    document.body.innerHTML = ''
+    document.body.style.overflow = ''
     vi.useRealTimers()
   })
+
+  const mountPalette = (router: Router): VueWrapper => {
+    const wrapper = mount(CommandPalette, {
+      attachTo: document.body,
+      global: { plugins: [createPinia(), router] },
+    })
+    wrappers.push(wrapper)
+    return wrapper
+  }
+
+  const paletteInput = (): DOMWrapper<HTMLInputElement> => {
+    const input = document.querySelector<HTMLInputElement>('input[placeholder="Search or jump..."]')
+    expect(input).not.toBeNull()
+    return new DOMWrapper(input!)
+  }
 
   test('opens from the keyboard shortcut and searches through the shared composable', async () => {
     api.search.mockResolvedValue({ query: 'alpha', hits: [hit('docs/alpha', 'Alpha')], total: 1, limit: 8, offset: 0, hasMore: false })
     const router = await makeRouter()
-    const wrapper = mount(CommandPalette, { global: { plugins: [createPinia(), router] } })
+    mountPalette(router)
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
     await settle()
-    expect(wrapper.find('input[placeholder="Search or jump..."]').exists()).toBe(true)
+    expect(document.querySelector('[role="dialog"]')?.getAttribute('aria-modal')).toBe('true')
+    expect(document.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Command palette')
+    expect(document.querySelector('[role="combobox"]')?.getAttribute('aria-controls')).toBe('command-palette-results')
+    expect(document.querySelector('[role="listbox"]')).not.toBeNull()
 
-    await wrapper.find('input[placeholder="Search or jump..."]').setValue('alpha')
+    await paletteInput().setValue('alpha')
     await vi.advanceTimersByTimeAsync(140)
     await settle()
 
     expect(api.search).toHaveBeenCalledWith('alpha', expect.objectContaining({ limit: 8, scope: 'title' }))
-    expect(wrapper.text()).toContain('Alpha')
+    expect(document.body.textContent).toContain('Alpha')
+    expect(document.querySelector('[role="option"]')?.getAttribute('aria-selected')).toBe('true')
   })
 
   test('shows recent searches and lets keyboard selection open a result', async () => {
@@ -111,13 +135,15 @@ describe('CommandPalette', () => {
       hasMore: false,
     })
     const router = await makeRouter()
-    const wrapper = mount(CommandPalette, { global: { plugins: [createPinia(), router] } })
+    mountPalette(router)
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
     await settle()
-    expect(wrapper.text()).toContain('banana')
+    expect(document.body.textContent).toContain('banana')
 
-    await wrapper.find('button.rounded-full').trigger('click')
+    const recent = document.querySelector<HTMLButtonElement>('button.rounded-full')
+    expect(recent).not.toBeNull()
+    await new DOMWrapper(recent!).trigger('click')
     await vi.advanceTimersByTimeAsync(140)
     await settle()
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))

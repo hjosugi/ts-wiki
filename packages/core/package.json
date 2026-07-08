@@ -1,6 +1,6 @@
 {
   "name": "@ts-wiki/core",
-  "version": "0.4.10",
+  "version": "0.4.11",
   "license": "0BSD",
   "private": true,
   "type": "module",

@@ -5,6 +5,7 @@ import { normalizePath } from '@ts-wiki/core'
 import { useAuth } from '@/stores/auth'
 import { usePages } from '@/stores/pages'
 import { useListNavigation, useSearch } from '@/composables/useSearch'
+import ModalDialog from '@/components/ModalDialog.vue'
 
 interface CommandItem {
   readonly key: string
@@ -103,7 +104,7 @@ const items = computed<CommandItem[]>(() => {
 })
 
 async function openPalette(): Promise<void> {
-    open.value = true
+  open.value = true
   navigation.reset()
   if (!pages.list.length) await pages.refresh()
   await nextTick()
@@ -167,56 +168,56 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div
-    v-if="open"
-    class="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 pt-[12vh]"
-    @click.self="close"
+  <ModalDialog
+    :open="open"
+    title="Command palette"
+    container-class="items-start justify-center p-4 pt-[12vh]"
+    panel-class="card w-full max-w-2xl overflow-hidden p-0"
+    @close="close"
   >
-    <section class="card w-full max-w-2xl overflow-hidden">
-      <input
-        ref="input"
-        v-model="search.q.value"
-        class="w-full border-0 border-b border-gray-200 dark:border-gray-800 bg-transparent px-4 py-3 text-lg outline-none"
-        placeholder="Search or jump..."
-        role="combobox"
-        aria-controls="command-palette-results"
-        :aria-expanded="Boolean(items.length)"
-        :aria-activedescendant="navigation.activeId('command-palette-item')"
-      />
-      <div v-if="!search.q.value.trim() && search.recentSearches.value.length" class="border-b border-gray-100 px-4 py-3 dark:border-gray-800">
-        <div class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Recent</div>
-        <div class="flex flex-wrap gap-2">
-          <button
-            v-for="recent in search.recentSearches.value"
-            :key="recent"
-            class="rounded-full border border-gray-200 px-3 py-1 text-sm hover:border-violet-400 dark:border-gray-800"
-            type="button"
-            @click="chooseRecent(recent)"
-          >
-            {{ recent }}
-          </button>
-        </div>
-      </div>
-      <div id="command-palette-results" class="max-h-[24rem] overflow-auto p-2" role="listbox">
+    <input
+      ref="input"
+      v-model="search.q.value"
+      class="w-full border-0 border-b border-gray-200 dark:border-gray-800 bg-transparent px-4 py-3 text-lg outline-none"
+      placeholder="Search or jump..."
+      role="combobox"
+      aria-controls="command-palette-results"
+      :aria-expanded="Boolean(items.length)"
+      :aria-activedescendant="navigation.activeId('command-palette-item')"
+    />
+    <div v-if="!search.q.value.trim() && search.recentSearches.value.length" class="border-b border-gray-100 px-4 py-3 dark:border-gray-800">
+      <div class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Recent</div>
+      <div class="flex flex-wrap gap-2">
         <button
-          v-for="(item, index) in items"
-          :id="`command-palette-item-${index}`"
-          :key="item.key"
-          class="w-full rounded-md px-3 py-2 text-left flex items-center justify-between gap-4"
-          :class="index === navigation.selected.value ? 'bg-gray-100 dark:bg-gray-800' : 'hover:bg-gray-100 dark:hover:bg-gray-800'"
+          v-for="recent in search.recentSearches.value"
+          :key="recent"
+          class="rounded-full border border-gray-200 px-3 py-1 text-sm hover:border-violet-400 dark:border-gray-800"
           type="button"
-          role="option"
-          :aria-selected="index === navigation.selected.value"
-          @mouseenter="navigation.selected.value = index"
-          @click="item.run(); close()"
+          @click="chooseRecent(recent)"
         >
-          <span class="min-w-0">
-            <span class="block font-medium truncate">{{ item.label }}</span>
-            <span class="block text-xs text-gray-500 truncate">{{ item.detail }}</span>
-          </span>
-          <span v-if="index === navigation.selected.value" class="text-xs text-gray-400">Enter</span>
+          {{ recent }}
         </button>
       </div>
-    </section>
-  </div>
+    </div>
+    <div id="command-palette-results" class="max-h-[24rem] overflow-auto p-2" role="listbox">
+      <button
+        v-for="(item, index) in items"
+        :id="`command-palette-item-${index}`"
+        :key="item.key"
+        class="w-full rounded-md px-3 py-2 text-left flex items-center justify-between gap-4"
+        :class="index === navigation.selected.value ? 'bg-gray-100 dark:bg-gray-800' : 'hover:bg-gray-100 dark:hover:bg-gray-800'"
+        type="button"
+        role="option"
+        :aria-selected="index === navigation.selected.value"
+        @mouseenter="navigation.selected.value = index"
+        @click="item.run(); close()"
+      >
+        <span class="min-w-0">
+          <span class="block font-medium truncate">{{ item.label }}</span>
+          <span class="block text-xs text-gray-500 truncate">{{ item.detail }}</span>
+        </span>
+        <span v-if="index === navigation.selected.value" class="text-xs text-gray-400">Enter</span>
+      </button>
+    </div>
+  </ModalDialog>
 </template>

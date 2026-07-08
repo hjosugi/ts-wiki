@@ -5,7 +5,7 @@ A practical guide for whoever picks this up next (human or AI). The user-facing 
 things are the way they are, what bit us, and exactly where to plug in the next features.
 
 - **As of:** 2026-07-08
-- **State:** v0.4.10 — a small but *complete and verified* vertical slice. Everything below marked ✅
+- **State:** v0.4.11 — a small but *complete and verified* vertical slice. Everything below marked ✅
   has been run and confirmed (tests + live HTTP + typed client + build + typecheck).
 - **Stack:** Bun 1.3 · Elysia · Drizzle ORM · SQLite/libSQL + FTS5 · Vue 3 · Vite ·
   UnoCSS · Pinia · CodeMirror 6 · Eden Treaty · SimpleWebAuthn (no codegen).
@@ -30,7 +30,8 @@ things are the way they are, what bit us, and exactly where to plug in the next 
 | Webhooks + automation | ✅ | signed deliveries, retry history, event automation rules with priority/conditions/actions |
 | Site configuration | ✅ | runtime branding, nav settings, default locale/timezone/date format, webhook retry policy, shared `PublicSettings` shape |
 | Tests / typecheck / build | ✅ | core/server Bun tests + web Vitest tests; all 3 packages typecheck; web builds |
-| Mobile shell | ✅ | compact header, touch-visible command palette trigger, focus-managed navigation drawer, collapsible page TOC below `xl` |
+| Mobile shell | ✅ | compact header, touch-visible command palette trigger, focus-managed navigation drawer, collapsible page TOC below `xl`, full-height mobile editor Write/Preview panes |
+| Accessibility shell | ✅ | skip-to-content link, focused main landmark after navigation, visible focus rings, dialog semantics, Escape handling, focus trap/restore for app modals |
 | Auth route guards in router | ✅ | global router guard gates editor/admin routes |
 
 ### Verified during release batches (evidence)

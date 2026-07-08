@@ -25,6 +25,7 @@ const synced = ref(false)
 const uploading = ref(false)
 const uploadError = ref<string | null>(null)
 const showAssets = ref(false)
+const mode = ref<'write' | 'preview'>('write')
 const { markdownFeatures, markdownRenderer } = useMarkdownFeatures()
 const preview = computed(() => markdownRenderer.value.renderMarkdown(text.value).html)
 const auth = useAuth()
@@ -229,10 +230,35 @@ onBeforeUnmount(() => {
       </div>
     </div>
     <p v-if="uploadError" class="text-sm text-red-600 mb-2">{{ uploadError }}</p>
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 h-[60vh]">
-      <div ref="host" class="rounded-lg overflow-hidden border border-gray-200 dark:border-gray-800"></div>
+    <div class="inline-flex rounded-[var(--radius)] border border-[var(--c-border)] bg-[var(--c-surface)] p-1 text-sm lg:hidden">
+      <button
+        class="rounded px-3 py-1.5"
+        :class="mode === 'write' ? 'bg-[var(--c-accent)] text-white' : 'text-[var(--c-text-muted)]'"
+        type="button"
+        :aria-pressed="mode === 'write'"
+        @click="mode = 'write'"
+      >
+        Write
+      </button>
+      <button
+        class="rounded px-3 py-1.5"
+        :class="mode === 'preview' ? 'bg-[var(--c-accent)] text-white' : 'text-[var(--c-text-muted)]'"
+        type="button"
+        :aria-pressed="mode === 'preview'"
+        @click="mode = 'preview'"
+      >
+        Preview
+      </button>
+    </div>
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:h-[60vh]">
       <div
-        class="prose dark:prose-invert max-w-none rounded-lg border border-gray-200 dark:border-gray-800 p-5 overflow-auto bg-white dark:bg-gray-900"
+        ref="host"
+        class="h-[calc(100dvh-18rem)] min-h-[24rem] overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800 lg:block lg:h-auto"
+        :class="mode === 'write' ? 'block' : 'hidden'"
+      ></div>
+      <div
+        class="prose dark:prose-invert h-[calc(100dvh-18rem)] min-h-[24rem] max-w-none overflow-auto rounded-lg border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900 lg:block lg:h-auto"
+        :class="mode === 'preview' ? 'block' : 'hidden'"
         v-markdown-enhance="markdownFeatures"
         v-html="preview"
       ></div>

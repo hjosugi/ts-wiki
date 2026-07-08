@@ -14,7 +14,7 @@ const unoConfig = defineConfig({
     },
   },
   shortcuts: {
-    btn: 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius)] text-sm font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none cursor-pointer select-none',
+    btn: 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius)] text-sm font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--c-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--c-surface)]',
     // The accent colour comes from the `--accent` CSS variable so the admin
     // "Accent colour" setting can retint every primary surface at runtime.
     'btn-primary': 'btn bg-[var(--c-accent)] text-white hover:bg-[var(--accent-hover)]',
@@ -23,7 +23,7 @@ const unoConfig = defineConfig({
     input:
       'w-full px-3 py-2 rounded-[var(--radius)] border border-[var(--c-border)] bg-[var(--c-surface)] outline-none focus:border-[var(--c-accent)] focus:ring-1 focus:ring-[var(--c-accent)] transition',
     card: 'rounded-[var(--radius)] border border-[var(--c-border)] bg-[var(--c-surface)]',
-    'link-quiet': 'text-[var(--c-accent)] hover:underline underline-offset-2',
+    'link-quiet': 'rounded-sm text-[var(--c-accent)] hover:underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--c-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--c-surface)]',
   },
 })
 

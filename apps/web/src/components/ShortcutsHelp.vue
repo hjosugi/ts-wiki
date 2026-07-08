@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
+import ModalDialog from '@/components/ModalDialog.vue'
 
 const open = ref(false)
 
@@ -44,13 +45,12 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <Teleport to="body">
-    <div
-      v-if="open"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      @click.self="open = false"
-    >
-      <div role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" class="card w-full max-w-sm p-5">
+  <ModalDialog
+    :open="open"
+    title="Keyboard shortcuts"
+    panel-class="card w-full max-w-sm p-5"
+    @close="open = false"
+  >
         <div class="flex items-center justify-between">
           <h2 class="text-lg font-semibold">Keyboard shortcuts</h2>
           <button class="btn-ghost" type="button" aria-label="Close" @click="open = false">✕</button>
@@ -68,7 +68,5 @@ onUnmounted(() => {
             </span>
           </li>
         </ul>
-      </div>
-    </div>
-  </Teleport>
+  </ModalDialog>
 </template>

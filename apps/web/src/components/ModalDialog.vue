@@ -1,17 +1,21 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   open: boolean
   title: string
-}>()
+  containerClass?: string
+  panelClass?: string
+}>(), {
+  containerClass: 'items-center justify-center p-4',
+  panelClass: 'card w-full max-w-lg p-4',
+})
 
 const emit = defineEmits<{
-  'update:open': [value: boolean]
+  close: []
 }>()
 
 const panel = ref<HTMLElement | null>(null)
-const titleId = `drawer-${Math.random().toString(36).slice(2)}`
 let previousFocus: HTMLElement | null = null
 let previousBodyOverflow: string | null = null
 let focusTimer: number | null = null
@@ -30,7 +34,7 @@ const focusableElements = (): HTMLElement[] =>
     .filter((element) => !element.hasAttribute('disabled') && element.tabIndex >= 0)
 
 function close(): void {
-  emit('update:open', false)
+  emit('close')
 }
 
 function onKeydown(event: KeyboardEvent): void {
@@ -109,28 +113,22 @@ onBeforeUnmount(cleanup)
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="fixed inset-0 z-50">
-      <div class="absolute inset-0 bg-black/40" @click="close"></div>
-      <aside
+    <div
+      v-if="open"
+      class="fixed inset-0 z-50 flex bg-black/40"
+      :class="containerClass"
+      @click.self="close"
+    >
+      <section
         ref="panel"
-        class="absolute left-0 top-0 flex h-full w-[min(22rem,calc(100vw-2rem))] flex-col border-r border-[var(--c-border)] bg-[var(--c-surface)] shadow-2xl"
         role="dialog"
         aria-modal="true"
-        :aria-labelledby="titleId"
+        :aria-label="title"
         tabindex="-1"
+        :class="panelClass"
       >
-        <div class="flex h-14 items-center justify-between gap-3 border-b border-[var(--c-border)] px-4">
-          <h2 :id="titleId" class="text-sm font-semibold uppercase tracking-wide text-[var(--c-text-muted)]">
-            {{ title }}
-          </h2>
-          <button class="btn-ghost h-9 w-9 px-0" type="button" aria-label="Close navigation" @click="close">
-            ×
-          </button>
-        </div>
-        <div class="min-h-0 flex-1 overflow-y-auto p-4">
-          <slot />
-        </div>
-      </aside>
+        <slot />
+      </section>
     </div>
   </Teleport>
 </template>
