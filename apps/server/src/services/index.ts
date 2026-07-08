@@ -18,6 +18,7 @@ import { createAuthzService, type AuthzService } from './authz.ts'
 import { createOidcService, type OidcService } from './oidc.ts'
 import { createPasskeyService, type PasskeyService } from './passkeys.ts'
 import { createPageShareService, type PageShareService } from './shares.ts'
+import { createPageTemplateService, type PageTemplateService } from './templates.ts'
 import { createMailService, type MailSender, type MailService } from './mail.ts'
 import { createAuthRecoveryService, type AuthRecoveryService } from './auth-recovery.ts'
 import { createApiKeyService, type ApiKeyService } from './api-keys.ts'
@@ -54,6 +55,7 @@ export interface Services {
   readonly oidc: OidcService
   readonly passkeys: PasskeyService
   readonly shares: PageShareService
+  readonly templates: PageTemplateService
   readonly mail: MailService
   readonly recovery: AuthRecoveryService
   readonly apiKeys: ApiKeyService
@@ -134,6 +136,7 @@ export const createServices = (db: DB, options: ServiceOptions = {}): Services =
     oidc: createOidcService(db, auth, authz),
     passkeys: createPasskeyService(db, auth),
     shares: createPageShareService(db),
+    templates: createPageTemplateService(db),
     mail,
     recovery: createAuthRecoveryService(db, auth, mail),
     apiKeys: createApiKeyService(db, authz),
@@ -145,4 +148,4 @@ export const createServices = (db: DB, options: ServiceOptions = {}): Services =
   }
 }
 
-export type { PageService, SearchService, UserService, AssetService, AdminService, CommentService, AnalyticsService, SettingsService, AuthzService, OidcService, PasskeyService, PageShareService, MailService, MailSender, AuthRecoveryService, ApiKeyService, WebhookService, WebhookFetcher, WebhookHostnameResolver }
+export type { PageService, SearchService, UserService, AssetService, AdminService, CommentService, AnalyticsService, SettingsService, AuthzService, OidcService, PasskeyService, PageShareService, PageTemplateService, MailService, MailSender, AuthRecoveryService, ApiKeyService, WebhookService, WebhookFetcher, WebhookHostnameResolver }

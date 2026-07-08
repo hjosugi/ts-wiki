@@ -54,6 +54,10 @@ enabled by default; KaTeX math and Mermaid diagram rendering are opt-in. Page
 writes render with the current settings, while Mermaid stays client-side and
 falls back to escaped source when disabled.
 
+Page templates live in the `page_templates` table and are exposed through the
+editor-gated `/api/templates` CRUD API. Template metadata can prefill page
+title, path, labels, status, locale, and review date when a new page is created.
+
 For production seeding, set `TS_WIKI_SEED_ADMIN_PASSWORD` or capture the generated
 password from the `db:seed` output. The seed script never falls back to a shared
 default admin password.

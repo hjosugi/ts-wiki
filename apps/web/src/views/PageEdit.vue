@@ -8,6 +8,12 @@ import { usePages } from '@/stores/pages'
 import { usePresence } from '@/composables/usePresence'
 import { assetFolderFromPagePath, attachmentsForPage } from '@/lib/assets'
 import { useI18n } from '@/lib/i18n'
+import {
+  builtInPageTemplates,
+  pageTemplateToOption,
+  templateMetadataFromPageDraft,
+  type PageTemplateOption,
+} from '@/lib/pageTemplates'
 
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/MarkdownEditor.vue'))
 const CollabEditor = defineAsyncComponent(() => import('@/components/CollabEditor.vue'))
@@ -40,50 +46,21 @@ const savedLocale = ref('und')
 const saving = ref(false)
 const error = ref<string | null>(null)
 const conflictDraft = ref<DraftSnapshot | null>(null)
-const selectedTemplate = ref('blank')
+const selectedTemplate = ref('builtin:blank')
 const editorMode = ref<'markdown' | 'visual'>('markdown')
 const collabDisabledForSession = ref(false)
 const attachments = ref<AssetView[]>([])
 const attachmentsLoading = ref(false)
 const attachmentsLoaded = ref(false)
-
-const templates = [
-  {
-    key: 'blank',
-    label: 'Blank',
-    title: '',
-    path: '',
-    content: '# New page\n\nStart writing in **Markdown**...\n',
-  },
-  {
-    key: 'decision',
-    label: 'Decision',
-    title: 'Decision',
-    path: 'decisions/new-decision',
-    content: '# Decision\n\n## Context\n\n## Options\n\n## Decision\n\n## Consequences\n',
-  },
-  {
-    key: 'how-to',
-    label: 'How-to',
-    title: 'How-to',
-    path: 'guides/new-guide',
-    content: '# How-to\n\n## Goal\n\n## Steps\n\n1. \n\n## Checks\n',
-  },
-  {
-    key: 'meeting',
-    label: 'Meeting notes',
-    title: 'Meeting notes',
-    path: 'meetings/new-meeting',
-    content: '# Meeting notes\n\n```event\ntitle: Meeting\nstart: 2026-07-04 10:00\ntimezone: Asia/Tokyo\ndescription:\n```\n\n## Attendees\n\n## Notes\n\n## Actions\n',
-  },
-  {
-    key: 'spec',
-    label: 'Spec',
-    title: 'Spec',
-    path: 'specs/new-spec',
-    content: '# Spec\n\n## Problem\n\n## Goals\n\n## Non-goals\n\n## Design\n\n## Rollout\n',
-  },
-] as const
+const builtInTemplates = builtInPageTemplates()
+const customTemplates = ref<PageTemplateOption[]>([])
+const templateOptions = computed(() => [...builtInTemplates, ...customTemplates.value])
+const templatesLoading = ref(false)
+const showTemplateSave = ref(false)
+const templateName = ref('')
+const templateDescription = ref('')
+const templateIcon = ref('')
+const savingTemplate = ref(false)
 
 const dirty = computed(
   () =>
@@ -183,11 +160,65 @@ const dateInputValue = (value: number | null): string =>
   value ? new Date(value).toISOString().slice(0, 10) : ''
 
 function applyTemplate(key: string): void {
-  const template = templates.find((item) => item.key === key)
+  const template = templateOptions.value.find((item) => item.key === key)
   if (!template) return
-  title.value = template.title
-  if (!path.value && template.path) path.value = template.path
+  title.value = template.metadata.title ?? template.label
+  if (!path.value && template.metadata.path) path.value = template.metadata.path
+  labelsText.value = template.metadata.labels?.join(', ') ?? ''
+  status.value = template.metadata.status ?? 'draft'
+  reviewAtDate.value = dateInputValue(template.metadata.reviewAt ?? null)
+  locale.value = template.metadata.locale ?? 'und'
   content.value = template.content
+}
+
+async function loadTemplates(): Promise<void> {
+  templatesLoading.value = true
+  try {
+    customTemplates.value = (await Api.templates()).map(pageTemplateToOption)
+  } catch {
+    customTemplates.value = []
+  } finally {
+    templatesLoading.value = false
+  }
+}
+
+function openSaveTemplate(): void {
+  templateName.value = title.value || 'Page template'
+  templateDescription.value = ''
+  templateIcon.value = ''
+  showTemplateSave.value = true
+}
+
+async function saveCurrentAsTemplate(): Promise<void> {
+  if (!templateName.value.trim()) return
+  savingTemplate.value = true
+  error.value = null
+  try {
+    const template = await Api.createTemplate({
+      name: templateName.value,
+      description: templateDescription.value,
+      icon: templateIcon.value,
+      content: content.value,
+      metadata: templateMetadataFromPageDraft({
+        title: title.value,
+        path: path.value,
+        labels: labels(),
+        status: status.value,
+        locale: locale.value,
+        reviewAt: reviewAt(),
+      }),
+    })
+    customTemplates.value = [
+      pageTemplateToOption(template),
+      ...customTemplates.value.filter((item) => item.key !== `custom:${template.id}`),
+    ]
+    selectedTemplate.value = `custom:${template.id}`
+    showTemplateSave.value = false
+  } catch (e) {
+    error.value = (e as Error).message
+  } finally {
+    savingTemplate.value = false
+  }
 }
 
 function setEditorMode(mode: 'markdown' | 'visual'): void {
@@ -216,6 +247,7 @@ onMounted(async () => {
     router.replace({ name: 'login' })
     return
   }
+  void loadTemplates()
   if (isEdit.value) {
     const target = paramToPath(route.params.path)
     try {
@@ -229,7 +261,7 @@ onMounted(async () => {
   } else {
     path.value = (route.query.path as string) ?? ''
     title.value = ''
-    content.value = templates[0].content
+    content.value = builtInTemplates[0]?.content ?? ''
     labelsText.value = ''
     status.value = 'draft'
     reviewAtDate.value = ''
@@ -357,11 +389,17 @@ async function archive(): Promise<void> {
     <div class="flex flex-wrap items-center gap-3 mb-4">
       <input v-model="title" class="input flex-1 min-w-50 text-lg font-semibold" :placeholder="t('pageTitle')" />
       <input v-model="path" class="input font-mono text-sm max-w-xs" :placeholder="t('pathPlaceholder')" />
-      <select v-if="!isEdit" v-model="selectedTemplate" class="input max-w-48">
-        <option v-for="template in templates" :key="template.key" :value="template.key">
-          {{ template.label }}
+      <select v-if="!isEdit" v-model="selectedTemplate" class="input max-w-56">
+        <option v-for="template in templateOptions" :key="template.key" :value="template.key">
+          {{ template.icon ? `${template.icon} ` : '' }}{{ template.label }}
         </option>
       </select>
+      <RouterLink class="btn-ghost" to="/_templates">
+        Templates
+      </RouterLink>
+      <button class="btn-ghost" type="button" :disabled="savingTemplate" @click="openSaveTemplate">
+        Save as template
+      </button>
       <select v-model="status" class="input max-w-40">
         <option value="draft">draft</option>
         <option value="in-review">in-review</option>
@@ -376,6 +414,17 @@ async function archive(): Promise<void> {
       <button v-if="isEdit" class="btn-ghost" @click="archive">{{ t('archive') }}</button>
       <button v-if="isEdit" class="btn-danger" @click="remove">{{ t('delete') }}</button>
     </div>
+    <section v-if="showTemplateSave" class="mb-4 rounded-md border border-[var(--c-border)] bg-[var(--c-surface)] p-3">
+      <form class="grid gap-2 sm:grid-cols-[4rem_minmax(0,1fr)_minmax(0,1fr)_auto_auto]" @submit.prevent="saveCurrentAsTemplate">
+        <input v-model="templateIcon" class="input" maxlength="24" placeholder="Icon" />
+        <input v-model="templateName" class="input" required placeholder="Template name" />
+        <input v-model="templateDescription" class="input" placeholder="Description" />
+        <button class="btn-primary" type="submit" :disabled="savingTemplate || !templateName">
+          {{ savingTemplate ? 'Saving...' : 'Save template' }}
+        </button>
+        <button class="btn-ghost" type="button" @click="showTemplateSave = false">Cancel</button>
+      </form>
+    </section>
     <input
       v-model="labelsText"
       class="input mb-3"
@@ -391,6 +440,7 @@ async function archive(): Promise<void> {
       <RouterLink v-if="isEdit && originalPath" class="link-quiet" :to="'/_history/' + originalPath">
         {{ t('history') }}
       </RouterLink>
+      <span v-if="templatesLoading" class="text-[var(--c-text-muted)]">Loading templates...</span>
       <div class="inline-flex rounded-md border border-gray-200 p-0.5 dark:border-gray-800" aria-label="Editor mode">
         <button
           type="button"

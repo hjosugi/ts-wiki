@@ -51,6 +51,7 @@ import { createRealtimeRoutes } from './routes/realtime.ts'
 import { createSearchRoutes } from './routes/search.ts'
 import { createStaticRoutes } from './routes/static.ts'
 import { createSystemRoutes } from './routes/system.ts'
+import { createTemplateRoutes } from './routes/templates.ts'
 
 export interface AppDeps {
   readonly db: DB
@@ -487,6 +488,7 @@ export const createApp = ({
       pageWriteEffects,
       publishAutomation,
     }))
+    .use(createTemplateRoutes({ logger }))
     .use(createExportImportRoutes({
       requirePageRead,
       pageWriteEffects,

@@ -296,6 +296,20 @@ export const runMigrations = (sqlite: MigratableDatabase, options: MigrationOpti
     CREATE INDEX IF NOT EXISTS page_shares_path_idx ON page_shares(path);
     CREATE INDEX IF NOT EXISTS page_shares_created_by_idx ON page_shares(created_by);
 
+    CREATE TABLE IF NOT EXISTS page_templates (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      icon        TEXT NOT NULL DEFAULT '',
+      content     TEXT NOT NULL DEFAULT '',
+      metadata    TEXT NOT NULL DEFAULT '{}',
+      created_by  TEXT,
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS page_templates_name_idx ON page_templates(name);
+    CREATE INDEX IF NOT EXISTS page_templates_updated_idx ON page_templates(updated_at);
+
     CREATE TABLE IF NOT EXISTS site_settings (
       key        TEXT PRIMARY KEY,
       value      TEXT NOT NULL,

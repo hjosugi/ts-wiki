@@ -256,6 +256,22 @@ export const pageShares = sqliteTable(
   (t) => [index('page_shares_path_idx').on(t.path), index('page_shares_created_by_idx').on(t.createdBy)],
 )
 
+export const pageTemplates = sqliteTable(
+  'page_templates',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    description: text('description').notNull().default(''),
+    icon: text('icon').notNull().default(''),
+    content: text('content').notNull().default(''),
+    metadata: text('metadata').notNull().default('{}'),
+    createdBy: text('created_by'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => [index('page_templates_name_idx').on(t.name), index('page_templates_updated_idx').on(t.updatedAt)],
+)
+
 export const siteSettings = sqliteTable('site_settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
@@ -385,6 +401,7 @@ export type PageComment = typeof pageComments.$inferSelect
 export type PageAnalytics = typeof pageAnalytics.$inferSelect
 export type PageRedirect = typeof pageRedirects.$inferSelect
 export type PageShare = typeof pageShares.$inferSelect
+export type PageTemplate = typeof pageTemplates.$inferSelect
 export type SiteSetting = typeof siteSettings.$inferSelect
 export type Asset = typeof assets.$inferSelect
 export type WikiEventRow = typeof wikiEvents.$inferSelect

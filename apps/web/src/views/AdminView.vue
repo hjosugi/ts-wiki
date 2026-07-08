@@ -10,6 +10,7 @@ import AdminHistoryPanel from '@/components/admin/AdminHistoryPanel.vue'
 import AdminImportPanel from '@/components/admin/AdminImportPanel.vue'
 import AdminPagesPanel from '@/components/admin/AdminPagesPanel.vue'
 import AdminPageRulesPanel from '@/components/admin/AdminPageRulesPanel.vue'
+import PageTemplatesPanel from '@/components/PageTemplatesPanel.vue'
 import AdminSecurityPanel from '@/components/admin/AdminSecurityPanel.vue'
 import AdminStatsPanel from '@/components/admin/AdminStatsPanel.vue'
 import AdminRedirectsPanel from '@/components/admin/AdminRedirectsPanel.vue'
@@ -33,6 +34,7 @@ onMounted(() => {
     <h1 class="text-2xl font-bold tracking-tight">{{ t('admin') }}</h1>
     <AdminStatsPanel />
     <AdminPagesPanel />
+    <PageTemplatesPanel />
     <AdminHistoryPanel />
     <AdminSecurityPanel />
     <AdminRedirectsPanel />

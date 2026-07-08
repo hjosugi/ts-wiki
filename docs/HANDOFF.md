@@ -5,7 +5,7 @@ A practical guide for whoever picks this up next (human or AI). The user-facing 
 things are the way they are, what bit us, and exactly where to plug in the next features.
 
 - **As of:** 2026-07-08
-- **State:** v0.4.3 — a small but *complete and verified* vertical slice. Everything below marked ✅
+- **State:** v0.4.4 — a small but *complete and verified* vertical slice. Everything below marked ✅
   has been run and confirmed (tests + live HTTP + typed client + build + typecheck).
 - **Stack:** Bun 1.3 · Elysia · Drizzle ORM · SQLite/libSQL + FTS5 · Vue 3 · Vite ·
   UnoCSS · Pinia · CodeMirror 6 · Eden Treaty · SimpleWebAuthn (no codegen).
@@ -176,8 +176,9 @@ Each item notes **where to plug in**.
 - [x] **Quick switcher / command palette** — `CommandPalette.vue` supports keyboard-first search,
       page jumps, new-page creation, and common navigation actions.
 - [x] **Templates / starter pages** — `_new` can prefill blank, decision, how-to, meeting-notes,
-      and spec templates. These remain built-in and web-only until custom persisted templates are
-      worth the extra model.
+      spec, and persisted custom templates. Editors can manage templates through `/_templates`,
+      admins also see the manager in Admin, and `PageEdit.vue` can save the current page as a
+      reusable template. Meeting notes use the browser timezone.
 - [x] **Global router auth guard** — `router.beforeEach` gates admin/edit routes and preserves a
       redirect query for login.
 - [x] **Runtime branding and theming layer** — Admin → Appearance controls site title,
@@ -255,10 +256,12 @@ apps/server/src/
     users.ts       count/find/create
     assets.ts      record/list
     settings.ts    public appearance settings; custom CSS and gated custom head HTML
+    templates.ts   persisted custom page template CRUD
     auth.ts        hashPassword/verifyPassword (Bun.password)
     index.ts       createServices(db) — composition root
   http/
     app.ts         createApp({db,env}) → Elysia; **exports `App` type for Eden**
+    routes/templates.ts editor-gated page template API
     errors.ts      HttpError, unwrap(), toErrorResponse()
   index.ts         entry: env → db → app.listen
   server.test.ts   in-memory-db integration tests (create/search/update/delete/permissions)
@@ -267,11 +270,13 @@ apps/web/src/
   lib/api.ts       Eden Treaty client + Api.* methods (the only place treaty is used)
   lib/branding.ts  applies runtime title/favicon/custom CSS/custom head HTML
   lib/markdownEnhance.ts  code-copy, KaTeX CSS, Mermaid rendering, content-tab enhancement
+  lib/pageTemplates.ts  built-in starter templates + persisted-template helpers
   stores/          auth.ts, pages.ts (Pinia)
   router/index.ts  routes (/_login /_search /_graph /_new /_edit/:path /:path) + paramToPath()
   components/      AppHeader.vue, AppFooter.vue, MarkdownEditor.vue, InteractiveGraph.vue,
-                   PageHeader.vue, PageTree.vue, WikiBreadcrumbs.vue, EmptyState.vue, PageToc.vue
-  views/           PageView.vue, PageEdit.vue, SearchView.vue, GraphView.vue, LoginView.vue
+                   PageHeader.vue, PageTree.vue, PageTemplatesPanel.vue, WikiBreadcrumbs.vue,
+                   EmptyState.vue, PageToc.vue
+  views/           PageView.vue, PageEdit.vue, PageTemplatesView.vue, SearchView.vue, GraphView.vue, LoginView.vue
   main.ts, App.vue, app.css, uno.config.ts, vite.config.ts
 ```
 

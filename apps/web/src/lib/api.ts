@@ -118,6 +118,25 @@ export interface PageSummary {
   locale: string
   updatedAt: number
 }
+export interface PageTemplateMetadata {
+  title?: string
+  path?: string
+  labels?: string[]
+  status?: Page['status']
+  locale?: string
+  reviewAt?: number | null
+}
+export interface PageTemplate {
+  id: string
+  name: string
+  description: string
+  icon: string
+  content: string
+  metadata: PageTemplateMetadata
+  createdBy: string | null
+  createdAt: number
+  updatedAt: number
+}
 export interface PageSpace {
   key: string
   pages: number
@@ -558,6 +577,26 @@ export const Api = {
     call<{ comment: PageComment }>(client().api.page.comments({ id }).resolve.post()).then((d) => d.comment),
   deleteComment: (id: string) =>
     call<{ id: string }>(client().api.page.comments({ id }).delete()),
+  templates: () =>
+    call<{ templates: PageTemplate[] }>(client().api.templates.get()).then((d) => d.templates),
+  createTemplate: (body: {
+    name?: string
+    description?: string
+    icon?: string
+    content?: string
+    metadata?: PageTemplateMetadata | null
+  }) =>
+    call<{ template: PageTemplate }>(client().api.templates.post(body)).then((d) => d.template),
+  updateTemplate: (id: string, body: {
+    name?: string
+    description?: string
+    icon?: string
+    content?: string
+    metadata?: PageTemplateMetadata | null
+  }) =>
+    call<{ template: PageTemplate }>(client().api.templates({ id }).put(body)).then((d) => d.template),
+  deleteTemplate: (id: string) =>
+    call<{ id: string }>(client().api.templates({ id }).delete()),
   exportSite: () => call<{
     manifestVersion: number
     exportedAt: string

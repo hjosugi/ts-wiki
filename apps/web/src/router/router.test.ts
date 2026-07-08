@@ -77,7 +77,7 @@ describe('router auth guard', () => {
     expect(router.currentRoute.value.query.redirect).toBe('/_admin')
   })
 
-  test('allows editors to open edit routes but keeps admin routes admin-only', async () => {
+  test('allows editors to open edit/template routes but keeps admin routes admin-only', async () => {
     const auth = useAuth()
     auth.ready = true
     auth.user = { id: 'u1', email: 'u@example.com', name: 'Editor', role: 'editor', totpEnabled: false }
@@ -86,6 +86,9 @@ describe('router auth guard', () => {
     await router.push('/_edit/docs/page')
     await router.isReady()
     expect(router.currentRoute.value.name).toBe('edit')
+
+    await router.push('/_templates')
+    expect(router.currentRoute.value.name).toBe('templates')
 
     await router.push('/_admin')
     expect(router.currentRoute.value.name).toBe('login')

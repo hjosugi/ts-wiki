@@ -11,6 +11,7 @@ Vue 3 + Vite front end for the ts-wiki hands-on project.
 - realtime page-change updates through server-sent events
 - runtime branding through public settings and CSS variables
 - lazy Markdown enhancements for KaTeX CSS, Mermaid diagrams, and content tabs
+- built-in plus persisted page templates for new-page starters
 - keeping UI code thin while domain rules stay in `@ts-wiki/core`
 
 ## Run
@@ -47,8 +48,10 @@ bun --filter '@ts-wiki/web' typecheck
 | `src/lib/api.ts` | typed client contract with the server |
 | `src/lib/branding.ts` | applies title, favicon, custom CSS, and trusted head HTML |
 | `src/lib/markdownEnhance.ts` | enhances rendered Markdown with copy buttons, KaTeX CSS, Mermaid, and tabs |
+| `src/lib/pageTemplates.ts` | built-in starter templates and custom-template option helpers |
 | `src/stores/auth.ts` | login/session state |
 | `src/views/PageEdit.vue` | Markdown editing flow |
+| `src/views/PageTemplatesView.vue` | editor-facing custom template manager |
 | `src/app.css` / `uno.config.ts` | theme variables and token-backed shortcuts |
 
 ## Exercises

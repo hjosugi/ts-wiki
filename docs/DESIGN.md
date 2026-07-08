@@ -108,6 +108,12 @@ features add emoji shortcodes and KaTeX math. Mermaid is intentionally rendered
 client-side only when the public `enableMermaid` setting is on; the server
 stores escaped source as the fallback.
 
+**Page templates** are split between deterministic built-ins in the web client
+and persisted custom templates in SQLite. Editors manage custom templates via
+`/api/templates` and `/_templates`; `_new` merges both sets into one picker.
+Template metadata can prefill title, path, labels, status, locale, and review
+date without adding another page model.
+
 **Types** are shared without codegen. The server exports its `App` type; `apps/web/src/lib/api.ts`
 does `treaty<App>(...)`, so every request's path, query, and body is checked against the real
 routes at compile time.

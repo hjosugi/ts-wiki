@@ -1463,6 +1463,87 @@ describe('http app settings', () => {
   }, HTTP_TEST_TIMEOUT_MS)
 })
 
+describe('http app templates', () => {
+  test('editors can manage persisted page templates and viewers cannot', async () => {
+    const { logger, events } = captureLogger()
+    const { app } = createFixture(undefined, { logger })
+    const admin = await register(app, 'admin@example.com')
+    const editor = await register(app, 'editor@example.com')
+    const viewer = await register(app, 'viewer@example.com')
+
+    const viewerList = await app.handle(new Request('http://localhost/api/templates', {
+      headers: { authorization: `Bearer ${viewer.token}` },
+    }))
+    expect(viewerList.status).toBe(403)
+
+    const promoted = await app.handle(
+      new Request('http://localhost/api/admin/users/role', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${admin.token}` },
+        body: JSON.stringify({ userId: editor.user.id, role: 'editor' }),
+      }),
+    )
+    expect(promoted.status).toBe(200)
+
+    const created = await app.handle(
+      jsonRequest('/api/templates', {
+        name: 'Runbook',
+        description: 'Incident runbook starter',
+        icon: '!',
+        content: '# Runbook\n\n## Impact\n',
+        metadata: {
+          title: 'Runbook',
+          path: '/ops/new-runbook',
+          labels: ['ops', 'ops'],
+          status: 'draft',
+          locale: 'en-US',
+        },
+      }, editor.token),
+    )
+    expect(created.status).toBe(200)
+    const createdBody = await created.json() as { template: { id: string; metadata: { path: string; labels: string[] } } }
+    expect(createdBody.template.metadata).toMatchObject({
+      path: 'ops/new-runbook',
+      labels: ['ops'],
+    })
+
+    const listed = await app.handle(new Request('http://localhost/api/templates', {
+      headers: { authorization: `Bearer ${editor.token}` },
+    }))
+    expect(listed.status).toBe(200)
+    expect(await listed.json()).toMatchObject({
+      templates: [expect.objectContaining({ name: 'Runbook', content: '# Runbook\n\n## Impact\n' })],
+    })
+
+    const updated = await app.handle(
+      new Request(`http://localhost/api/templates/${createdBody.template.id}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${editor.token}` },
+        body: JSON.stringify({ name: 'Updated runbook', metadata: { status: 'verified' } }),
+      }),
+    )
+    expect(updated.status).toBe(200)
+    expect(await updated.json()).toMatchObject({
+      template: {
+        name: 'Updated runbook',
+        metadata: { status: 'verified' },
+      },
+    })
+
+    const deleted = await app.handle(
+      new Request(`http://localhost/api/templates/${createdBody.template.id}`, {
+        method: 'DELETE',
+        headers: { authorization: `Bearer ${editor.token}` },
+      }),
+    )
+    expect(deleted.status).toBe(200)
+    expect(await deleted.json()).toEqual({ id: createdBody.template.id })
+    expect(events).toContainEqual(expect.objectContaining({ type: 'audit', action: 'template.create' }))
+    expect(events).toContainEqual(expect.objectContaining({ type: 'audit', action: 'template.update' }))
+    expect(events).toContainEqual(expect.objectContaining({ type: 'audit', action: 'template.delete' }))
+  }, HTTP_TEST_TIMEOUT_MS)
+})
+
 describe('http app automations and webhooks', () => {
   test('admin webhooks sign versioned page events without exposing secrets', async () => {
     const calls: Array<{ url: string; body: string; headers: Headers }> = []
