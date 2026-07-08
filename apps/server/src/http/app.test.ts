@@ -2129,6 +2129,123 @@ describe('http app automations and webhooks', () => {
       page: expect.objectContaining({ labels: '["triaged"]', status: 'verified' }),
     })
   }, HTTP_TEST_TIMEOUT_MS)
+
+  test('event automation supports triggers, conditions, priority, move, review date, and custom webhook events', async () => {
+    const deliveries: WebhookPayload[] = []
+    const fetcher: WebhookFetcher = async (_url, init) => {
+      deliveries.push(JSON.parse(String(init.body)) as WebhookPayload)
+      return new Response('ok', { status: 200 })
+    }
+    const { app } = createFixture(undefined, { webhookFetcher: fetcher })
+    const admin = await register(app, 'admin@example.com')
+    const reviewAt = Date.UTC(2026, 6, 1)
+
+    const subscription = await app.handle(
+      jsonRequest('/api/admin/webhooks', {
+        targetUrl: 'https://hooks.example.com/automation',
+        secret: 'automation-secret',
+        eventTypes: ['automation.page.ready', 'automation.comment.triaged'],
+      }, admin.token),
+    )
+    expect(subscription.status).toBe(200)
+
+    const createdRule = await app.handle(jsonRequest('/api/admin/automation-rules', {
+      name: 'Publish matched launches',
+      type: 'event-rule',
+      priority: 0,
+      stopOnMatch: true,
+      config: {
+        trigger: 'page.created',
+        conditions: {
+          pathPrefix: 'drafts',
+          authorId: admin.user.id,
+          locale: 'ja-JP',
+          spaceKey: 'drafts',
+        },
+        actions: {
+          addLabel: 'launched',
+          setStatus: 'verified',
+          setReviewAt: reviewAt,
+          moveToPath: 'published',
+          fireWebhookEvent: 'automation.page.ready',
+        },
+      },
+    }, admin.token))
+    expect(createdRule.status).toBe(200)
+
+    const skippedRule = await app.handle(jsonRequest('/api/admin/automation-rules', {
+      name: 'Skipped by stop flag',
+      type: 'event-rule',
+      priority: 10,
+      config: {
+        trigger: 'page.created',
+        conditions: { pathPrefix: 'drafts' },
+        actions: { addLabel: 'skipped' },
+      },
+    }, admin.token))
+    expect(skippedRule.status).toBe(200)
+
+    const commentRule = await app.handle(jsonRequest('/api/admin/automation-rules', {
+      name: 'Comment triage event',
+      type: 'event-rule',
+      priority: 0,
+      config: {
+        trigger: 'comment.created',
+        conditions: { pathPrefix: 'published', label: 'launched' },
+        actions: {
+          addLabel: 'commented',
+          fireWebhookEvent: 'automation.comment.triaged',
+        },
+      },
+    }, admin.token))
+    expect(commentRule.status).toBe(200)
+
+    const created = await app.handle(jsonRequest('/api/pages', {
+      path: 'drafts/launch',
+      title: 'Launch',
+      content: 'ship it',
+      locale: 'ja-JP',
+    }, admin.token))
+    expect(created.status).toBe(200)
+
+    const moved = await app.handle(new Request('http://localhost/api/page?path=published/launch', {
+      headers: { authorization: `Bearer ${admin.token}` },
+    }))
+    expect(moved.status).toBe(200)
+    expect((await moved.json()).page).toMatchObject({
+      path: 'published/launch',
+      labels: '["launched"]',
+      status: 'verified',
+      reviewAt,
+    })
+
+    const comment = await app.handle(jsonRequest('/api/page/comments', {
+      path: 'published/launch',
+      body: 'needs release notes',
+    }, admin.token))
+    expect(comment.status).toBe(200)
+
+    const afterComment = await app.handle(new Request('http://localhost/api/page?path=published/launch', {
+      headers: { authorization: `Bearer ${admin.token}` },
+    }))
+    expect((await afterComment.json()).page).toMatchObject({
+      labels: '["launched","commented"]',
+    })
+
+    expect(deliveries.map((delivery) => delivery.type)).toEqual([
+      'automation.page.ready',
+      'automation.comment.triaged',
+    ])
+    expect(deliveries[0]).toMatchObject({
+      data: { page: { path: 'published/launch', status: 'verified', labels: ['launched'], reviewAt } },
+    })
+    expect(deliveries[1]).toMatchObject({
+      data: {
+        comment: { path: 'published/launch' },
+        page: { path: 'published/launch', labels: ['launched', 'commented'] },
+      },
+    })
+  }, HTTP_TEST_TIMEOUT_MS)
 })
 
 describe('http app structured logging', () => {

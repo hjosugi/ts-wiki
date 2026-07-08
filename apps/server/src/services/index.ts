@@ -146,11 +146,12 @@ export const createServices = (db: DB, options: ServiceOptions = {}): Services =
     sender: options.mailSender,
     logger: options.logger,
   })
+  const pageService = createPageService(db, searchIndexer, {
+    renderMarkdown: (content) => rendererForSettings().renderMarkdown(content),
+    defaultLocale: () => settings.public().defaultLocale,
+  })
   return {
-    pages: createPageService(db, searchIndexer, {
-      renderMarkdown: (content) => rendererForSettings().renderMarkdown(content),
-      defaultLocale: () => settings.public().defaultLocale,
-    }),
+    pages: pageService,
     search: createSearchService(db, { configuredTokenizer: search.ftsTokenizer, indexer: searchIndexer }),
     users: createUserService(db),
     assets: createAssetService(db, { urlForStorageName: options.assetUrl, searchIndexer }),
@@ -172,6 +173,7 @@ export const createServices = (db: DB, options: ServiceOptions = {}): Services =
       resolver: options.webhookResolver,
       allowPrivateTargets: options.allowPrivateWebhookTargets,
       policy: options.webhookPolicy,
+      pageService,
     }),
   }
 }

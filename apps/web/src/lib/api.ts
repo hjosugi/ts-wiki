@@ -398,15 +398,40 @@ export interface WebhookDeliveryView {
 export interface AutomationRuleView {
   id: string
   name: string
-  type: 'page-updated-metadata'
+  type: 'event-rule' | 'page-updated-metadata'
   enabled: boolean
+  priority: number
+  stopOnMatch: boolean
   config: {
-    pathPrefix: string
-    label?: string
-    status?: Page['status']
+    trigger: 'page.created' | 'page.updated' | 'page.deleted' | 'page.moved' | 'comment.created'
+    conditions: {
+      pathPrefix?: string
+      label?: string
+      status?: Page['status']
+      authorId?: string
+      locale?: string
+      spaceKey?: string
+    }
+    actions: {
+      addLabel?: string
+      setStatus?: Page['status']
+      setReviewAt?: number | null
+      moveToPath?: string
+      fireWebhookEvent?: string
+    }
   }
   createdAt: number
   updatedAt: number
+}
+export type AutomationRuleInput = {
+  name?: string
+  type: AutomationRuleView['type']
+  enabled?: boolean
+  priority?: number
+  stopOnMatch?: boolean
+  config:
+    | AutomationRuleView['config']
+    | { pathPrefix: string; label?: string; status?: Page['status'] }
 }
 export interface AnalyticsSummary {
   totalViews: number
@@ -802,13 +827,10 @@ export const Api = {
     ).then((d) => d.delivery),
   adminAutomationRules: () =>
     call<{ rules: AutomationRuleView[] }>(client().api.admin['automation-rules'].get()).then((d) => d.rules),
-  adminCreateAutomationRule: (body: {
-    name?: string
-    type: 'page-updated-metadata'
-    enabled?: boolean
-    config: { pathPrefix: string; label?: string; status?: Page['status'] }
-  }) =>
+  adminCreateAutomationRule: (body: AutomationRuleInput) =>
     call<{ rule: AutomationRuleView }>(client().api.admin['automation-rules'].post(body)).then((d) => d.rule),
+  adminUpdateAutomationRule: (id: string, body: Partial<Omit<AutomationRuleInput, 'type'>>) =>
+    call<{ rule: AutomationRuleView }>(client().api.admin['automation-rules']({ id }).put(body)).then((d) => d.rule),
   adminDeleteAutomationRule: (id: string) =>
     call<{ id: string }>(client().api.admin['automation-rules']({ id }).delete()),
   adminSetRole: (userId: string, role: 'admin' | 'editor' | 'viewer') =>

@@ -23,6 +23,52 @@ const navLinkSchema = t.Object({
   }))),
 })
 
+const pageStatusSchema = t.Union([
+  t.Literal('draft'),
+  t.Literal('in-review'),
+  t.Literal('verified'),
+  t.Literal('outdated'),
+])
+
+const automationTriggerSchema = t.Union([
+  t.Literal('page.created'),
+  t.Literal('page.updated'),
+  t.Literal('page.deleted'),
+  t.Literal('page.moved'),
+  t.Literal('comment.created'),
+])
+
+const automationConditionsSchema = t.Object({
+  pathPrefix: t.Optional(t.String()),
+  label: t.Optional(t.String()),
+  status: t.Optional(pageStatusSchema),
+  authorId: t.Optional(t.String()),
+  locale: t.Optional(t.String()),
+  spaceKey: t.Optional(t.String()),
+})
+
+const automationActionsSchema = t.Object({
+  addLabel: t.Optional(t.String()),
+  setStatus: t.Optional(pageStatusSchema),
+  setReviewAt: t.Optional(t.Union([t.Number(), t.Null()])),
+  moveToPath: t.Optional(t.String()),
+  fireWebhookEvent: t.Optional(t.String()),
+})
+
+const eventAutomationConfigSchema = t.Object({
+  trigger: automationTriggerSchema,
+  conditions: t.Optional(automationConditionsSchema),
+  actions: automationActionsSchema,
+})
+
+const legacyAutomationConfigSchema = t.Object({
+  pathPrefix: t.String(),
+  label: t.Optional(t.String()),
+  status: t.Optional(pageStatusSchema),
+})
+
+const automationConfigSchema = t.Union([eventAutomationConfigSchema, legacyAutomationConfigSchema])
+
 export interface AdminRoutesContext {
   readonly logger: StructuredLogger
   readonly enforceCredentialLimit: (
@@ -315,18 +361,11 @@ export const createAdminRoutes = ({
       {
         body: t.Object({
           name: t.Optional(t.String()),
-          type: t.Literal('page-updated-metadata'),
+          type: t.Union([t.Literal('event-rule'), t.Literal('page-updated-metadata')]),
           enabled: t.Optional(t.Boolean()),
-          config: t.Object({
-            pathPrefix: t.String(),
-            label: t.Optional(t.String()),
-            status: t.Optional(t.Union([
-              t.Literal('draft'),
-              t.Literal('in-review'),
-              t.Literal('verified'),
-              t.Literal('outdated'),
-            ])),
-          }),
+          priority: t.Optional(t.Number()),
+          stopOnMatch: t.Optional(t.Boolean()),
+          config: automationConfigSchema,
         }),
       },
     )
@@ -340,16 +379,9 @@ export const createAdminRoutes = ({
         body: t.Object({
           name: t.Optional(t.String()),
           enabled: t.Optional(t.Boolean()),
-          config: t.Optional(t.Object({
-            pathPrefix: t.String(),
-            label: t.Optional(t.String()),
-            status: t.Optional(t.Union([
-              t.Literal('draft'),
-              t.Literal('in-review'),
-              t.Literal('verified'),
-              t.Literal('outdated'),
-            ])),
-          })),
+          priority: t.Optional(t.Number()),
+          stopOnMatch: t.Optional(t.Boolean()),
+          config: t.Optional(automationConfigSchema),
         }),
       },
     )

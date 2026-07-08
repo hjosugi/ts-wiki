@@ -5,7 +5,7 @@ A practical guide for whoever picks this up next (human or AI). The user-facing 
 things are the way they are, what bit us, and exactly where to plug in the next features.
 
 - **As of:** 2026-07-08
-- **State:** v0.4.7 — a small but *complete and verified* vertical slice. Everything below marked ✅
+- **State:** v0.4.8 — a small but *complete and verified* vertical slice. Everything below marked ✅
   has been run and confirmed (tests + live HTTP + typed client + build + typecheck).
 - **Stack:** Bun 1.3 · Elysia · Drizzle ORM · SQLite/libSQL + FTS5 · Vue 3 · Vite ·
   UnoCSS · Pinia · CodeMirror 6 · Eden Treaty · SimpleWebAuthn (no codegen).
@@ -27,7 +27,7 @@ things are the way they are, what bit us, and exactly where to plug in the next 
 | Elysia HTTP app + Eden type | ✅ | exports `App`; error mapping centralised |
 | Vue app: view/edit/search/graph/login | ✅ | breadcrumbs, page header actions, tree sidebar, graph view, empty states, runtime branding |
 | Markdown editor (CodeMirror + visual mode) | ✅ | Markdown remains canonical; visual mode round-trips common blocks |
-| Webhooks + automation | ✅ | signed deliveries, retry history, page metadata automation rules |
+| Webhooks + automation | ✅ | signed deliveries, retry history, event automation rules with priority/conditions/actions |
 | Site configuration | ✅ | runtime branding, nav settings, default locale/timezone/date format, webhook retry policy |
 | Tests / typecheck / build | ✅ | core/server Bun tests + web Vitest tests; all 3 packages typecheck; web builds |
 | Auth route guards in router | ✅ | global router guard gates editor/admin routes |
@@ -195,6 +195,11 @@ Each item notes **where to plug in**.
       `TS_WIKI_OIDC_PROVIDERS` JSON or numbered `OIDC_1_*` prefixes; site
       locale/timezone/date-format defaults seed page locale and rendered dates;
       webhook retry attempts/backoff/body/error limits are env-configurable.
+- [x] **Automation expansion** — rules now use trigger/conditions/actions with
+      page create/update/delete/move and comment-created triggers, path/label/
+      status/author/locale/space conditions, priority plus stop-on-match, and
+      actions for labels/status/review date, move-under-path, and custom webhook
+      event firing.
 
 **Medium**
 - [x] **Event extraction + event index** — `pages.events()` and `/api/events/index` extract event

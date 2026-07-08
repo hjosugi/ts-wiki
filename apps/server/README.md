@@ -117,6 +117,10 @@ rendering used by event cards and chrome timestamps.
 Webhook delivery retry and capture limits are configurable with
 `TS_WIKI_WEBHOOK_MAX_ATTEMPTS`, `TS_WIKI_WEBHOOK_BACKOFF_MS`,
 `TS_WIKI_WEBHOOK_MAX_RESPONSE_BYTES`, and `TS_WIKI_WEBHOOK_MAX_ERROR_BYTES`.
+Automation rules are managed from the admin UI and can react to page
+create/update/delete/move plus comment-created events. Rules match by path,
+label, status, author, locale, or space, run by priority, can stop later rules,
+and can update metadata, move pages under a path, or fire custom webhook events.
 
 Uploaded assets use local disk by default. Set `ASSET_STORAGE=r2` with R2
 account credentials to store files in Cloudflare R2 while keeping the same

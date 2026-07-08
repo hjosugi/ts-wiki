@@ -7,6 +7,7 @@ import {
   type Result,
   err,
   isPageStatus,
+  normalizeLocale,
   normalizeLabels,
   normalizePath,
   ok,
@@ -16,7 +17,10 @@ import {
 } from '@ts-wiki/core'
 import type { WebhookSubscription } from '../../db/schema.ts'
 import type {
-  PageUpdatedMetadataRuleConfig,
+  AutomationRuleActions,
+  AutomationRuleConditions,
+  AutomationTrigger,
+  EventAutomationRuleConfig,
   WebhookFetcher,
   WebhookHostnameResolver,
 } from '../webhooks.ts'
@@ -199,33 +203,117 @@ export const parseEventTypes = (value: string): string[] => parseJsonStringArray
 
 export const parseLabels = (value: string): string[] => normalizeLabels(parseJsonStringArray(value))
 
-export const cleanRuleConfig = (config: PageUpdatedMetadataRuleConfig): Result<PageUpdatedMetadataRuleConfig, AppError> => {
-  const pathPrefix = normalizePath(config.pathPrefix ?? '')
-  if (!pathPrefix) return err(validationError('Path prefix is required', 'config.pathPrefix'))
+const AUTOMATION_TRIGGERS = new Set<AutomationTrigger>([
+  'page.created',
+  'page.updated',
+  'page.deleted',
+  'page.moved',
+  'comment.created',
+])
 
-  const label = typeof config.label === 'string' ? normalizeLabels([config.label])[0] : undefined
-  const status = config.status
-  if (status !== undefined && !isPageStatus(status)) {
-    return err(validationError('Unknown page status', 'config.status'))
-  }
-  if (!label && !status) {
-    return err(validationError('Rule must set a label or status', 'config'))
-  }
+const cleanTrigger = (value: unknown): AutomationTrigger | null =>
+  typeof value === 'string' && AUTOMATION_TRIGGERS.has(value as AutomationTrigger)
+    ? value as AutomationTrigger
+    : null
+
+const cleanStatus = (value: unknown, field: string): Result<PageStatus | undefined, AppError> => {
+  if (value === undefined || value === null || value === '') return ok(undefined)
+  if (!isPageStatus(value)) return err(validationError('Unknown page status', field))
+  return ok(value)
+}
+
+const cleanConditions = (conditions: Partial<AutomationRuleConditions> = {}): Result<AutomationRuleConditions, AppError> => {
+  const pathPrefix = typeof conditions.pathPrefix === 'string' ? normalizePath(conditions.pathPrefix) : undefined
+  const label = typeof conditions.label === 'string' ? normalizeLabels([conditions.label])[0] : undefined
+  const status = cleanStatus(conditions.status, 'config.conditions.status')
+  if (!status.ok) return status
+  const authorId = typeof conditions.authorId === 'string' ? conditions.authorId.trim().slice(0, 160) : undefined
+  const locale = typeof conditions.locale === 'string' && conditions.locale.trim()
+    ? normalizeLocale(conditions.locale)
+    : undefined
+  const spaceKey = typeof conditions.spaceKey === 'string'
+    ? normalizePath(conditions.spaceKey).split('/')[0]
+    : undefined
 
   return ok({
-    pathPrefix,
+    ...(pathPrefix ? { pathPrefix } : {}),
     ...(label ? { label } : {}),
-    ...(status ? { status } : {}),
+    ...(status.value ? { status: status.value } : {}),
+    ...(authorId ? { authorId } : {}),
+    ...(locale ? { locale } : {}),
+    ...(spaceKey ? { spaceKey } : {}),
   })
 }
 
-export const parseRuleConfig = (value: string): PageUpdatedMetadataRuleConfig => {
+const cleanActions = (actions: Partial<AutomationRuleActions> = {}): Result<AutomationRuleActions, AppError> => {
+  const addLabel = typeof actions.addLabel === 'string' ? normalizeLabels([actions.addLabel])[0] : undefined
+  const setStatus = cleanStatus(actions.setStatus, 'config.actions.setStatus')
+  if (!setStatus.ok) return setStatus
+  const setReviewAt = actions.setReviewAt === null
+    ? null
+    : typeof actions.setReviewAt === 'number' && Number.isFinite(actions.setReviewAt)
+      ? Math.max(0, Math.trunc(actions.setReviewAt))
+      : undefined
+  const moveToPath = typeof actions.moveToPath === 'string' ? normalizePath(actions.moveToPath) : undefined
+  const fireWebhookEvent = typeof actions.fireWebhookEvent === 'string'
+    ? actions.fireWebhookEvent.trim().slice(0, 160)
+    : undefined
+
+  const out: AutomationRuleActions = {
+    ...(addLabel ? { addLabel } : {}),
+    ...(setStatus.value ? { setStatus: setStatus.value } : {}),
+    ...(setReviewAt !== undefined ? { setReviewAt } : {}),
+    ...(moveToPath ? { moveToPath } : {}),
+    ...(fireWebhookEvent ? { fireWebhookEvent } : {}),
+  }
+  if (!out.addLabel && !out.setStatus && !('setReviewAt' in out) && !out.moveToPath && !out.fireWebhookEvent) {
+    return err(validationError('Rule must define at least one action', 'config.actions'))
+  }
+  return ok(out)
+}
+
+const legacyRuleConfig = (config: { readonly pathPrefix?: string; readonly label?: string; readonly status?: PageStatus }): EventAutomationRuleConfig => ({
+  trigger: 'page.updated',
+  conditions: { pathPrefix: normalizePath(config.pathPrefix ?? '') },
+  actions: {
+    ...(typeof config.label === 'string' && normalizeLabels([config.label])[0]
+      ? { addLabel: normalizeLabels([config.label])[0] }
+      : {}),
+    ...(config.status ? { setStatus: config.status } : {}),
+  },
+})
+
+export const cleanRuleConfig = (
+  config: EventAutomationRuleConfig | { readonly pathPrefix?: string; readonly label?: string; readonly status?: PageStatus },
+): Result<EventAutomationRuleConfig, AppError> => {
+  const source = 'trigger' in config || 'conditions' in config || 'actions' in config
+    ? config as EventAutomationRuleConfig
+    : legacyRuleConfig(config)
+  const trigger = cleanTrigger(source.trigger)
+  if (!trigger) return err(validationError('Unknown automation trigger', 'config.trigger'))
+  const conditions = cleanConditions(source.conditions)
+  if (!conditions.ok) return conditions
+  const actions = cleanActions(source.actions)
+  if (!actions.ok) return actions
+
+  return ok({ trigger, conditions: conditions.value, actions: actions.value })
+}
+
+export const parseRuleConfig = (value: string): EventAutomationRuleConfig => {
   try {
-    const parsed = JSON.parse(value) as PageUpdatedMetadataRuleConfig
+    const parsed = JSON.parse(value) as EventAutomationRuleConfig
     const clean = cleanRuleConfig(parsed)
-    return clean.ok ? clean.value : { pathPrefix: 'invalid', label: 'invalid' }
+    return clean.ok ? clean.value : {
+      trigger: 'page.updated',
+      conditions: { pathPrefix: 'invalid' },
+      actions: { addLabel: 'invalid' },
+    }
   } catch {
-    return { pathPrefix: 'invalid', label: 'invalid' }
+    return {
+      trigger: 'page.updated',
+      conditions: { pathPrefix: 'invalid' },
+      actions: { addLabel: 'invalid' },
+    }
   }
 }
 

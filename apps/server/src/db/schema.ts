@@ -388,13 +388,19 @@ export const automationRules = sqliteTable(
   {
     id: text('id').primaryKey(),
     name: text('name').notNull(),
-    type: text('type', { enum: ['page-updated-metadata'] }).notNull(),
+    type: text('type', { enum: ['event-rule', 'page-updated-metadata'] }).notNull(),
     enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+    priority: integer('priority').notNull().default(0),
+    stopOnMatch: integer('stop_on_match', { mode: 'boolean' }).notNull().default(false),
     config: text('config').notNull(),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
-  (t) => [index('automation_rules_enabled_idx').on(t.enabled), index('automation_rules_type_idx').on(t.type)],
+  (t) => [
+    index('automation_rules_enabled_idx').on(t.enabled),
+    index('automation_rules_type_idx').on(t.type),
+    index('automation_rules_order_idx').on(t.enabled, t.priority, t.createdAt),
+  ],
 )
 
 export type User = typeof users.$inferSelect

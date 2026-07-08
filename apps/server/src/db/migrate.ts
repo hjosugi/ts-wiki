@@ -44,6 +44,55 @@ const addColumn = (sqlite: MigratableDatabase, table: string, column: string, de
   }
 }
 
+const sqlString = (value: string): string => `'${value.replace(/'/g, "''")}'`
+
+const slugifyPathSegment = (value: string): string =>
+  value
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+const normalizePathLike = (value: unknown): string => {
+  const path = typeof value === 'string' ? value : ''
+  return path.split('/').map(slugifyPathSegment).filter(Boolean).join('/')
+}
+
+const normalizeLabelLike = (value: unknown): string => slugifyPathSegment(typeof value === 'string' ? value : '')
+
+const migrateLegacyAutomationRules = (sqlite: MigratableDatabase): void => {
+  const rows = sqlite
+    .prepare("SELECT id, config FROM automation_rules WHERE type = 'page-updated-metadata'")
+    .all() as Array<{ id?: unknown; config?: unknown }>
+  for (const row of rows) {
+    if (typeof row.id !== 'string' || typeof row.config !== 'string') continue
+    let parsed: Record<string, unknown>
+    try {
+      parsed = JSON.parse(row.config) as Record<string, unknown>
+    } catch {
+      parsed = {}
+    }
+    const pathPrefix = normalizePathLike(parsed.pathPrefix)
+    const label = normalizeLabelLike(parsed.label)
+    const status = typeof parsed.status === 'string' ? parsed.status : undefined
+    const actions: Record<string, unknown> = {}
+    if (label) actions.addLabel = label
+    if (status) actions.setStatus = status
+    const config = {
+      trigger: 'page.updated',
+      conditions: pathPrefix ? { pathPrefix } : {},
+      actions: Object.keys(actions).length ? actions : { addLabel: 'invalid' },
+    }
+    sqlite.exec(`
+      UPDATE automation_rules
+      SET type = 'event-rule',
+          config = ${sqlString(JSON.stringify(config))}
+      WHERE id = ${sqlString(row.id)};
+    `)
+  }
+}
+
 const createSearchTable = (sqlite: MigratableDatabase, ftsTokenizer: string): void => {
   sqlite.exec(`
     CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5(
@@ -403,12 +452,15 @@ export const runMigrations = (sqlite: MigratableDatabase, options: MigrationOpti
       name       TEXT NOT NULL,
       type       TEXT NOT NULL,
       enabled    INTEGER NOT NULL DEFAULT 1,
+      priority   INTEGER NOT NULL DEFAULT 0,
+      stop_on_match INTEGER NOT NULL DEFAULT 0,
       config     TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS automation_rules_enabled_idx ON automation_rules(enabled);
     CREATE INDEX IF NOT EXISTS automation_rules_type_idx ON automation_rules(type);
+    CREATE INDEX IF NOT EXISTS automation_rules_order_idx ON automation_rules(enabled, priority, created_at);
   `)
 
   // Full-text search index. Columns: page_id (returned, not searched), then
@@ -438,6 +490,10 @@ export const runMigrations = (sqlite: MigratableDatabase, options: MigrationOpti
   addColumn(sqlite, 'users', 'disabled_at', 'INTEGER')
   addColumn(sqlite, 'users', 'token_invalid_before', 'INTEGER NOT NULL DEFAULT 0')
   addColumn(sqlite, 'users', 'email_verified_at', 'INTEGER')
+  addColumn(sqlite, 'automation_rules', 'priority', 'INTEGER NOT NULL DEFAULT 0')
+  addColumn(sqlite, 'automation_rules', 'stop_on_match', 'INTEGER NOT NULL DEFAULT 0')
+  sqlite.exec('CREATE INDEX IF NOT EXISTS automation_rules_order_idx ON automation_rules(enabled, priority, created_at);')
+  migrateLegacyAutomationRules(sqlite)
   sqlite.exec('UPDATE users SET email_verified_at = created_at WHERE email_verified_at IS NULL;')
 }
 

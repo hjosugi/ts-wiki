@@ -25,7 +25,7 @@ resolution rule for this pass is:
 | #49 Visual/rich editor | Covered by a Markdown-first visual editor mode that round-trips headings, paragraphs, formatting, lists, tables, images/assets, callouts, and unsupported Markdown as raw blocks. Markdown remains canonical; visual mode is an authoring aid, not a separate document model. |
 | #51 Admin console | Covered at the v0 operations level: stats, users/role changes with last-admin protection, analytics, site appearance/nav settings, Markdown import, trash/archive restore/purge, and asset management. Group/auth-provider/audit-log UIs are intentionally not bundled into this broad issue. |
 | #52 Wiki.js / Confluence audit | Completed by the issue body plus this resolution note. The audit now feeds concrete product boundaries instead of staying open as a perpetual parity checklist. |
-| #57 Automation, webhooks, and integration hooks | Covered by DB-backed webhook subscriptions, HMAC-signed versioned payloads, delivery history, manual and scheduled retry, admin APIs, and a starter automation rule type for page metadata updates on path prefixes. |
+| #57 Automation, webhooks, and integration hooks | Covered by DB-backed webhook subscriptions, HMAC-signed versioned payloads, delivery history, manual and scheduled retry, admin APIs, and event automation rules with triggers, conditions, priority, page metadata/move actions, and custom webhook event firing. |
 | #59 Additional Confluence content types | Completed by the content-type decision below. |
 
 ## Explicitly Out Of Scope For Now

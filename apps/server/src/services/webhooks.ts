@@ -11,6 +11,7 @@ export type WebhookHostnameResolver = (hostname: string) => Promise<readonly str
 
 export type WebhookDeliveryStatus = WebhookDelivery['status']
 export type AutomationRuleType = AutomationRule['type']
+export type AutomationTrigger = 'page.created' | 'page.updated' | 'page.deleted' | 'page.moved' | 'comment.created'
 
 export interface WebhookSubscriptionView {
   readonly id: string
@@ -39,7 +40,30 @@ export interface WebhookDeliveryView {
   readonly deliveredAt: number | null
 }
 
-export interface PageUpdatedMetadataRuleConfig {
+export interface AutomationRuleConditions {
+  readonly pathPrefix?: string
+  readonly label?: string
+  readonly status?: PageStatus
+  readonly authorId?: string
+  readonly locale?: string
+  readonly spaceKey?: string
+}
+
+export interface AutomationRuleActions {
+  readonly addLabel?: string
+  readonly setStatus?: PageStatus
+  readonly setReviewAt?: number | null
+  readonly moveToPath?: string
+  readonly fireWebhookEvent?: string
+}
+
+export interface EventAutomationRuleConfig {
+  readonly trigger: AutomationTrigger
+  readonly conditions?: AutomationRuleConditions
+  readonly actions: AutomationRuleActions
+}
+
+export interface LegacyPageUpdatedMetadataRuleConfig {
   readonly pathPrefix: string
   readonly label?: string
   readonly status?: PageStatus
@@ -50,7 +74,9 @@ export interface AutomationRuleView {
   readonly name: string
   readonly type: AutomationRuleType
   readonly enabled: boolean
-  readonly config: PageUpdatedMetadataRuleConfig
+  readonly priority: number
+  readonly stopOnMatch: boolean
+  readonly config: EventAutomationRuleConfig
   readonly createdAt: number
   readonly updatedAt: number
 }
@@ -75,13 +101,17 @@ export interface CreateAutomationRuleInput {
   readonly name?: string
   readonly type: AutomationRuleType
   readonly enabled?: boolean
-  readonly config: PageUpdatedMetadataRuleConfig
+  readonly priority?: number
+  readonly stopOnMatch?: boolean
+  readonly config: EventAutomationRuleConfig | LegacyPageUpdatedMetadataRuleConfig
 }
 
 export interface UpdateAutomationRuleInput {
   readonly name?: string
   readonly enabled?: boolean
-  readonly config?: PageUpdatedMetadataRuleConfig
+  readonly priority?: number
+  readonly stopOnMatch?: boolean
+  readonly config?: EventAutomationRuleConfig | LegacyPageUpdatedMetadataRuleConfig
 }
 
 export interface AutomationEvent {
@@ -137,6 +167,7 @@ export interface WebhookServiceOptions {
   readonly allowPrivateTargets?: boolean
   readonly now?: () => number
   readonly policy?: Partial<WebhookDeliveryPolicy>
+  readonly pageService?: import('./pages.ts').PageService
 }
 
 export const createWebhookService = (db: DB, options: WebhookServiceOptions = {}): WebhookService => {
@@ -146,7 +177,7 @@ export const createWebhookService = (db: DB, options: WebhookServiceOptions = {}
   const now = options.now ?? (() => Date.now())
 
   const subscriptions = createWebhookSubscriptions(db, { allowPrivateTargets, now })
-  const automation = createAutomationRules(db, { now })
+  const automation = createAutomationRules(db, { now, pageService: options.pageService })
   const delivery = createWebhookDelivery(db, {
     fetcher,
     resolver,
@@ -169,16 +200,28 @@ export const createWebhookService = (db: DB, options: WebhookServiceOptions = {}
     deleteAutomationRule: automation.delete,
 
     async publish(event) {
-      const data = automation.applyPageMetadataRules(event)
+      const applied = automation.applyRules(event)
       const payload: WebhookPayload = {
         schemaVersion: 1,
         id: crypto.randomUUID(),
         type: event.type,
         occurredAt: new Date(now()).toISOString(),
         actor: { id: event.actorId ?? null },
-        data,
+        data: applied.data,
       }
-      return delivery.publish(payload, subscriptions.enabledForEvent(payload.type))
+      const deliveries = await delivery.publish(payload, subscriptions.enabledForEvent(payload.type))
+      for (const extra of applied.extraEvents) {
+        const extraPayload: WebhookPayload = {
+          schemaVersion: 1,
+          id: crypto.randomUUID(),
+          type: extra.type,
+          occurredAt: new Date(now()).toISOString(),
+          actor: { id: extra.actorId ?? null },
+          data: extra.data,
+        }
+        deliveries.push(...await delivery.publish(extraPayload, subscriptions.enabledForEvent(extraPayload.type)))
+      }
+      return deliveries
     },
 
     processDueDeliveries: delivery.processDueDeliveries,
