@@ -8,6 +8,7 @@ export const routes: RouteRecordRaw[] = [
   { path: '/_login', name: 'login', component: () => import('@/views/LoginView.vue') },
   { path: '/_reset', name: 'reset-password', component: () => import('@/views/LoginView.vue') },
   { path: '/_verify-email', name: 'verify-email', component: () => import('@/views/LoginView.vue') },
+  { path: '/setup', name: 'setup', component: () => import('@/views/SetupView.vue') },
   { path: '/_search', name: 'search', component: () => import('@/views/SearchView.vue') },
   { path: '/_events', name: 'events', component: () => import('@/views/EventsView.vue') },
   { path: '/_graph', name: 'graph', component: () => import('@/views/GraphView.vue') },
@@ -35,7 +36,13 @@ export const routes: RouteRecordRaw[] = [
 
 export const createWikiRouter = () => {
   let privateWiki: boolean | null = null
-  const anonymousAllowedRoutes = new Set(['login', 'reset-password', 'verify-email', 'shared'])
+  let setupNeeded: boolean | null = null
+  const anonymousAllowedRoutes = new Set(['login', 'reset-password', 'verify-email', 'setup', 'shared'])
+  const needsFirstRunSetup = async (): Promise<boolean> => {
+    if (setupNeeded === false) return false
+    setupNeeded = await Api.setupStatus().then((status) => status.needsSetup).catch(() => false)
+    return setupNeeded
+  }
   const router = createRouter({
     history: createWebHistory(),
     routes,
@@ -47,6 +54,10 @@ export const createWikiRouter = () => {
 
   router.beforeEach(async (to) => {
     const auth = useAuth()
+    const needsSetup = await needsFirstRunSetup()
+    if (needsSetup && to.name !== 'setup') return { name: 'setup', query: { redirect: to.fullPath } }
+    if (!needsSetup && to.name === 'setup') return { path: '/' }
+
     if (!auth.ready && getToken()) await auth.fetchMe()
     if (!getToken() && !anonymousAllowedRoutes.has(String(to.name))) {
       if (privateWiki === null) {

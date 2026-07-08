@@ -5,7 +5,7 @@ A practical guide for whoever picks this up next (human or AI). The user-facing 
 things are the way they are, what bit us, and exactly where to plug in the next features.
 
 - **As of:** 2026-07-08
-- **State:** v0.4.13 — a small but *complete and verified* vertical slice. Everything below marked ✅
+- **State:** v0.4.14 — a small but *complete and verified* vertical slice. Everything below marked ✅
   has been run and confirmed (tests + live HTTP + typed client + build + typecheck).
 - **Stack:** Bun 1.3 · Elysia · Drizzle ORM · SQLite/libSQL + FTS5 · Vue 3 · Vite ·
   UnoCSS · Pinia · CodeMirror 6 · Eden Treaty · SimpleWebAuthn (no codegen).
@@ -21,7 +21,7 @@ things are the way they are, what bit us, and exactly where to plug in the next 
 | DB schema + FTS5 migration | ✅ | SQLite default plus libSQL/Turso embedded-replica support |
 | Pages service (CRUD) | ✅ | transactional: render + revision + FTS index together |
 | Search service (FTS5/BM25) | ✅ | weighted columns, snippets, prefix queries |
-| Users + auth | ✅ | local password, expiring/revocable JWT, generic auth-provider registry with OIDC implementation, TOTP, passkeys, private mode; first account → admin |
+| Users + auth | ✅ | first-run `/setup`, local password, expiring/revocable JWT, generic auth-provider registry with OIDC implementation, TOTP, passkeys, private mode; first account fallback → admin |
 | Groups + page rules | ✅ | role default groups, memberships, path ACL rules, deny precedence |
 | Assets upload | ✅ | local or R2 bytes, DB metadata, upload/picker UI, logo/favicon reuse |
 | Elysia HTTP app + Eden type | ✅ | exports `App`; error mapping centralised |

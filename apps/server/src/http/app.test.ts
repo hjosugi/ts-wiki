@@ -280,6 +280,78 @@ afterEach(() => {
   }
 })
 
+describe('http app setup', () => {
+  const setupBody = {
+    email: 'owner@example.com',
+    name: 'Owner',
+    password: 'password',
+    siteTitle: 'Knowledge Base',
+    theme: 'dark',
+    tokenizer: 'trigram',
+    sampleContent: true,
+  } as const
+
+  test('reports setup status and completes the first-run wizard', async () => {
+    const { app, db } = createFixture()
+
+    const before = await app.handle(new Request('http://localhost/api/setup/status'))
+    expect(before.status).toBe(200)
+    expect(await before.json()).toEqual({ needsSetup: true })
+
+    const complete = await app.handle(jsonRequest('/api/setup/complete', setupBody))
+    expect(complete.status).toBe(201)
+    const body = await complete.json() as {
+      token: string
+      user: { email: string; role: string; totpEnabled: boolean }
+      settings: { siteTitle: string; theme: string; homePath: string }
+      home: { path: string; title: string; pinned: boolean }
+      searchIndex: { tokenizer: string }
+    }
+    expect(body.token.length).toBeGreaterThan(20)
+    expect(body.user).toMatchObject({ email: 'owner@example.com', role: 'admin', totpEnabled: false })
+    expect(body.settings).toMatchObject({ siteTitle: 'Knowledge Base', theme: 'dark', homePath: 'home' })
+    expect(body.home).toMatchObject({ path: 'home', title: 'Welcome to Knowledge Base', pinned: true })
+    expect(body.searchIndex.tokenizer).toBe('trigram')
+    expect(tableCount(db, 'users')).toBe(1)
+    expect(tableCount(db, 'pages')).toBe(3)
+
+    const after = await app.handle(new Request('http://localhost/api/setup/status'))
+    expect(after.status).toBe(200)
+    expect(await after.json()).toEqual({ needsSetup: false })
+
+    const me = await app.handle(new Request('http://localhost/api/auth/me', {
+      headers: { authorization: `Bearer ${body.token}` },
+    }))
+    expect(me.status).toBe(200)
+    expect(await me.json()).toMatchObject({ user: { email: 'owner@example.com', role: 'admin' } })
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('is disabled after an admin exists', async () => {
+    const { app } = createFixture()
+
+    await register(app, 'admin@example.com')
+
+    const status = await app.handle(new Request('http://localhost/api/setup/status'))
+    expect(status.status).toBe(200)
+    expect(await status.json()).toEqual({ needsSetup: false })
+
+    const complete = await app.handle(jsonRequest('/api/setup/complete', setupBody))
+    expect(complete.status).toBe(403)
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('rejects invalid setup input before creating the owner account', async () => {
+    const { app, db } = createFixture()
+
+    const response = await app.handle(jsonRequest('/api/setup/complete', {
+      ...setupBody,
+      siteTitle: '   ',
+    }))
+
+    expect(response.status).toBe(422)
+    expect(tableCount(db, 'users')).toBe(0)
+  }, HTTP_TEST_TIMEOUT_MS)
+})
+
 describe('http app auth', () => {
   test('register bootstraps only the first account as admin', async () => {
     const { app } = createFixture()

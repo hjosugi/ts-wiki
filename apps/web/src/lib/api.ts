@@ -457,9 +457,26 @@ export interface RealtimeTicket {
   ticket: string
   expiresAt: number
 }
+export interface SetupStatus {
+  needsSetup: boolean
+}
+export interface SetupInput {
+  email: string
+  name: string
+  password: string
+  siteTitle: string
+  theme: 'system' | 'light' | 'dark'
+  tokenizer: FtsTokenizer
+  sampleContent: boolean
+}
 interface AuthResult {
   token: string
   user: PublicUser
+}
+export interface SetupResult extends AuthResult {
+  settings: SiteSettings
+  home: Page
+  searchIndex: SearchIndexStatus
 }
 export interface VerificationRequiredResult {
   verificationRequired: true
@@ -473,6 +490,8 @@ export interface TwoFactorSetupRequiredResult {
 export const Api = {
   health: () => call<{ ok: true; name: string; version: string }>(client().api.health.get()),
   publicSettings: () => call<PublicSettings>(client().api.settings.public.get()),
+  setupStatus: () => call<SetupStatus>(client().api.setup.status.get()),
+  completeSetup: (body: SetupInput) => call<SetupResult>(client().api.setup.complete.post(body)),
   realtimeTicket: () => call<RealtimeTicket>(client().api.realtime.ticket.post()),
 
   // Auth

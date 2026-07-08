@@ -14,12 +14,12 @@ import { usePages } from '@/stores/pages'
 const auth = useAuth()
 const pages = usePages()
 const route = useRoute()
-const sharedLayout = computed(() => route.name === 'shared')
+const shelllessLayout = computed(() => route.name === 'shared' || route.name === 'setup')
 const mobileNavOpen = ref(false)
 const mainEl = ref<HTMLElement | null>(null)
 
 const refreshPagesForWikiLayout = (): void => {
-  if (!sharedLayout.value) void pages.refresh()
+  if (!shelllessLayout.value) void pages.refresh()
 }
 
 const openMobileNavigation = (): void => {
@@ -33,7 +33,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('open-mobile-navigation', openMobileNavigation)
 })
-watch(sharedLayout, refreshPagesForWikiLayout)
+watch(shelllessLayout, refreshPagesForWikiLayout)
 watch(() => route.fullPath, async () => {
   mobileNavOpen.value = false
   await nextTick()
@@ -44,14 +44,14 @@ watch(() => route.fullPath, async () => {
 <template>
   <div class="min-h-screen flex flex-col">
     <a
-      v-if="!sharedLayout"
+      v-if="!shelllessLayout"
       href="#main"
       class="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[60] focus:rounded-[var(--radius)] focus:bg-[var(--c-accent)] focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-white"
     >
       Skip to content
     </a>
-    <AppHeader v-if="!sharedLayout" />
-    <DrawerSheet v-if="!sharedLayout" v-model:open="mobileNavOpen" title="Pages">
+    <AppHeader v-if="!shelllessLayout" />
+    <DrawerSheet v-if="!shelllessLayout" v-model:open="mobileNavOpen" title="Pages">
       <div class="mb-3 flex items-center justify-between gap-2">
         <div class="text-xs uppercase tracking-wide text-[var(--c-text-muted)] font-semibold">Pages</div>
         <RouterLink v-if="auth.canEdit" to="/_new" class="text-xs link-quiet">New</RouterLink>
@@ -68,13 +68,13 @@ watch(() => route.fullPath, async () => {
         </template>
       </EmptyState>
     </DrawerSheet>
-    <CommandPalette v-if="!sharedLayout" />
-    <ShortcutsHelp v-if="!sharedLayout" />
+    <CommandPalette v-if="!shelllessLayout" />
+    <ShortcutsHelp v-if="!shelllessLayout" />
     <div
       class="flex-1 w-full flex"
-      :class="sharedLayout ? '' : 'max-w-7xl mx-auto px-4 gap-6'"
+      :class="shelllessLayout ? '' : 'max-w-7xl mx-auto px-4 gap-6'"
     >
-      <aside v-if="!sharedLayout" class="hidden md:block w-60 shrink-0 py-6">
+      <aside v-if="!shelllessLayout" class="hidden md:block w-60 shrink-0 py-6">
         <div class="flex items-center justify-between gap-2 mb-2 px-2">
           <div class="text-xs uppercase tracking-wide text-[var(--c-text-muted)] font-semibold">Pages</div>
           <RouterLink v-if="auth.canEdit" to="/_new" class="text-xs link-quiet">New</RouterLink>
@@ -92,10 +92,10 @@ watch(() => route.fullPath, async () => {
         </EmptyState>
       </aside>
 
-      <main id="main" ref="mainEl" class="flex-1 min-w-0" :class="sharedLayout ? '' : 'py-6'" tabindex="-1">
+      <main id="main" ref="mainEl" class="flex-1 min-w-0" :class="shelllessLayout ? '' : 'py-6'" tabindex="-1">
         <RouterView />
       </main>
     </div>
-    <AppFooter v-if="!sharedLayout" />
+    <AppFooter v-if="!shelllessLayout" />
   </div>
 </template>

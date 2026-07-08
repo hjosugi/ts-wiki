@@ -19,6 +19,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
     Api: {
       ...actual.Api,
       publicSettings: vi.fn(async () => core.defaultPublicSettings()),
+      setupStatus: vi.fn(async () => ({ needsSetup: false })),
     },
   }
 })
@@ -28,6 +29,27 @@ describe('router auth guard', () => {
     setActivePinia(createPinia())
     setToken(null)
     vi.mocked(Api.publicSettings).mockResolvedValue(makePublicSettings())
+    vi.mocked(Api.setupStatus).mockResolvedValue({ needsSetup: false })
+  })
+
+  test('routes first-run instances to setup before auth checks', async () => {
+    vi.mocked(Api.setupStatus).mockResolvedValue({ needsSetup: true })
+    const router = createWikiRouter()
+
+    await router.push('/_admin')
+    await router.isReady()
+
+    expect(router.currentRoute.value.name).toBe('setup')
+    expect(router.currentRoute.value.query.redirect).toBe('/_admin')
+  })
+
+  test('keeps completed instances out of setup', async () => {
+    const router = createWikiRouter()
+
+    await router.push('/setup')
+    await router.isReady()
+
+    expect(router.currentRoute.value.path).toBe('/')
   })
 
   test('redirects anonymous editors/admins to login', async () => {

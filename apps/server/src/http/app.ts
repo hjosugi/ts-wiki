@@ -51,6 +51,7 @@ import { createPageRoutes } from './routes/pages.ts'
 import { createPreferenceRoutes } from './routes/preferences.ts'
 import { createRealtimeRoutes } from './routes/realtime.ts'
 import { createSearchRoutes } from './routes/search.ts'
+import { createSetupRoutes } from './routes/setup.ts'
 import { createStaticRoutes } from './routes/static.ts'
 import { createSystemRoutes } from './routes/system.ts'
 import { createTemplateRoutes } from './routes/templates.ts'
@@ -480,6 +481,13 @@ export const createApp = ({
       feedCache,
       requirePageRead,
       canReadPage,
+    }))
+    .use(createSetupRoutes({
+      db,
+      env,
+      logger,
+      enforceAuthLimit,
+      publishAutomation,
     }))
     .use(createAuthRoutes({
       db,
