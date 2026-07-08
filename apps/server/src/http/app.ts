@@ -117,12 +117,19 @@ export const createApp = ({
     auth: env.auth,
     search: env.search,
     branding: env.branding,
+    localization: env.localization,
     mail: env.mail,
     mailSender,
     logger,
     webhookFetcher,
     webhookResolver,
     allowPrivateWebhookTargets: env.webhooks.allowPrivateTargets,
+    webhookPolicy: {
+      maxAttempts: env.webhooks.maxAttempts,
+      backoffMs: env.webhooks.backoffMs,
+      maxResponseBytes: env.webhooks.maxResponseBytes,
+      maxErrorBytes: env.webhooks.maxErrorBytes,
+    },
   })
   const corsOrigin = env.cors.origins === null ? true : [...env.cors.origins]
   const createAppRateLimiter = (limit: number): RateLimiter =>

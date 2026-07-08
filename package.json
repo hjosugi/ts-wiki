@@ -1,6 +1,6 @@
 {
   "name": "ts-wiki",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "license": "0BSD",
   "private": true,
   "type": "module",

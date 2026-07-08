@@ -2,7 +2,7 @@ import type { AppError, PageStatus, Principal, Result } from '@ts-wiki/core'
 import type { DB } from '../db/client.ts'
 import type { AutomationRule, WebhookDelivery } from '../db/schema.ts'
 import { createAutomationRules } from './webhooks/automation.ts'
-import { createWebhookDelivery } from './webhooks/delivery.ts'
+import { createWebhookDelivery, type WebhookDeliveryPolicy } from './webhooks/delivery.ts'
 import { defaultFetcher, defaultResolver } from './webhooks/shared.ts'
 import { createWebhookSubscriptions } from './webhooks/subscriptions.ts'
 
@@ -136,6 +136,7 @@ export interface WebhookServiceOptions {
   readonly resolver?: WebhookHostnameResolver
   readonly allowPrivateTargets?: boolean
   readonly now?: () => number
+  readonly policy?: Partial<WebhookDeliveryPolicy>
 }
 
 export const createWebhookService = (db: DB, options: WebhookServiceOptions = {}): WebhookService => {
@@ -152,6 +153,7 @@ export const createWebhookService = (db: DB, options: WebhookServiceOptions = {}
     allowPrivateTargets,
     now,
     findSubscription: subscriptions.findById,
+    policy: options.policy,
   })
 
   return {

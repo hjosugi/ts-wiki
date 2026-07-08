@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { Api, type PublicSettings } from '@/lib/api'
 import { applyBranding } from '@/lib/branding'
 import { setMarkdownFeatureSettings } from '@/lib/markdownEnhance'
+import { setDateFormatSettings } from '@/lib/i18n'
 
 const settings = ref<PublicSettings | null>(null)
 const navLinksText = ref('')
@@ -86,6 +87,9 @@ async function saveSettings(): Promise<void> {
       accentColor: settings.value.accentColor,
       theme: settings.value.theme,
       homePath: settings.value.homePath,
+      defaultLocale: settings.value.defaultLocale,
+      timezone: settings.value.timezone,
+      dateFormat: settings.value.dateFormat,
       navLinks: parseLinks(navLinksText.value),
       navItems: parseNavItems(navItemsText.value),
       logoUrl: settings.value.logoUrl,
@@ -100,6 +104,7 @@ async function saveSettings(): Promise<void> {
     })
     applyBranding(settings.value)
     setMarkdownFeatureSettings(settings.value)
+    setDateFormatSettings(settings.value)
     navLinksText.value = formatLinks(settings.value.navLinks)
     navItemsText.value = formatNavItems(settings.value.navItems)
     footerLinksText.value = formatLinks(settings.value.footerLinks)
@@ -143,6 +148,24 @@ onMounted(load)
         <span class="font-medium">Home page path</span>
         <input v-model="settings.homePath" class="input font-mono text-sm" placeholder="home" />
       </label>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <label class="space-y-1 text-sm">
+          <span class="font-medium">Default locale</span>
+          <input v-model="settings.defaultLocale" class="input" placeholder="en" />
+        </label>
+        <label class="space-y-1 text-sm">
+          <span class="font-medium">Timezone</span>
+          <input v-model="settings.timezone" class="input" placeholder="UTC" />
+        </label>
+        <label class="space-y-1 text-sm">
+          <span class="font-medium">Date format</span>
+          <select v-model="settings.dateFormat" class="input">
+            <option value="short">short</option>
+            <option value="medium">medium</option>
+            <option value="long">long</option>
+          </select>
+        </label>
+      </div>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label class="space-y-1 text-sm">
           <span class="font-medium">Logo URL</span>

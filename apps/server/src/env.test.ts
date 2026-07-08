@@ -12,7 +12,13 @@ describe('loadEnv', () => {
     expect(env.cors.origins).toBeNull()
     expect(env.search).toEqual({ ftsTokenizer: 'unicode61' })
     expect(env.assetUpload).toEqual({ maxBytes: 25 * 1024 * 1024 })
-    expect(env.webhooks).toEqual({ allowPrivateTargets: false })
+    expect(env.webhooks).toEqual({
+      allowPrivateTargets: false,
+      maxAttempts: 3,
+      backoffMs: [60_000, 120_000, 240_000, 480_000, 900_000],
+      maxResponseBytes: 2000,
+      maxErrorBytes: 1000,
+    })
     expect(env.mail).toEqual({
       smtpUrl: null,
       from: 'ts-wiki <no-reply@localhost>',
@@ -29,6 +35,11 @@ describe('loadEnv', () => {
     expect(env.auth.requireEmailVerification).toBe(false)
     expect(env.auth.requireTwoFactor).toBe(false)
     expect(env.auth.oidcProviders).toEqual([])
+    expect(env.localization).toEqual({
+      defaultLocale: null,
+      timezone: null,
+      dateFormat: null,
+    })
   })
 
   test('refuses production with the default JWT secret', () => {
@@ -150,11 +161,42 @@ describe('loadEnv', () => {
     expect(() => loadEnv({ TS_WIKI_THEME: 'sepia' })).toThrow(/TS_WIKI_THEME/)
   })
 
-  test('parses webhook private-target escape hatch', () => {
+  test('parses localization defaults', () => {
+    const env = loadEnv({
+      TS_WIKI_DEFAULT_LOCALE: 'ja-JP',
+      TS_WIKI_TIMEZONE: 'Asia/Tokyo',
+      TS_WIKI_DATE_FORMAT: 'long',
+    })
+
+    expect(env.localization).toEqual({
+      defaultLocale: 'ja-jp',
+      timezone: 'Asia/Tokyo',
+      dateFormat: 'long',
+    })
+    expect(() => loadEnv({ TS_WIKI_DEFAULT_LOCALE: 'not a locale' })).toThrow(/TS_WIKI_DEFAULT_LOCALE/)
+    expect(() => loadEnv({ TS_WIKI_TIMEZONE: 'Mars/Base' })).toThrow(/TS_WIKI_TIMEZONE/)
+    expect(() => loadEnv({ TS_WIKI_DATE_FORMAT: 'iso' })).toThrow(/TS_WIKI_DATE_FORMAT/)
+  })
+
+  test('parses webhook private-target escape hatch and delivery policy', () => {
     expect(loadEnv({ TS_WIKI_WEBHOOK_ALLOW_PRIVATE: 'true' }).webhooks.allowPrivateTargets).toBe(true)
     expect(loadEnv({ TS_WIKI_WEBHOOK_ALLOW_PRIVATE: '1' }).webhooks.allowPrivateTargets).toBe(true)
     expect(loadEnv({ TS_WIKI_WEBHOOK_ALLOW_PRIVATE: 'yes' }).webhooks.allowPrivateTargets).toBe(true)
     expect(loadEnv({ TS_WIKI_WEBHOOK_ALLOW_PRIVATE: 'false' }).webhooks.allowPrivateTargets).toBe(false)
+    const env = loadEnv({
+      TS_WIKI_WEBHOOK_MAX_ATTEMPTS: '5',
+      TS_WIKI_WEBHOOK_BACKOFF_MS: '100, 250, 500',
+      TS_WIKI_WEBHOOK_MAX_RESPONSE_BYTES: '50',
+      TS_WIKI_WEBHOOK_MAX_ERROR_BYTES: '40',
+    })
+    expect(env.webhooks).toMatchObject({
+      maxAttempts: 5,
+      backoffMs: [100, 250, 500],
+      maxResponseBytes: 50,
+      maxErrorBytes: 40,
+    })
+    expect(() => loadEnv({ TS_WIKI_WEBHOOK_MAX_ATTEMPTS: '0' })).toThrow(/TS_WIKI_WEBHOOK_MAX_ATTEMPTS/)
+    expect(() => loadEnv({ TS_WIKI_WEBHOOK_BACKOFF_MS: '100,nope' })).toThrow(/TS_WIKI_WEBHOOK_BACKOFF_MS/)
   })
 
   test('parses optional mail and email verification settings', () => {
@@ -247,5 +289,62 @@ describe('loadEnv', () => {
         defaultRole: 'editor',
       }),
     ])
+  })
+
+  test('parses multiple OIDC providers from numbered env and JSON', () => {
+    const env = loadEnv({
+      OIDC_1_ISSUER: 'https://accounts.google.com/',
+      OIDC_1_CLIENT_ID: 'google-client',
+      OIDC_1_CLIENT_SECRET: 'google-secret',
+      OIDC_1_REDIRECT_URI: 'https://wiki.example.com/api/auth/oidc/google/callback',
+      OIDC_1_PROVIDER_ID: 'google',
+      OIDC_1_PROVIDER_LABEL: 'Google',
+      OIDC_2_ISSUER: 'https://github.example.com',
+      OIDC_2_CLIENT_ID: 'github-client',
+      OIDC_2_CLIENT_SECRET: 'github-secret',
+      OIDC_2_REDIRECT_URI: 'https://wiki.example.com/api/auth/oidc/github/callback',
+      OIDC_2_PROVIDER_ID: 'github',
+      TS_WIKI_OIDC_PROVIDERS: JSON.stringify([
+        {
+          id: 'okta',
+          label: 'Okta',
+          issuer: 'https://okta.example.com/',
+          clientId: 'okta-client',
+          clientSecret: 'okta-secret',
+          redirectUri: 'https://wiki.example.com/api/auth/oidc/okta/callback',
+          scopes: ['openid', 'email'],
+          allowedEmailDomains: ['example.com'],
+          defaultRole: 'editor',
+        },
+      ]),
+    })
+
+    expect(env.auth.oidcProviders.map((provider) => provider.id)).toEqual(['okta', 'google', 'github'])
+    expect(env.auth.oidcProviders[0]).toMatchObject({
+      label: 'Okta',
+      issuer: 'https://okta.example.com',
+      scopes: ['openid', 'email'],
+      allowedEmailDomains: ['example.com'],
+      defaultRole: 'editor',
+    })
+    expect(env.auth.oidcProviders[1]).toMatchObject({
+      id: 'google',
+      label: 'Google',
+      issuer: 'https://accounts.google.com',
+    })
+    expect(() =>
+      loadEnv({
+        OIDC_1_ISSUER: 'https://a.example.com',
+        OIDC_1_CLIENT_ID: 'a',
+        OIDC_1_CLIENT_SECRET: 'a',
+        OIDC_1_REDIRECT_URI: 'https://wiki.example.com/a',
+        OIDC_1_PROVIDER_ID: 'same',
+        OIDC_2_ISSUER: 'https://b.example.com',
+        OIDC_2_CLIENT_ID: 'b',
+        OIDC_2_CLIENT_SECRET: 'b',
+        OIDC_2_REDIRECT_URI: 'https://wiki.example.com/b',
+        OIDC_2_PROVIDER_ID: 'same',
+      }),
+    ).toThrow(/Duplicate OIDC provider id/)
   })
 })

@@ -3,6 +3,7 @@ import {
   type Principal,
   type Result,
   err,
+  normalizeLocale,
   normalizePath,
   ok,
   requirePermission,
@@ -37,6 +38,9 @@ export interface PublicSettings {
   readonly accentColor: string
   readonly theme: 'system' | 'light' | 'dark'
   readonly homePath: string
+  readonly defaultLocale: string
+  readonly timezone: string
+  readonly dateFormat: 'short' | 'medium' | 'long'
   readonly navLinks: NavLink[]
   readonly navItems: BuiltInNavItem[]
   readonly logoUrl: string
@@ -55,6 +59,9 @@ export interface SettingsPatch {
   readonly accentColor?: string
   readonly theme?: 'system' | 'light' | 'dark'
   readonly homePath?: string
+  readonly defaultLocale?: string
+  readonly timezone?: string
+  readonly dateFormat?: 'short' | 'medium' | 'long'
   readonly navLinks?: readonly NavLinkInput[]
   readonly navItems?: readonly BuiltInNavItem[]
   readonly logoUrl?: string
@@ -82,6 +89,9 @@ const DEFAULT_SETTINGS: PublicSettings = {
   accentColor: '#7c3aed',
   theme: 'system',
   homePath: 'home',
+  defaultLocale: 'und',
+  timezone: 'UTC',
+  dateFormat: 'medium',
   navLinks: [],
   navItems: DEFAULT_NAV_ITEMS,
   logoUrl: '',
@@ -96,7 +106,10 @@ const DEFAULT_SETTINGS: PublicSettings = {
 }
 
 export interface SettingsServiceOptions {
-  readonly defaults?: Partial<Pick<PublicSettings, 'siteTitle' | 'accentColor' | 'theme'>>
+  readonly defaults?: Partial<Pick<
+    PublicSettings,
+    'siteTitle' | 'accentColor' | 'theme' | 'defaultLocale' | 'timezone' | 'dateFormat'
+  >>
   readonly allowHeadInjection?: boolean
 }
 
@@ -105,6 +118,9 @@ const SETTING_KEYS = [
   'accentColor',
   'theme',
   'homePath',
+  'defaultLocale',
+  'timezone',
+  'dateFormat',
   'navLinks',
   'navItems',
   'logoUrl',
@@ -122,6 +138,27 @@ type SettingKey = (typeof SETTING_KEYS)[number]
 const isSettingKey = (value: string): value is SettingKey => SETTING_KEYS.includes(value as SettingKey)
 
 const cleanHomePath = (value: string): string => normalizePath(value) || 'home'
+
+const LOCALE_PATTERN = /^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8}){0,3}$/
+
+const validLocale = (value: string): boolean => LOCALE_PATTERN.test(value.trim())
+
+const validTimezone = (value: string): boolean => {
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: value }).format(new Date())
+    return true
+  } catch {
+    return false
+  }
+}
+
+const cleanTimezone = (value: string): string => {
+  const timezone = value.trim() || 'UTC'
+  return validTimezone(timezone) ? timezone : 'UTC'
+}
+
+const cleanDateFormat = (value: string): PublicSettings['dateFormat'] =>
+  value === 'short' || value === 'medium' || value === 'long' ? value : 'medium'
 
 const cleanUrl = (value: string): string => {
   const clean = value.trim().slice(0, 500)
@@ -174,6 +211,9 @@ const parseStoredValue = (key: SettingKey, value: string): unknown => {
     }
   }
   if (key === 'homePath') return cleanHomePath(value)
+  if (key === 'defaultLocale') return normalizeLocale(value)
+  if (key === 'timezone') return cleanTimezone(value)
+  if (key === 'dateFormat') return cleanDateFormat(value)
   if (key === 'enableMath' || key === 'enableEmoji' || key === 'enableMermaid') return value === 'true'
   return value
 }
@@ -195,6 +235,10 @@ const validatePatch = (
   if (theme !== 'system' && theme !== 'light' && theme !== 'dark') {
     return err(validationError('Unknown theme', 'theme'))
   }
+  const defaultLocale = patch.defaultLocale === undefined ? current.defaultLocale : patch.defaultLocale.trim() || 'und'
+  if (!validLocale(defaultLocale)) return err(validationError('Unknown locale', 'defaultLocale'))
+  const timezone = patch.timezone === undefined ? current.timezone : patch.timezone.trim() || 'UTC'
+  if (!validTimezone(timezone)) return err(validationError('Unknown timezone', 'timezone'))
 
   const customCss = patch.customCss === undefined ? current.customCss : patch.customCss.slice(0, 20_000)
   const customHeadHtml = !allowHeadInjection
@@ -208,6 +252,9 @@ const validatePatch = (
     accentColor,
     theme,
     homePath: patch.homePath === undefined ? current.homePath : cleanHomePath(patch.homePath),
+    defaultLocale: normalizeLocale(defaultLocale),
+    timezone,
+    dateFormat: patch.dateFormat === undefined ? current.dateFormat : cleanDateFormat(patch.dateFormat),
     navLinks: patch.navLinks === undefined ? current.navLinks : cleanNavLinks(patch.navLinks),
     navItems: patch.navItems === undefined ? current.navItems : cleanNavItems(patch.navItems),
     logoUrl: patch.logoUrl === undefined ? current.logoUrl : cleanUrl(patch.logoUrl),
@@ -241,6 +288,9 @@ export const createSettingsService = (db: DB, options: SettingsServiceOptions = 
       { key: 'accentColor', value: settings.accentColor, updatedAt: now },
       { key: 'theme', value: settings.theme, updatedAt: now },
       { key: 'homePath', value: settings.homePath, updatedAt: now },
+      { key: 'defaultLocale', value: settings.defaultLocale, updatedAt: now },
+      { key: 'timezone', value: settings.timezone, updatedAt: now },
+      { key: 'dateFormat', value: settings.dateFormat, updatedAt: now },
       { key: 'navLinks', value: JSON.stringify(settings.navLinks), updatedAt: now },
       { key: 'navItems', value: JSON.stringify(settings.navItems), updatedAt: now },
       { key: 'logoUrl', value: settings.logoUrl, updatedAt: now },

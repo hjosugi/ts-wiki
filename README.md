@@ -3,10 +3,11 @@
 A **modern, lean, FP-leaning** open-source wiki — a deliberate, *finishable* reaction to Wiki.js.
 Bun + Elysia + Drizzle (SQLite/FTS5) server, Vue 3 front end, end-to-end type safety with **zero codegen**.
 
-> **Status: v0.4.6** — a small, complete, runnable wiki: Markdown pages with visual editing,
+> **Status: v0.4.7** — a small, complete, runnable wiki: Markdown pages with visual editing,
 > FTS search, local/OIDC/TOTP/passkey auth, private-wiki mode, groups/page rules,
 > R2 assets, libSQL/Turso support, webhooks, persisted page templates, shared
-> and personal navigation state, runtime branding, and a typed API.
+> and personal navigation state, runtime branding, configurable site locale/date
+> defaults, and a typed API.
 
 ## Quick start
 
@@ -35,12 +36,20 @@ search. For an existing database, back it up and run
 
 Admins can customize the wiki from **Admin → Appearance**: site title, accent
 color, light/dark/system default, logo, favicon, header links, footer text,
-footer links, custom CSS, and Markdown feature toggles. Emoji shortcodes are on
-by default; KaTeX math and client-side Mermaid rendering are opt-in. Initial
-branding defaults can be seeded with `TS_WIKI_SITE_TITLE`,
-`TS_WIKI_ACCENT_COLOR`, and `TS_WIKI_THEME`. Trusted custom head
-HTML/analytics snippets are disabled by default and require
+footer links, default page locale, timezone, date format, custom CSS, and
+Markdown feature toggles. Emoji shortcodes are on by default; KaTeX math and
+client-side Mermaid rendering are opt-in. Initial branding/date defaults can be
+seeded with `TS_WIKI_SITE_TITLE`, `TS_WIKI_ACCENT_COLOR`, `TS_WIKI_THEME`,
+`TS_WIKI_DEFAULT_LOCALE`, `TS_WIKI_TIMEZONE`, and `TS_WIKI_DATE_FORMAT`.
+Trusted custom head HTML/analytics snippets are disabled by default and require
 `TS_WIKI_ALLOW_HEAD_INJECTION=true`.
+
+OIDC supports the backward-compatible single-provider `OIDC_*` variables, plus
+multiple providers through numbered prefixes such as `OIDC_1_*` / `OIDC_2_*`
+or a `TS_WIKI_OIDC_PROVIDERS` JSON array. Webhook delivery retry attempts,
+backoff, response-body capture, and error capture are configurable with
+`TS_WIKI_WEBHOOK_MAX_ATTEMPTS`, `TS_WIKI_WEBHOOK_BACKOFF_MS`,
+`TS_WIKI_WEBHOOK_MAX_RESPONSE_BYTES`, and `TS_WIKI_WEBHOOK_MAX_ERROR_BYTES`.
 
 Editors can manage reusable page templates from `/_templates`; admins see the
 same manager on the Admin page. `_new` combines built-in starters with custom
@@ -82,18 +91,18 @@ persistent volume, or Render Free backed by Turso/libSQL and R2. SQLite under
 Tagged releases publish a Docker image to GHCR:
 
 ```bash
-docker pull ghcr.io/hjosugi/ts-wiki:v0.4.6
+docker pull ghcr.io/hjosugi/ts-wiki:v0.4.7
 docker volume create ts-wiki-data
 export JWT_SECRET="$(openssl rand -hex 32)"
 docker run --rm -v ts-wiki-data:/data \
   -e JWT_SECRET="$JWT_SECRET" \
   -e TS_WIKI_SEED_ADMIN_PASSWORD="change-me-before-first-seed" \
-  ghcr.io/hjosugi/ts-wiki:v0.4.6 bun --filter '@ts-wiki/server' db:seed
+  ghcr.io/hjosugi/ts-wiki:v0.4.7 bun --filter '@ts-wiki/server' db:seed
 docker run -d --name ts-wiki --restart unless-stopped \
   -p 4000:4000 -v ts-wiki-data:/data \
   -e NODE_ENV=production \
   -e JWT_SECRET="$JWT_SECRET" \
-  ghcr.io/hjosugi/ts-wiki:v0.4.6
+  ghcr.io/hjosugi/ts-wiki:v0.4.7
 ```
 
 Put Caddy, nginx, or a free Cloudflare Tunnel in front of port `4000` for TLS

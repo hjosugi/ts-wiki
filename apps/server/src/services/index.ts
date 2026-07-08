@@ -4,7 +4,7 @@
  */
 import type { DB } from '../db/client.ts'
 import { createRenderer, type MarkdownRenderer } from '@ts-wiki/core'
-import type { AuthEnv, BrandingEnv, MailEnv, SearchEnv } from '../env.ts'
+import type { AuthEnv, BrandingEnv, LocalizationEnv, MailEnv, SearchEnv, WebhookEnv } from '../env.ts'
 import type { StructuredLogger } from '../observability/logging.ts'
 import { createPageService, type PageService } from './pages.ts'
 import { createFtsSearchIndexer, createSearchService, type SearchService } from './search.ts'
@@ -35,12 +35,14 @@ export interface ServiceOptions {
   readonly auth?: AuthEnv
   readonly search?: SearchEnv
   readonly branding?: BrandingEnv
+  readonly localization?: LocalizationEnv
   readonly mail?: MailEnv
   readonly mailSender?: MailSender
   readonly logger?: StructuredLogger
   readonly webhookFetcher?: WebhookFetcher
   readonly webhookResolver?: WebhookHostnameResolver
   readonly allowPrivateWebhookTargets?: boolean
+  readonly webhookPolicy?: Omit<WebhookEnv, 'allowPrivateTargets'>
 }
 
 export interface Services {
@@ -89,31 +91,52 @@ const defaultBranding: BrandingEnv = {
   allowHeadInjection: false,
 }
 
+const defaultLocalization: LocalizationEnv = {
+  defaultLocale: null,
+  timezone: null,
+  dateFormat: null,
+}
+
 export const createServices = (db: DB, options: ServiceOptions = {}): Services => {
   const authz = createAuthzService(db)
   authz.ensureDefaults()
   const auth = options.auth ?? defaultAuth
   const search = options.search ?? { ftsTokenizer: 'unicode61' as const }
   const branding = options.branding ?? defaultBranding
+  const localization = options.localization ?? defaultLocalization
   const searchIndexer = createFtsSearchIndexer(db, { configuredTokenizer: search.ftsTokenizer })
   const settings = createSettingsService(db, {
     defaults: {
       ...(branding.siteTitle ? { siteTitle: branding.siteTitle } : {}),
       ...(branding.accentColor ? { accentColor: branding.accentColor } : {}),
       ...(branding.theme ? { theme: branding.theme } : {}),
+      ...(localization.defaultLocale ? { defaultLocale: localization.defaultLocale } : {}),
+      ...(localization.timezone ? { timezone: localization.timezone } : {}),
+      ...(localization.dateFormat ? { dateFormat: localization.dateFormat } : {}),
     },
     allowHeadInjection: branding.allowHeadInjection,
   })
   const rendererCache = new Map<string, MarkdownRenderer>()
   const rendererForSettings = (): MarkdownRenderer => {
     const publicSettings = settings.public()
-    const key = `${publicSettings.enableMath ? 'math' : 'no-math'}:${publicSettings.enableEmoji ? 'emoji' : 'no-emoji'}`
+    const key = [
+      publicSettings.enableMath ? 'math' : 'no-math',
+      publicSettings.enableEmoji ? 'emoji' : 'no-emoji',
+      publicSettings.defaultLocale,
+      publicSettings.timezone,
+      publicSettings.dateFormat,
+    ].join(':')
     const cached = rendererCache.get(key)
     if (cached) return cached
     const renderer = createRenderer({
       features: {
         math: publicSettings.enableMath,
         emoji: publicSettings.enableEmoji,
+      },
+      dateTime: {
+        locale: publicSettings.defaultLocale,
+        timezone: publicSettings.timezone,
+        dateFormat: publicSettings.dateFormat,
       },
     })
     rendererCache.set(key, renderer)
@@ -126,6 +149,7 @@ export const createServices = (db: DB, options: ServiceOptions = {}): Services =
   return {
     pages: createPageService(db, searchIndexer, {
       renderMarkdown: (content) => rendererForSettings().renderMarkdown(content),
+      defaultLocale: () => settings.public().defaultLocale,
     }),
     search: createSearchService(db, { configuredTokenizer: search.ftsTokenizer, indexer: searchIndexer }),
     users: createUserService(db),
@@ -147,6 +171,7 @@ export const createServices = (db: DB, options: ServiceOptions = {}): Services =
       fetcher: options.webhookFetcher,
       resolver: options.webhookResolver,
       allowPrivateTargets: options.allowPrivateWebhookTargets,
+      policy: options.webhookPolicy,
     }),
   }
 }

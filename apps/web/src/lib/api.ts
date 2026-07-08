@@ -417,6 +417,9 @@ export interface PublicSettings {
   accentColor: string
   theme: 'system' | 'light' | 'dark'
   homePath: string
+  defaultLocale: string
+  timezone: string
+  dateFormat: 'short' | 'medium' | 'long'
   navLinks: NavLink[]
   navItems: BuiltInNavItem[]
   logoUrl: string

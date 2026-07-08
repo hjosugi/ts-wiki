@@ -10,6 +10,9 @@ const makePublicSettings = (overrides: Partial<PublicSettings> = {}): PublicSett
   accentColor: '#7c3aed',
   theme: 'system',
   homePath: 'home',
+  defaultLocale: 'und',
+  timezone: 'UTC',
+  dateFormat: 'medium',
   navLinks: [],
   navItems: [
     { key: 'changes', visible: true },
@@ -47,6 +50,9 @@ vi.mock('@/lib/api', async (importOriginal) => {
         accentColor: '#7c3aed',
         theme: 'system',
         homePath: 'home',
+        defaultLocale: 'und',
+        timezone: 'UTC',
+        dateFormat: 'medium',
         navLinks: [],
         navItems: [
           { key: 'changes', visible: true },

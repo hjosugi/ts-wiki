@@ -77,6 +77,9 @@ export const createAdminRoutes = ({
           accentColor: t.Optional(t.String()),
           theme: t.Optional(t.Union([t.Literal('system'), t.Literal('light'), t.Literal('dark')])),
           homePath: t.Optional(t.String()),
+          defaultLocale: t.Optional(t.String()),
+          timezone: t.Optional(t.String()),
+          dateFormat: t.Optional(t.Union([t.Literal('short'), t.Literal('medium'), t.Literal('long')])),
           navLinks: t.Optional(t.Array(navLinkSchema)),
           navItems: t.Optional(t.Array(t.Object({
             key: t.Union([

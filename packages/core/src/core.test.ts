@@ -90,6 +90,19 @@ description: Weekly checkpoint
     expect(html).toContain('Download .ics')
     expect(html).toContain('20260620T100000%2F20260620T103000')
   })
+  test('calendar event cards use renderer date/time settings', () => {
+    const renderer = createRenderer({
+      dateTime: { locale: 'ja-JP', timezone: 'Asia/Tokyo', dateFormat: 'long' },
+    })
+    const { html } = renderer.renderMarkdown(`\`\`\`event
+title: Launch
+start: 2026-06-20 10:00
+\`\`\``)
+
+    expect(html).toContain('Asia/Tokyo')
+    expect(html).toContain('ctz=Asia%2FTokyo')
+    expect(html).not.toContain('2026-06-20 10:00')
+  })
   test('extracts calendar events from event fences', () => {
     const events = extractCalendarEvents(`Before
 \`\`\`event

@@ -75,6 +75,10 @@ export interface AssetUploadEnv {
 
 export interface WebhookEnv {
   readonly allowPrivateTargets: boolean
+  readonly maxAttempts: number
+  readonly backoffMs: readonly number[]
+  readonly maxResponseBytes: number
+  readonly maxErrorBytes: number
 }
 
 export interface MailEnv {
@@ -88,6 +92,12 @@ export interface BrandingEnv {
   readonly accentColor: string | null
   readonly theme: 'system' | 'light' | 'dark' | null
   readonly allowHeadInjection: boolean
+}
+
+export interface LocalizationEnv {
+  readonly defaultLocale: string | null
+  readonly timezone: string | null
+  readonly dateFormat: 'short' | 'medium' | 'long' | null
 }
 
 export interface Env {
@@ -106,6 +116,7 @@ export interface Env {
   readonly webhooks: WebhookEnv
   readonly mail: MailEnv
   readonly branding: BrandingEnv
+  readonly localization: LocalizationEnv
   readonly assetStorage: AssetStorageConfig
   readonly git: GitEnv
   readonly realtime: RealtimeEnv
@@ -163,11 +174,25 @@ const parseAccentColor = (value: string | undefined): string | null => {
 const parseBoolean = (value: string | undefined): boolean =>
   value === 'true' || value === '1' || value === 'yes'
 
+const DEFAULT_WEBHOOK_BACKOFF_MS = [60_000, 120_000, 240_000, 480_000, 900_000] as const
+const DEFAULT_OIDC_SCOPES = ['openid', 'email', 'profile'] as const
+
 const parsePositiveInteger = (value: string | undefined, fallback: number, name: string): number => {
   if (!value?.trim()) return fallback
   const parsed = Number(value)
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
     throw new Error(`${name} must be a positive integer.`)
+  }
+  return parsed
+}
+
+const parsePositiveIntegerList = (value: string | undefined, fallback: readonly number[], name: string): readonly number[] => {
+  if (!value?.trim()) return fallback
+  const parsed = value
+    .split(',')
+    .map((part) => Number(part.trim()))
+  if (parsed.length === 0 || parsed.some((part) => !Number.isSafeInteger(part) || part <= 0)) {
+    throw new Error(`${name} must be a comma-separated list of positive integers.`)
   }
   return parsed
 }
@@ -278,32 +303,136 @@ const originHost = (origin: string): string => {
   }
 }
 
+const cleanOidcProviderId = (value: string | null | undefined, fallback: string): string => {
+  const id = (value ?? fallback)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return id || fallback
+}
+
+const oidcScopes = (value: string | undefined): readonly string[] => {
+  const scopes = parseCsv(value)
+  return scopes.length ? scopes : DEFAULT_OIDC_SCOPES
+}
+
+const loadOidcProviderFromEnv = (
+  source: EnvSource,
+  prefix: string,
+  fallbackId: string,
+  fallbackLabel: string,
+): OidcProviderEnv => {
+  const missing: string[] = []
+  const key = (suffix: string) => `${prefix}${suffix}`
+  const issuer = requireEnv(source, key('ISSUER'), missing).replace(/\/+$/, '')
+  const clientId = requireEnv(source, key('CLIENT_ID'), missing)
+  const clientSecret = requireEnv(source, key('CLIENT_SECRET'), missing)
+  const redirectUri = requireEnv(source, key('REDIRECT_URI'), missing)
+  if (missing.length > 0) {
+    throw new Error(`${prefix} OIDC provider requires ${missing.join(', ')}.`)
+  }
+  return {
+    id: cleanOidcProviderId(optionalTrimmed(source[key('PROVIDER_ID')]), fallbackId),
+    label: optionalTrimmed(source[key('PROVIDER_LABEL')]) ?? fallbackLabel,
+    issuer,
+    clientId,
+    clientSecret,
+    redirectUri,
+    scopes: oidcScopes(source[key('SCOPES')]),
+    allowRegistration: source[key('ALLOW_REGISTRATION')] !== 'false',
+    allowedEmailDomains: parseCsv(source[key('EMAIL_DOMAINS')]).map((domain) => domain.toLowerCase()),
+    defaultRole: parseRole(source[key('DEFAULT_ROLE')]),
+  }
+}
+
+const numberedOidcPrefixes = (source: EnvSource): string[] => {
+  const indices = new Set<number>()
+  for (const key of Object.keys(source)) {
+    const match = key.match(/^OIDC_(\d+)_/)
+    if (match) indices.add(Number(match[1]))
+  }
+  return [...indices].sort((a, b) => a - b).map((index) => `OIDC_${index}_`)
+}
+
+const stringField = (source: Record<string, unknown>, key: string, context: string, required = true): string | null => {
+  const value = source[key]
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  if (required) throw new Error(`${context}.${key} is required.`)
+  return null
+}
+
+const booleanField = (source: Record<string, unknown>, key: string, fallback: boolean): boolean => {
+  const value = source[key]
+  return typeof value === 'boolean' ? value : fallback
+}
+
+const stringArrayField = (source: Record<string, unknown>, key: string): readonly string[] => {
+  const value = source[key]
+  if (Array.isArray(value)) return value
+    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    .map((item) => item.trim())
+  if (typeof value === 'string') return parseCsv(value)
+  return []
+}
+
+const loadJsonOidcProviders = (source: EnvSource): OidcProviderEnv[] => {
+  const raw = optionalTrimmed(source.TS_WIKI_OIDC_PROVIDERS)
+  if (!raw) return []
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error('TS_WIKI_OIDC_PROVIDERS must be a JSON array.')
+  }
+  if (!Array.isArray(parsed)) throw new Error('TS_WIKI_OIDC_PROVIDERS must be a JSON array.')
+  return parsed.map((item, index) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new Error(`TS_WIKI_OIDC_PROVIDERS[${index}] must be an object.`)
+    }
+    const record = item as Record<string, unknown>
+    const context = `TS_WIKI_OIDC_PROVIDERS[${index}]`
+    const fallbackId = `oidc-${index + 1}`
+    const domains = stringArrayField(record, 'allowedEmailDomains').length
+      ? stringArrayField(record, 'allowedEmailDomains')
+      : stringArrayField(record, 'emailDomains')
+    const scopes = stringArrayField(record, 'scopes')
+    return {
+      id: cleanOidcProviderId(stringField(record, 'id', context, false), fallbackId),
+      label: stringField(record, 'label', context, false) ?? `OIDC ${index + 1}`,
+      issuer: stringField(record, 'issuer', context)!.replace(/\/+$/, ''),
+      clientId: stringField(record, 'clientId', context)!,
+      clientSecret: stringField(record, 'clientSecret', context)!,
+      redirectUri: stringField(record, 'redirectUri', context)!,
+      scopes: scopes.length ? scopes : DEFAULT_OIDC_SCOPES,
+      allowRegistration: booleanField(record, 'allowRegistration', true),
+      allowedEmailDomains: domains.map((domain) => domain.toLowerCase()),
+      defaultRole: parseRole(stringField(record, 'defaultRole', context, false) ?? undefined),
+    }
+  })
+}
+
+const assertUniqueOidcProviderIds = (providers: readonly OidcProviderEnv[]): void => {
+  const seen = new Set<string>()
+  for (const provider of providers) {
+    if (seen.has(provider.id)) throw new Error(`Duplicate OIDC provider id: ${provider.id}.`)
+    seen.add(provider.id)
+  }
+}
+
 const loadAuthEnv = (source: EnvSource): AuthEnv => {
   const publicOrigin = optionalPublicBaseUrl(source.TS_WIKI_PUBLIC_ORIGIN) ?? defaultPublicOrigin(source)
   const oidcEnabled = source.OIDC_ENABLED === 'true' || source.OIDC_ENABLED === '1'
-  const providers: OidcProviderEnv[] = []
+  const providers: OidcProviderEnv[] = [
+    ...loadJsonOidcProviders(source),
+    ...numberedOidcPrefixes(source).map((prefix, index) =>
+      loadOidcProviderFromEnv(source, prefix, `oidc-${index + 1}`, `OIDC ${index + 1}`),
+    ),
+  ]
   if (oidcEnabled) {
-    const missing: string[] = []
-    const issuer = requireEnv(source, 'OIDC_ISSUER', missing).replace(/\/+$/, '')
-    const clientId = requireEnv(source, 'OIDC_CLIENT_ID', missing)
-    const clientSecret = requireEnv(source, 'OIDC_CLIENT_SECRET', missing)
-    const redirectUri = requireEnv(source, 'OIDC_REDIRECT_URI', missing)
-    if (missing.length > 0) {
-      throw new Error(`OIDC_ENABLED=true requires ${missing.join(', ')}.`)
-    }
-    providers.push({
-      id: optionalTrimmed(source.OIDC_PROVIDER_ID) ?? 'oidc',
-      label: optionalTrimmed(source.OIDC_PROVIDER_LABEL) ?? 'OIDC',
-      issuer,
-      clientId,
-      clientSecret,
-      redirectUri,
-      scopes: parseCsv(source.OIDC_SCOPES).length ? parseCsv(source.OIDC_SCOPES) : ['openid', 'email', 'profile'],
-      allowRegistration: source.OIDC_ALLOW_REGISTRATION !== 'false',
-      allowedEmailDomains: parseCsv(source.OIDC_EMAIL_DOMAINS).map((domain) => domain.toLowerCase()),
-      defaultRole: parseRole(source.OIDC_DEFAULT_ROLE),
-    })
+    providers.push(loadOidcProviderFromEnv(source, 'OIDC_', 'oidc', 'OIDC'))
   }
+  assertUniqueOidcProviderIds(providers)
   return {
     siteName: optionalTrimmed(source.TS_WIKI_SITE_NAME) ?? 'ts-wiki',
     publicOrigin,
@@ -314,6 +443,33 @@ const loadAuthEnv = (source: EnvSource): AuthEnv => {
     requireEmailVerification: parseBoolean(source.TS_WIKI_REQUIRE_EMAIL_VERIFICATION),
     requireTwoFactor: parseBoolean(source.TS_WIKI_REQUIRE_2FA),
     oidcProviders: providers,
+  }
+}
+
+const parseDateFormat = (value: string | undefined): LocalizationEnv['dateFormat'] => {
+  const format = value?.trim().toLowerCase()
+  if (!format) return null
+  if (format === 'short' || format === 'medium' || format === 'long') return format
+  throw new Error('TS_WIKI_DATE_FORMAT must be "short", "medium", or "long".')
+}
+
+const parseLocale = (value: string | undefined): string | null => {
+  const locale = optionalTrimmed(value)
+  if (!locale) return null
+  if (!/^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8}){0,3}$/.test(locale)) {
+    throw new Error('TS_WIKI_DEFAULT_LOCALE must be a BCP 47-style locale such as "en" or "ja-JP".')
+  }
+  return locale.toLowerCase()
+}
+
+const parseTimezone = (value: string | undefined): string | null => {
+  const timezone = optionalTrimmed(value)
+  if (!timezone) return null
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: timezone }).format(new Date())
+    return timezone
+  } catch {
+    throw new Error('TS_WIKI_TIMEZONE must be a valid IANA timezone such as "UTC" or "Asia/Tokyo".')
   }
 }
 
@@ -331,6 +487,12 @@ const loadBrandingEnv = (source: EnvSource): BrandingEnv => ({
   accentColor: parseAccentColor(source.TS_WIKI_ACCENT_COLOR),
   theme: parseTheme(source.TS_WIKI_THEME),
   allowHeadInjection: parseBoolean(source.TS_WIKI_ALLOW_HEAD_INJECTION),
+})
+
+const loadLocalizationEnv = (source: EnvSource): LocalizationEnv => ({
+  defaultLocale: parseLocale(source.TS_WIKI_DEFAULT_LOCALE),
+  timezone: parseTimezone(source.TS_WIKI_TIMEZONE),
+  dateFormat: parseDateFormat(source.TS_WIKI_DATE_FORMAT),
 })
 
 export const loadEnv = (source: EnvSource = process.env): Env => {
@@ -362,9 +524,14 @@ export const loadEnv = (source: EnvSource = process.env): Env => {
     },
     webhooks: {
       allowPrivateTargets: parseBoolean(source.TS_WIKI_WEBHOOK_ALLOW_PRIVATE),
+      maxAttempts: parsePositiveInteger(source.TS_WIKI_WEBHOOK_MAX_ATTEMPTS, 3, 'TS_WIKI_WEBHOOK_MAX_ATTEMPTS'),
+      backoffMs: parsePositiveIntegerList(source.TS_WIKI_WEBHOOK_BACKOFF_MS, DEFAULT_WEBHOOK_BACKOFF_MS, 'TS_WIKI_WEBHOOK_BACKOFF_MS'),
+      maxResponseBytes: parsePositiveInteger(source.TS_WIKI_WEBHOOK_MAX_RESPONSE_BYTES, 2000, 'TS_WIKI_WEBHOOK_MAX_RESPONSE_BYTES'),
+      maxErrorBytes: parsePositiveInteger(source.TS_WIKI_WEBHOOK_MAX_ERROR_BYTES, 1000, 'TS_WIKI_WEBHOOK_MAX_ERROR_BYTES'),
     },
     mail: loadMailEnv(source, auth.publicOrigin),
     branding: loadBrandingEnv(source),
+    localization: loadLocalizationEnv(source),
     assetStorage: loadAssetStorage(source, dataDir),
     git: {
       // NB: namespaced TS_WIKI_GIT_* — plain GIT_DIR / GIT_AUTHOR_* are reserved

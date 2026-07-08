@@ -105,7 +105,18 @@ PASSKEY_RP_ID=wiki.example.com
 ```
 
 OIDC can be enabled with `OIDC_ENABLED=true` plus issuer/client/redirect
-settings. See `.env.example` for the full list.
+settings for a single provider. For multiple providers, use numbered prefixes
+(`OIDC_1_*`, `OIDC_2_*`) or a `TS_WIKI_OIDC_PROVIDERS` JSON array. See
+`.env.example` for the full list.
+
+Site-level date defaults can be set from env with `TS_WIKI_DEFAULT_LOCALE`,
+`TS_WIKI_TIMEZONE`, and `TS_WIKI_DATE_FORMAT`, then adjusted later from
+Admin -> Appearance. They seed new page locales and the server/client date
+rendering used by event cards and chrome timestamps.
+
+Webhook delivery retry and capture limits are configurable with
+`TS_WIKI_WEBHOOK_MAX_ATTEMPTS`, `TS_WIKI_WEBHOOK_BACKOFF_MS`,
+`TS_WIKI_WEBHOOK_MAX_RESPONSE_BYTES`, and `TS_WIKI_WEBHOOK_MAX_ERROR_BYTES`.
 
 Uploaded assets use local disk by default. Set `ASSET_STORAGE=r2` with R2
 account credentials to store files in Cloudflare R2 while keeping the same

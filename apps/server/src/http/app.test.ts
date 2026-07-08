@@ -52,6 +52,10 @@ const testEnv = (dataDir: string, cors: Env['cors'] = { origins: null }): Env =>
   },
   webhooks: {
     allowPrivateTargets: false,
+    maxAttempts: 3,
+    backoffMs: [60_000, 120_000, 240_000, 480_000, 900_000],
+    maxResponseBytes: 2000,
+    maxErrorBytes: 1000,
   },
   mail: {
     smtpUrl: null,
@@ -63,6 +67,11 @@ const testEnv = (dataDir: string, cors: Env['cors'] = { origins: null }): Env =>
     accentColor: null,
     theme: null,
     allowHeadInjection: false,
+  },
+  localization: {
+    defaultLocale: null,
+    timezone: null,
+    dateFormat: null,
   },
   assetStorage: {
     type: 'local',
@@ -1439,6 +1448,9 @@ describe('http app settings', () => {
       siteTitle: 'ts-wiki',
       accentColor: '#7c3aed',
       homePath: 'home',
+      defaultLocale: 'und',
+      timezone: 'UTC',
+      dateFormat: 'medium',
       navItems: [
         { key: 'changes', visible: true },
         { key: 'events', visible: true },
@@ -1461,6 +1473,9 @@ describe('http app settings', () => {
           accentColor: '#2563eb',
           theme: 'system',
           homePath: '/docs/start',
+          defaultLocale: 'ja-JP',
+          timezone: 'Asia/Tokyo',
+          dateFormat: 'long',
           navLinks: [{
             label: 'Community',
             url: '',
@@ -1495,6 +1510,9 @@ describe('http app settings', () => {
       siteTitle: 'Docs',
       accentColor: '#2563eb',
       homePath: 'docs/start',
+      defaultLocale: 'ja-jp',
+      timezone: 'Asia/Tokyo',
+      dateFormat: 'long',
       navLinks: [{
         label: 'Community',
         url: '',
@@ -1591,6 +1609,62 @@ describe('http app settings', () => {
     const page = (await enabled.json()).page as { renderedHtml: string }
     expect(page.renderedHtml).toContain('katex')
     expect(page.renderedHtml).toContain('✨')
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('date settings seed page locale and event-card rendering', async () => {
+    const { app } = createFixture(undefined, {
+      env: (env) => ({
+        ...env,
+        localization: { defaultLocale: 'en-gb', timezone: 'Europe/London', dateFormat: 'short' },
+      }),
+    })
+    const { token } = await register(app, 'admin@example.com')
+
+    const defaults = await app.handle(new Request('http://localhost/api/settings/public'))
+    expect(await defaults.json()).toMatchObject({
+      defaultLocale: 'en-gb',
+      timezone: 'Europe/London',
+      dateFormat: 'short',
+    })
+
+    const settings = await app.handle(
+      new Request('http://localhost/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ defaultLocale: 'ja-JP', timezone: 'Asia/Tokyo', dateFormat: 'long' }),
+      }),
+    )
+    expect(settings.status).toBe(200)
+
+    const created = await app.handle(jsonRequest('/api/pages', {
+      path: 'events/tokyo',
+      title: 'Tokyo planning',
+      content: '```event\ntitle: Tokyo planning\nstart: 2026-06-20 10:00\nend: 2026-06-20 11:00\n```',
+    }, token))
+    expect(created.status).toBe(200)
+    const page = (await created.json()).page as { locale: string; renderedHtml: string }
+    expect(page.locale).toBe('ja-jp')
+    expect(page.renderedHtml).toContain('Asia/Tokyo')
+    expect(page.renderedHtml).toContain('ctz=Asia%2FTokyo')
+    expect(page.renderedHtml).not.toContain('2026-06-20 10:00')
+
+    const invalidTimezone = await app.handle(
+      new Request('http://localhost/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ timezone: 'Mars/Base' }),
+      }),
+    )
+    expect(invalidTimezone.status).toBe(422)
+
+    const invalidLocale = await app.handle(
+      new Request('http://localhost/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ defaultLocale: 'not a locale' }),
+      }),
+    )
+    expect(invalidLocale.status).toBe(422)
   }, HTTP_TEST_TIMEOUT_MS)
 })
 
@@ -1785,6 +1859,72 @@ describe('http app automations and webhooks', () => {
     })
   }, HTTP_TEST_TIMEOUT_MS)
 
+  test('webhook retry policy and body limits are configurable', async () => {
+    const fetcher: WebhookFetcher = async () =>
+      new Response('abcdefghi', { status: 500, statusText: 'upstream response too long' })
+    const { app } = createFixture(undefined, {
+      webhookFetcher: fetcher,
+      env: (env) => ({
+        ...env,
+        webhooks: {
+          ...env.webhooks,
+          maxAttempts: 2,
+          backoffMs: [1234],
+          maxResponseBytes: 5,
+          maxErrorBytes: 8,
+        },
+      }),
+    })
+    const { token } = await register(app, 'admin@example.com')
+
+    const webhook = await app.handle(
+      jsonRequest(
+        '/api/admin/webhooks',
+        {
+          targetUrl: 'https://hooks.example.com/failing',
+          secret: 'policy-secret',
+          eventTypes: ['page.created'],
+        },
+        token,
+      ),
+    )
+    expect(webhook.status).toBe(200)
+    await createPage(app, token, 'docs/policy-retry', 'retry policy')
+
+    const failed = await app.handle(
+      new Request('http://localhost/api/admin/webhooks/deliveries?status=failed', {
+        headers: { authorization: `Bearer ${token}` },
+      }),
+    )
+    expect(failed.status).toBe(200)
+    const failedBody = await failed.json() as {
+      deliveries: Array<{ id: string; attempts: number; nextAttemptAt: number | null; responseBody: string; error: string }>
+    }
+    expect(failedBody.deliveries[0]).toMatchObject({
+      attempts: 1,
+      responseBody: 'abcde...',
+      error: 'upstream...',
+    })
+    expect(failedBody.deliveries[0]!.nextAttemptAt).toBeNumber()
+
+    const retry = await app.handle(
+      new Request(`http://localhost/api/admin/webhooks/deliveries/${failedBody.deliveries[0]!.id}/retry`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+      }),
+    )
+    expect(retry.status).toBe(200)
+    expect(await retry.json()).toMatchObject({
+      delivery: expect.objectContaining({
+        status: 'failed',
+        attempts: 2,
+        nextAttemptAt: null,
+        responseBody: 'abcde...',
+        error: 'upstream...',
+      }),
+    })
+  }, HTTP_TEST_TIMEOUT_MS)
+
   test('webhook subscriptions reject private literal targets unless explicitly allowed', async () => {
     const { app } = createFixture()
     const { token } = await register(app, 'admin@example.com')
@@ -1810,7 +1950,7 @@ describe('http app automations and webhooks', () => {
     }
 
     const allowedFixture = createFixture(undefined, {
-      env: (env) => ({ ...env, webhooks: { allowPrivateTargets: true } }),
+      env: (env) => ({ ...env, webhooks: { ...env.webhooks, allowPrivateTargets: true } }),
     })
     const allowedAdmin = await register(allowedFixture.app, 'admin@example.com')
     const allowed = await allowedFixture.app.handle(

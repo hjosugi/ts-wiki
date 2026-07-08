@@ -7,6 +7,9 @@ const makeSettings = (overrides: Partial<PublicSettings> = {}): PublicSettings =
   accentColor: '#2563eb',
   theme: 'system',
   homePath: 'home',
+  defaultLocale: 'und',
+  timezone: 'UTC',
+  dateFormat: 'medium',
   navLinks: [],
   navItems: [
     { key: 'changes', visible: true },

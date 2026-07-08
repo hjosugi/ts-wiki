@@ -18,19 +18,40 @@ import {
   truncate,
 } from './shared.ts'
 
-const MAX_RESPONSE_BODY = 2000
-const MAX_ERROR = 1000
-const MAX_ATTEMPTS = 3
 const MAX_REDIRECTS = 5
 
-const errorMessage = (error: unknown): string =>
-  truncate(error instanceof Error ? error.message : String(error), MAX_ERROR)
+export interface WebhookDeliveryPolicy {
+  readonly maxAttempts: number
+  readonly backoffMs: readonly number[]
+  readonly maxResponseBytes: number
+  readonly maxErrorBytes: number
+}
+
+export const DEFAULT_WEBHOOK_DELIVERY_POLICY: WebhookDeliveryPolicy = {
+  maxAttempts: 3,
+  backoffMs: [60_000, 120_000, 240_000, 480_000, 900_000],
+  maxResponseBytes: 2000,
+  maxErrorBytes: 1000,
+}
+
+const normalizePolicy = (policy: Partial<WebhookDeliveryPolicy> | undefined): WebhookDeliveryPolicy => ({
+  maxAttempts: Math.max(1, Math.trunc(policy?.maxAttempts ?? DEFAULT_WEBHOOK_DELIVERY_POLICY.maxAttempts)),
+  backoffMs: policy?.backoffMs?.length ? policy.backoffMs.map((value) => Math.max(1, Math.trunc(value))) : DEFAULT_WEBHOOK_DELIVERY_POLICY.backoffMs,
+  maxResponseBytes: Math.max(1, Math.trunc(policy?.maxResponseBytes ?? DEFAULT_WEBHOOK_DELIVERY_POLICY.maxResponseBytes)),
+  maxErrorBytes: Math.max(1, Math.trunc(policy?.maxErrorBytes ?? DEFAULT_WEBHOOK_DELIVERY_POLICY.maxErrorBytes)),
+})
+
+const errorMessage = (error: unknown, maxErrorBytes: number): string =>
+  truncate(error instanceof Error ? error.message : String(error), maxErrorBytes)
 
 const signPayload = (secret: string, timestamp: string, payload: string): string =>
   `sha256=${createHmac('sha256', secret).update(`${timestamp}.${payload}`).digest('hex')}`
 
-const retryAt = (now: number, attempts: number): number | null =>
-  attempts < MAX_ATTEMPTS ? now + Math.min(60_000 * 2 ** (attempts - 1), 15 * 60_000) : null
+const retryAt = (now: number, attempts: number, policy: WebhookDeliveryPolicy): number | null => {
+  if (attempts >= policy.maxAttempts) return null
+  const delay = policy.backoffMs[attempts - 1] ?? policy.backoffMs.at(-1) ?? 60_000
+  return now + delay
+}
 
 const cloneRequestInit = (init: RequestInit): RequestInit => ({
   ...init,
@@ -102,6 +123,7 @@ export interface WebhookDeliveryOptions {
   readonly allowPrivateTargets: boolean
   readonly now: () => number
   readonly findSubscription: (id: string) => WebhookSubscription | null
+  readonly policy?: Partial<WebhookDeliveryPolicy>
 }
 
 export interface WebhookDeliveryService {
@@ -119,8 +141,10 @@ export const createWebhookDelivery = (
     allowPrivateTargets,
     now,
     findSubscription,
+    policy: inputPolicy,
   }: WebhookDeliveryOptions,
 ): WebhookDeliveryService => {
+  const policy = normalizePolicy(inputPolicy)
   const findDelivery = (id: string): WebhookDelivery | null =>
     db.select().from(webhookDeliveries).where(eq(webhookDeliveries.id, id)).get() ?? null
 
@@ -160,16 +184,16 @@ export const createWebhookDelivery = (
         },
         body: delivery.payload,
       }, fetcher, resolver, allowPrivateTargets)
-      const responseBody = truncate(await response.text().catch(() => ''), MAX_RESPONSE_BODY)
+      const responseBody = truncate(await response.text().catch(() => ''), policy.maxResponseBytes)
       const updatedAt = now()
       db.update(webhookDeliveries)
         .set({
           status: response.ok ? 'succeeded' : 'failed',
           attempts,
-          nextAttemptAt: response.ok ? null : retryAt(updatedAt, attempts),
+          nextAttemptAt: response.ok ? null : retryAt(updatedAt, attempts, policy),
           responseStatus: response.status,
           responseBody,
-          error: response.ok ? null : truncate(response.statusText || `HTTP ${response.status}`, MAX_ERROR),
+          error: response.ok ? null : truncate(response.statusText || `HTTP ${response.status}`, policy.maxErrorBytes),
           updatedAt,
           deliveredAt: response.ok ? updatedAt : null,
         })
@@ -181,10 +205,10 @@ export const createWebhookDelivery = (
         .set({
           status: 'failed',
           attempts,
-          nextAttemptAt: retryAt(updatedAt, attempts),
+          nextAttemptAt: retryAt(updatedAt, attempts, policy),
           responseStatus: null,
           responseBody: null,
-          error: errorMessage(error),
+          error: errorMessage(error, policy.maxErrorBytes),
           updatedAt,
           deliveredAt: null,
         })
@@ -274,7 +298,7 @@ export const createWebhookDelivery = (
         .orderBy(asc(webhookDeliveries.nextAttemptAt))
         .limit(Math.max(1, Math.min(limit, 100)))
         .all()
-        .filter((delivery) => delivery.status !== 'succeeded' && delivery.attempts < MAX_ATTEMPTS)
+        .filter((delivery) => delivery.status !== 'succeeded' && delivery.attempts < policy.maxAttempts)
 
       const delivered: WebhookDeliveryView[] = []
       for (const delivery of rows) {

@@ -3,12 +3,18 @@ import { createRenderer, type MarkdownRenderer } from '@ts-wiki/core'
 import { Api, type PublicSettings } from './api'
 import { enhanceCodeBlocks } from './codeCopy'
 
-export type MarkdownFeatureSettings = Pick<PublicSettings, 'enableMath' | 'enableEmoji' | 'enableMermaid'>
+export type MarkdownFeatureSettings = Pick<
+  PublicSettings,
+  'enableMath' | 'enableEmoji' | 'enableMermaid' | 'defaultLocale' | 'timezone' | 'dateFormat'
+>
 
 export const defaultMarkdownFeatureSettings: MarkdownFeatureSettings = {
   enableMath: false,
   enableEmoji: true,
   enableMermaid: false,
+  defaultLocale: 'und',
+  timezone: 'UTC',
+  dateFormat: 'medium',
 }
 
 let cachedSettings: MarkdownFeatureSettings | null = null
@@ -27,6 +33,9 @@ export const markdownFeaturesFromSettings = (settings: PublicSettings): Markdown
   enableMath: settings.enableMath,
   enableEmoji: settings.enableEmoji,
   enableMermaid: settings.enableMermaid,
+  defaultLocale: settings.defaultLocale,
+  timezone: settings.timezone,
+  dateFormat: settings.dateFormat,
 })
 
 export const setMarkdownFeatureSettings = (settings: PublicSettings | MarkdownFeatureSettings): MarkdownFeatureSettings => {
@@ -34,6 +43,9 @@ export const setMarkdownFeatureSettings = (settings: PublicSettings | MarkdownFe
     enableMath: settings.enableMath,
     enableEmoji: settings.enableEmoji,
     enableMermaid: settings.enableMermaid,
+    defaultLocale: settings.defaultLocale,
+    timezone: settings.timezone,
+    dateFormat: settings.dateFormat,
   }
   pendingSettings = null
   return cachedSettings
@@ -47,13 +59,24 @@ export const loadMarkdownFeatureSettings = async (): Promise<MarkdownFeatureSett
 }
 
 export const rendererForMarkdownFeatures = (settings: MarkdownFeatureSettings): MarkdownRenderer => {
-  const key = `${settings.enableMath ? 'math' : 'no-math'}:${settings.enableEmoji ? 'emoji' : 'no-emoji'}`
+  const key = [
+    settings.enableMath ? 'math' : 'no-math',
+    settings.enableEmoji ? 'emoji' : 'no-emoji',
+    settings.defaultLocale,
+    settings.timezone,
+    settings.dateFormat,
+  ].join(':')
   const cached = rendererCache.get(key)
   if (cached) return cached
   const renderer = createRenderer({
     features: {
       math: settings.enableMath,
       emoji: settings.enableEmoji,
+    },
+    dateTime: {
+      locale: settings.defaultLocale,
+      timezone: settings.timezone,
+      dateFormat: settings.dateFormat,
     },
   })
   rendererCache.set(key, renderer)

@@ -5,7 +5,7 @@ A practical guide for whoever picks this up next (human or AI). The user-facing 
 things are the way they are, what bit us, and exactly where to plug in the next features.
 
 - **As of:** 2026-07-08
-- **State:** v0.4.6 — a small but *complete and verified* vertical slice. Everything below marked ✅
+- **State:** v0.4.7 — a small but *complete and verified* vertical slice. Everything below marked ✅
   has been run and confirmed (tests + live HTTP + typed client + build + typecheck).
 - **Stack:** Bun 1.3 · Elysia · Drizzle ORM · SQLite/libSQL + FTS5 · Vue 3 · Vite ·
   UnoCSS · Pinia · CodeMirror 6 · Eden Treaty · SimpleWebAuthn (no codegen).
@@ -21,13 +21,14 @@ things are the way they are, what bit us, and exactly where to plug in the next 
 | DB schema + FTS5 migration | ✅ | SQLite default plus libSQL/Turso embedded-replica support |
 | Pages service (CRUD) | ✅ | transactional: render + revision + FTS index together |
 | Search service (FTS5/BM25) | ✅ | weighted columns, snippets, prefix queries |
-| Users + auth | ✅ | local password, expiring/revocable JWT, OIDC, TOTP, passkeys, private mode; first account → admin |
+| Users + auth | ✅ | local password, expiring/revocable JWT, multi-provider OIDC, TOTP, passkeys, private mode; first account → admin |
 | Groups + page rules | ✅ | role default groups, memberships, path ACL rules, deny precedence |
 | Assets upload | ✅ | local or R2 bytes, DB metadata, upload/picker UI, logo/favicon reuse |
 | Elysia HTTP app + Eden type | ✅ | exports `App`; error mapping centralised |
 | Vue app: view/edit/search/graph/login | ✅ | breadcrumbs, page header actions, tree sidebar, graph view, empty states, runtime branding |
 | Markdown editor (CodeMirror + visual mode) | ✅ | Markdown remains canonical; visual mode round-trips common blocks |
 | Webhooks + automation | ✅ | signed deliveries, retry history, page metadata automation rules |
+| Site configuration | ✅ | runtime branding, nav settings, default locale/timezone/date format, webhook retry policy |
 | Tests / typecheck / build | ✅ | core/server Bun tests + web Vitest tests; all 3 packages typecheck; web builds |
 | Auth route guards in router | ✅ | global router guard gates editor/admin routes |
 
@@ -124,6 +125,10 @@ Cross-cutting principles (the "FP-leaning architecture" the user asked for):
    `customHeadHtml` unless `TS_WIKI_ALLOW_HEAD_INJECTION=true`; the web app then
    recreates trusted `<script>` tags so analytics snippets actually execute.
    Treat this as admin-trusted code, not user content.
+13. **Site date settings feed both renderers.** Admin settings and
+   `TS_WIKI_DEFAULT_LOCALE` / `TS_WIKI_TIMEZONE` / `TS_WIKI_DATE_FORMAT` affect
+   server render-on-save and browser preview; keep `markdownEnhance.ts`,
+   `i18n.ts`, and `createServices()` in sync when adding new display defaults.
 
 ---
 
@@ -186,6 +191,10 @@ Each item notes **where to plug in**.
       custom CSS, and gated custom head HTML. CSS variables (`--c-bg`,
       `--c-surface`, `--c-text`, `--c-border`, `--c-accent`, `--radius`) drive
       app chrome and rendered Markdown blocks.
+- [x] **Configuration controls** — multiple OIDC providers can be supplied via
+      `TS_WIKI_OIDC_PROVIDERS` JSON or numbered `OIDC_1_*` prefixes; site
+      locale/timezone/date-format defaults seed page locale and rendered dates;
+      webhook retry attempts/backoff/body/error limits are env-configurable.
 
 **Medium**
 - [x] **Event extraction + event index** — `pages.events()` and `/api/events/index` extract event
@@ -213,8 +222,8 @@ Each item notes **where to plug in**.
       builds a single production image.
 
 **Larger / later**
-- [x] OAuth/OIDC strategy — generic OIDC provider config, login start/callback, account linking,
-      registration controls, and domain allow-listing are implemented.
+- [x] OAuth/OIDC strategy — generic and multi-provider OIDC config, login start/callback,
+      account linking, registration controls, and domain allow-listing are implemented.
 - [x] Comments — page comments with mentions, resolve/update/delete, and webhook events are implemented.
 - [ ] Tags, multi-site, i18n, SSR.
 - [ ] **Rust-backed search adapter.** Keep SQLite FTS5 as the default embedded engine; the

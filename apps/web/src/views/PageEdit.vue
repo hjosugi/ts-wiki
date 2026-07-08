@@ -36,6 +36,7 @@ const labelsText = ref('')
 const status = ref<'draft' | 'in-review' | 'verified' | 'outdated'>('draft')
 const reviewAtDate = ref('')
 const locale = ref('und')
+const defaultLocale = ref('und')
 const navOrderText = ref('')
 const pinned = ref(false)
 const savedTitle = ref('')
@@ -190,7 +191,7 @@ function applyTemplate(key: string): void {
   labelsText.value = template.metadata.labels?.join(', ') ?? ''
   status.value = template.metadata.status ?? 'draft'
   reviewAtDate.value = dateInputValue(template.metadata.reviewAt ?? null)
-  locale.value = template.metadata.locale ?? 'und'
+  locale.value = template.metadata.locale ?? defaultLocale.value
   content.value = template.content
 }
 
@@ -270,6 +271,7 @@ onMounted(async () => {
     router.replace({ name: 'login' })
     return
   }
+  defaultLocale.value = (await Api.publicSettings().catch(() => null))?.defaultLocale ?? 'und'
   void loadTemplates()
   if (isEdit.value) {
     const target = paramToPath(route.params.path)
@@ -288,7 +290,7 @@ onMounted(async () => {
     labelsText.value = ''
     status.value = 'draft'
     reviewAtDate.value = ''
-    locale.value = 'und'
+    locale.value = defaultLocale.value
     navOrderText.value = ''
     pinned.value = false
     originalUpdatedAt.value = null

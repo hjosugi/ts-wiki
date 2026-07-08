@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Api, type PublicSettings } from '@/lib/api'
 import { useAuth } from '@/stores/auth'
-import { useI18n } from '@/lib/i18n'
+import { setDateFormatSettings, useI18n } from '@/lib/i18n'
 import { useTheme, applySiteDefault } from '@/composables/useTheme'
 import { applyBranding } from '@/lib/branding'
 import { setMarkdownFeatureSettings } from '@/lib/markdownEnhance'
@@ -19,6 +19,9 @@ const settings = ref<PublicSettings>({
   accentColor: '#7c3aed',
   theme: 'system',
   homePath: 'home',
+  defaultLocale: 'und',
+  timezone: 'UTC',
+  dateFormat: 'medium',
   navLinks: [],
   navItems: [
     { key: 'changes', visible: true },
@@ -74,6 +77,7 @@ onMounted(async () => {
     settings.value = await Api.publicSettings()
     applyBranding(settings.value)
     setMarkdownFeatureSettings(settings.value)
+    setDateFormatSettings(settings.value)
     applySiteDefault(settings.value.theme)
   } catch {
     /* keep defaults */

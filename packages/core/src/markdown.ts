@@ -44,8 +44,17 @@ export interface MarkdownFeatureOptions {
   readonly emoji?: boolean
 }
 
+export type DateFormatStyle = 'short' | 'medium' | 'long'
+
+export interface MarkdownDateTimeOptions {
+  readonly locale?: string
+  readonly timezone?: string
+  readonly dateFormat?: DateFormatStyle
+}
+
 export interface MarkdownRendererOptions {
   readonly features?: MarkdownFeatureOptions
+  readonly dateTime?: MarkdownDateTimeOptions
   readonly plugins?: readonly MarkdownPlugin[]
   readonly fences?: Record<string, FenceRenderer>
 }
@@ -102,16 +111,38 @@ const addDays = (yyyymmdd: string, days: number): string => {
   ].join('')
 }
 
-const formatDisplayDate = (value: string, timezone?: string): string => {
+const formatDateParts = (
+  date: string,
+  time: string | undefined,
+  options: MarkdownDateTimeOptions = {},
+): string => {
+  const locale = options.locale && options.locale !== 'und' ? options.locale : 'en'
+  const dateStyle = options.dateFormat ?? 'medium'
+  const year = Number(date.slice(0, 4))
+  const month = Number(date.slice(4, 6))
+  const day = Number(date.slice(6, 8))
+  const hour = Number(time?.slice(0, 2) ?? '0')
+  const minute = Number(time?.slice(2, 4) ?? '0')
+  const instant = new Date(Date.UTC(year, month - 1, day, hour, minute))
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle,
+      ...(time ? { timeStyle: 'short' as const } : {}),
+      timeZone: 'UTC',
+    }).format(instant)
+  } catch {
+    const yyyy = date.slice(0, 4)
+    const mm = date.slice(4, 6)
+    const dd = date.slice(6, 8)
+    return time ? `${yyyy}-${mm}-${dd} ${time.slice(0, 2)}:${time.slice(2, 4)}` : `${yyyy}-${mm}-${dd}`
+  }
+}
+
+const formatDisplayDate = (value: string, options: MarkdownDateTimeOptions = {}): string => {
   const parsed = parseDateParts(value)
   if (!parsed) return value
-  const year = parsed.date.slice(0, 4)
-  const month = parsed.date.slice(4, 6)
-  const day = parsed.date.slice(6, 8)
-  if (!parsed.time) return `${year}-${month}-${day}`
-  const hour = parsed.time.slice(0, 2)
-  const minute = parsed.time.slice(2, 4)
-  return `${year}-${month}-${day} ${hour}:${minute}${timezone ? ` ${timezone}` : ''}`
+  const formatted = formatDateParts(parsed.date, parsed.time, options)
+  return parsed.time && options.timezone ? `${formatted} ${options.timezone}` : formatted
 }
 
 export const parseCalendarEventBlock = (content: string): CalendarEvent | null => {
@@ -178,7 +209,7 @@ export const extractCalendarEvents = (content: string, sourcePath = ''): Extract
   return events
 }
 
-const googleCalendarUrl = (event: CalendarEvent): string => {
+const googleCalendarUrl = (event: CalendarEvent, dateTime: MarkdownDateTimeOptions = {}): string => {
   const start = parseDateParts(event.start)
   const end = event.end ? parseDateParts(event.end) : null
   const allDay = Boolean(start && !start.time)
@@ -199,7 +230,8 @@ const googleCalendarUrl = (event: CalendarEvent): string => {
     params.set('details', [event.description, event.url].filter(Boolean).join('\n\n'))
   }
   if (event.location) params.set('location', event.location)
-  if (event.timezone && !allDay) params.set('ctz', event.timezone)
+  const timezone = event.timezone ?? dateTime.timezone
+  if (timezone && !allDay) params.set('ctz', timezone)
   return `https://calendar.google.com/calendar/render?${params.toString()}`
 }
 
@@ -334,11 +366,12 @@ export const parseIcsEvents = (input: string): CalendarEvent[] => {
   return events
 }
 
-const renderEventCard = (content: string): string | null => {
+const renderEventCard = (content: string, dateTime: MarkdownDateTimeOptions = {}): string | null => {
   const event = parseCalendarEventBlock(content)
   if (!event) return null
-  const start = formatDisplayDate(event.start, event.timezone)
-  const end = event.end ? formatDisplayDate(event.end, event.timezone) : null
+  const timezone = event.timezone ?? dateTime.timezone
+  const start = formatDisplayDate(event.start, { ...dateTime, timezone })
+  const end = event.end ? formatDisplayDate(event.end, { ...dateTime, timezone }) : null
   const when = end ? `${start} → ${end}` : start
   const details = [
     event.location ? `<div><span>Location</span><strong>${escapeHtml(event.location)}</strong></div>` : '',
@@ -356,7 +389,7 @@ const renderEventCard = (content: string): string | null => {
       ${details.length ? `<div class="wiki-event-details">${details.join('')}</div>` : ''}
     </div>
     <div class="wiki-event-actions">
-      <a href="${escapeAttr(googleCalendarUrl(event))}" target="_blank" rel="noopener noreferrer">Google Calendar</a>
+      <a href="${escapeAttr(googleCalendarUrl(event, dateTime))}" target="_blank" rel="noopener noreferrer">Google Calendar</a>
       <a href="${escapeAttr(icsDataUrl(event))}" download="${escapeAttr(slugifyHeading(event.title) || 'event')}.ics">Download .ics</a>
     </div>
   </section>`
@@ -652,7 +685,6 @@ const wikiLinkPath = (rawPath: string): string =>
     .join('/')
 
 const builtinFenceRenderers = new Map<string, FenceRenderer>([
-  ['event', (content) => renderEventCard(content)],
   ['callout', (content, _info, renderer) => renderCalloutBlock(content, renderer)],
   ['infobox', (content, _info, renderer) => renderInfoboxBlock(content, renderer)],
   ['profile', (content, _info, renderer) => renderInfoboxBlock(content, renderer)],
@@ -732,12 +764,14 @@ const createMarkdownIt = (rendererOptions: MarkdownRendererOptions = {}): Markdo
   const optionFences = new Map<string, FenceRenderer>(
     Object.entries(rendererOptions.fences ?? {}).map(([key, value]) => [key.trim().toLowerCase(), value]),
   )
+  const instanceFenceRenderers = new Map<string, FenceRenderer>(builtinFenceRenderers)
+  instanceFenceRenderers.set('event', (content) => renderEventCard(content, rendererOptions.dateTime))
   const defaultFence = renderer.renderer.rules.fence
   renderer.renderer.rules.fence = (tokens, idx, options, env, self): string => {
     const token = tokens[idx]
     if (!token) return ''
     const info = token.info.trim().split(/\s+/)[0]?.toLowerCase() ?? ''
-    const render = optionFences.get(info) ?? registeredFenceRenderers.get(info) ?? builtinFenceRenderers.get(info)
+    const render = optionFences.get(info) ?? registeredFenceRenderers.get(info) ?? instanceFenceRenderers.get(info)
     const rendered = render?.(token.content, info, renderer)
     if (rendered) return rendered
     return defaultFence ? defaultFence(tokens, idx, options, env, self) : self.renderToken(tokens, idx, options)

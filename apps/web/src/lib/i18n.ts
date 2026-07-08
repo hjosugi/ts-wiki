@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 
 export type Locale = 'en' | 'ja'
+export type DateFormatStyle = 'short' | 'medium' | 'long'
 
 const localeStorageKey = 'ts-wiki-locale'
 
@@ -194,6 +195,15 @@ const readBrowserLocale = (): Locale => {
 }
 
 const currentLocale = ref<Locale>(readBrowserLocale())
+const dateSettings = ref<{
+  locale: string
+  timezone: string
+  dateFormat: DateFormatStyle
+}>({
+  locale: 'und',
+  timezone: 'UTC',
+  dateFormat: 'medium',
+})
 
 export const setLocale = (next: Locale): void => {
   currentLocale.value = next
@@ -203,18 +213,38 @@ export const setLocale = (next: Locale): void => {
 export const t = (key: MessageKey, values: Record<string, string | number> = {}): string =>
   messages[currentLocale.value][key].replace(/\{(\w+)\}/g, (_, name: string) => String(values[name] ?? ''))
 
+export const setDateFormatSettings = (settings: {
+  readonly defaultLocale?: string
+  readonly timezone?: string
+  readonly dateFormat?: DateFormatStyle
+}): void => {
+  dateSettings.value = {
+    locale: settings.defaultLocale || 'und',
+    timezone: settings.timezone || 'UTC',
+    dateFormat: settings.dateFormat ?? 'medium',
+  }
+}
+
+const dateLocale = (): string =>
+  dateSettings.value.locale && dateSettings.value.locale !== 'und' ? dateSettings.value.locale : currentLocale.value
+
 export const formatDate = (value: number | Date): string =>
-  new Intl.DateTimeFormat(currentLocale.value, { dateStyle: 'medium' }).format(new Date(value))
+  new Intl.DateTimeFormat(dateLocale(), {
+    dateStyle: dateSettings.value.dateFormat,
+    timeZone: dateSettings.value.timezone,
+  }).format(new Date(value))
 
 export const formatDateTime = (value: number | Date): string =>
-  new Intl.DateTimeFormat(currentLocale.value, {
-    dateStyle: 'medium',
+  new Intl.DateTimeFormat(dateLocale(), {
+    dateStyle: dateSettings.value.dateFormat,
     timeStyle: 'short',
+    timeZone: dateSettings.value.timezone,
   }).format(new Date(value))
 
 export const useI18n = () => ({
   locale: computed(() => currentLocale.value),
   setLocale,
+  setDateFormatSettings,
   t,
   formatDate,
   formatDateTime,

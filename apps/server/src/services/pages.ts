@@ -278,6 +278,7 @@ export const rewriteLinksForMove = (
 
 export interface PageServiceOptions {
   readonly renderMarkdown?: (content: string) => RenderResult
+  readonly defaultLocale?: () => string
 }
 
 export const createPageService = (
@@ -286,6 +287,7 @@ export const createPageService = (
   options: PageServiceOptions = {},
 ): PageService => {
   const renderPageMarkdown = options.renderMarkdown ?? renderMarkdown
+  const defaultLocale = options.defaultLocale ?? (() => 'und')
   const reindex = (id: string): void => searchIndexer.indexPageById(id)
 
   const findByPath = (path: string): Page | undefined =>
@@ -642,7 +644,7 @@ export const createPageService = (
     },
 
     create(input, principal) {
-      const validated = validatePageInput(input)
+      const validated = validatePageInput({ ...input, locale: input.locale ?? defaultLocale() })
       if (!validated.ok) return validated
       const v = validated.value
       const allowed = requirePagePermission(principal, 'page:create', v.path)
