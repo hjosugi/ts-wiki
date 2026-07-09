@@ -113,6 +113,16 @@ export const createAdminRoutes = ({
         authorId: t.Optional(t.String()),
       }),
     })
+    .get('/api/admin/audit', ({ query, services, principal }) => unwrap(services.admin.listAudit(principal, query)), {
+      query: t.Object({
+        limit: t.Optional(t.Numeric()),
+        offset: t.Optional(t.Numeric()),
+        action: t.Optional(t.String()),
+        userId: t.Optional(t.String()),
+        from: t.Optional(t.Numeric()),
+        to: t.Optional(t.Numeric()),
+      }),
+    })
     .get('/api/admin/analytics', ({ services, principal }) => unwrap(services.analytics.summary(principal)))
     .put(
       '/api/admin/settings',

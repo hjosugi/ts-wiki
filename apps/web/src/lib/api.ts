@@ -453,6 +453,20 @@ export interface AdminPageList {
   limit: number
   offset: number
 }
+export interface AdminAuditEvent {
+  id: number
+  action: string
+  userId: string | null
+  path: string | null
+  data: Record<string, unknown>
+  createdAt: number
+}
+export interface AdminAuditList {
+  events: AdminAuditEvent[]
+  total: number
+  limit: number
+  offset: number
+}
 export interface AuthzGroupView {
   id: string
   key: string
@@ -567,6 +581,7 @@ interface AuthResult {
   token: string
   user: PublicUser
 }
+export type TotpEnableResult = ({ user: PublicUser } | AuthResult) & { recoveryCodes: string[] }
 export interface SetupResult extends AuthResult {
   settings: SiteSettings
   home: Page
@@ -629,7 +644,9 @@ export const Api = {
   totpSetup: (setupToken?: string) =>
     call<{ secret: string; otpauthUrl: string }>(client().api.auth.totp.setup.post(setupToken ? { setupToken } : undefined)),
   totpEnable: (code: string, setupToken?: string) =>
-    call<{ user: PublicUser } | AuthResult>(client().api.auth.totp.enable.post(setupToken ? { code, setupToken } : { code })),
+    call<TotpEnableResult>(client().api.auth.totp.enable.post(setupToken ? { code, setupToken } : { code })),
+  totpRecoveryCodes: (code: string) =>
+    call<{ recoveryCodes: string[] }>(client().api.auth.totp['recovery-codes'].post({ code })).then((d) => d.recoveryCodes),
   totpDisable: (code?: string) =>
     call<{ user: PublicUser }>(client().api.auth.totp.disable.post({ code })).then((d) => d.user),
   passkeys: () =>
@@ -890,6 +907,15 @@ export const Api = {
     authorId?: string
   } = {}) =>
     call<AdminPageList>(client().api.admin.pages.get({ query })),
+  adminAudit: (query: {
+    limit?: number
+    offset?: number
+    action?: string
+    userId?: string
+    from?: number
+    to?: number
+  } = {}) =>
+    call<AdminAuditList>(client().api.admin.audit.get({ query })),
   adminAnalytics: () => call<AnalyticsSummary>(client().api.admin.analytics.get()),
   adminUsers: () =>
     call<{ users: AdminUserView[] }>(client().api.admin.users.get()).then((d) => d.users),

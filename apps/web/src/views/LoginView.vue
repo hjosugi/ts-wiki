@@ -29,6 +29,7 @@ const mfaSetupToken = ref('')
 const mfaSecret = ref('')
 const mfaUrl = ref('')
 const mfaCode = ref('')
+const mfaRecoveryCodes = ref<string[]>([])
 
 const heading = computed(() => {
   if (mode.value === 'register') return t('createAccount')
@@ -51,7 +52,7 @@ const submitLabel = computed(() => {
   if (mode.value === 'register') return t('createAccount')
   if (mode.value === 'forgot') return t('sendResetLink')
   if (mode.value === 'reset') return t('resetPassword')
-  if (mode.value === 'mfa-setup') return t('enableTwoFactor')
+  if (mode.value === 'mfa-setup') return mfaRecoveryCodes.value.length ? t('continueToWiki') : t('enableTwoFactor')
   return t('signIn')
 })
 
@@ -59,6 +60,7 @@ const submitDisabled = computed(() => {
   if (busy.value) return true
   if (mode.value === 'forgot') return !email.value
   if (mode.value === 'reset') return !resetToken.value || !password.value
+  if (mode.value === 'mfa-setup' && mfaRecoveryCodes.value.length) return false
   if (mode.value === 'mfa-setup') return !mfaSetupToken.value || !mfaSecret.value || !mfaCode.value
   return !email.value || !password.value
 })
@@ -67,7 +69,14 @@ function switchMode(next: LoginMode): void {
   mode.value = next
   error.value = null
   notice.value = null
+  mfaRecoveryCodes.value = []
   busy.value = false
+}
+
+async function copyMfaRecoveryCodes(): Promise<void> {
+  if (!mfaRecoveryCodes.value.length) return
+  await navigator.clipboard?.writeText(mfaRecoveryCodes.value.join('\n'))
+  notice.value = t('copied')
 }
 
 async function submit(): Promise<void> {
@@ -90,10 +99,16 @@ async function submit(): Promise<void> {
       return
     }
     if (mode.value === 'mfa-setup') {
+      if (mfaRecoveryCodes.value.length) {
+        router.push('/')
+        return
+      }
       const result = await Api.totpEnable(mfaCode.value, mfaSetupToken.value)
       if ('token' in result) setToken(result.token)
       auth.user = result.user
-      router.push('/')
+      mfaRecoveryCodes.value = result.recoveryCodes
+      mfaCode.value = ''
+      busy.value = false
       return
     }
     if (mode.value === 'login') {
@@ -103,6 +118,7 @@ async function submit(): Promise<void> {
         const setup = await Api.totpSetup(result.setupToken)
         mfaSecret.value = setup.secret
         mfaUrl.value = setup.otpauthUrl
+        mfaRecoveryCodes.value = []
         mode.value = 'mfa-setup'
         password.value = ''
         busy.value = false
@@ -215,15 +231,27 @@ onMounted(async () => {
         v-if="mode === 'login'"
         v-model="totpCode"
         class="input"
-        inputmode="numeric"
-        :placeholder="t('twoFactorCodeIfEnabled')"
-        :aria-label="t('twoFactorCodeIfEnabled')"
+        inputmode="text"
+        :placeholder="t('twoFactorOrRecoveryCode')"
+        :aria-label="t('twoFactorOrRecoveryCode')"
         autocomplete="one-time-code"
       />
-      <div v-if="mode === 'mfa-setup'" class="space-y-2">
+      <div v-if="mode === 'mfa-setup' && !mfaRecoveryCodes.length" class="space-y-2">
         <input class="input font-mono text-sm" :value="mfaSecret" aria-label="Two-factor secret" readonly />
         <input class="input font-mono text-xs" :value="mfaUrl" aria-label="Two-factor setup URL" readonly />
         <input v-model="mfaCode" class="input" inputmode="numeric" :placeholder="t('twoFactorCodeIfEnabled')" :aria-label="t('twoFactorCodeIfEnabled')" autocomplete="one-time-code" />
+      </div>
+      <div v-if="mode === 'mfa-setup' && mfaRecoveryCodes.length" class="rounded-md border border-[var(--c-border)] bg-[var(--c-surface-muted)] p-3">
+        <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div class="font-medium">{{ t('backupCodes') }}</div>
+          <button class="btn-ghost py-1 text-xs" type="button" @click="copyMfaRecoveryCodes">{{ t('copyBackupCodes') }}</button>
+        </div>
+        <p class="mb-2 text-xs text-[var(--c-text-muted)]">{{ t('saveRecoveryCodes') }}</p>
+        <div class="grid grid-cols-1 gap-1">
+          <code v-for="recoveryCode in mfaRecoveryCodes" :key="recoveryCode" class="rounded bg-[var(--c-surface)] px-2 py-1 font-mono text-sm">
+            {{ recoveryCode }}
+          </code>
+        </div>
       </div>
       <p v-if="notice" class="text-sm text-emerald-600 dark:text-emerald-400">{{ notice }}</p>
       <p v-if="error" class="text-sm text-red-600">{{ error }}</p>

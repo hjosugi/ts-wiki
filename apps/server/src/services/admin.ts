@@ -3,7 +3,7 @@
  * `requirePermission(principal, 'admin:access')` (the same pure check from @ts-wiki/core), so the
  * HTTP layer stays a thin `unwrap(...)`.
  */
-import { and, eq, asc, desc, like, sql } from 'drizzle-orm'
+import { and, eq, asc, desc, gte, like, lte, sql, type SQL } from 'drizzle-orm'
 import {
   type Result,
   ok,
@@ -19,7 +19,7 @@ import {
   isPageStatus,
 } from '@ts-wiki/core'
 import type { DB } from '../db/client.ts'
-import { users, pages, pageRevisions } from '../db/schema.ts'
+import { auditLog, users, pages, pageRevisions } from '../db/schema.ts'
 import type { AuthzService } from './authz.ts'
 import { hashPassword } from './auth.ts'
 
@@ -85,11 +85,37 @@ export interface AdminPageList {
   readonly offset: number
 }
 
+export interface AdminAuditEvent {
+  readonly id: number
+  readonly action: string
+  readonly userId: string | null
+  readonly path: string | null
+  readonly data: Record<string, unknown>
+  readonly createdAt: number
+}
+
+export interface AdminAuditListInput {
+  readonly limit?: number
+  readonly offset?: number
+  readonly action?: string
+  readonly userId?: string
+  readonly from?: number
+  readonly to?: number
+}
+
+export interface AdminAuditList {
+  readonly events: AdminAuditEvent[]
+  readonly total: number
+  readonly limit: number
+  readonly offset: number
+}
+
 export interface AdminService {
   stats(principal: Principal | null): Result<AdminStats, AppError>
   historyStats(principal: Principal | null): Result<AdminHistoryStats, AppError>
   purgeHistory(principal: Principal | null, input: PurgeHistoryInput): Result<PurgeHistoryResult, AppError>
   listPages(principal: Principal | null, input?: AdminPageListInput): Result<AdminPageList, AppError>
+  listAudit(principal: Principal | null, input?: AdminAuditListInput): Result<AdminAuditList, AppError>
   listUsers(principal: Principal | null): Result<AdminUserView[], AppError>
   setUserRole(principal: Principal | null, userId: string, role: Role): Result<AdminUserView, AppError>
   setUserPassword(principal: Principal | null, userId: string, password: string): Promise<Result<AdminUserView, AppError>>
@@ -125,6 +151,15 @@ export const createAdminService = (db: DB, authz?: AuthzService): AdminService =
     tokenInvalidBefore: u.tokenInvalidBefore,
     createdAt: u.createdAt,
   })
+
+  const parseAuditData = (value: string): Record<string, unknown> => {
+    try {
+      const parsed = JSON.parse(value) as unknown
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
+    } catch {
+      return {}
+    }
+  }
 
   const activeAdminCount = (): number =>
     db
@@ -252,6 +287,45 @@ export const createAdminService = (db: DB, authz?: AuthzService): AdminService =
         .all()
       return ok({
         pages: rows.map((page) => ({ ...page, authorName: page.authorName ?? null })),
+        total,
+        limit,
+        offset,
+      })
+    },
+
+    listAudit(principal, input = {}) {
+      const allowed = requireAdmin(principal)
+      if (!allowed.ok) return allowed
+      const limit = Math.min(Math.max(Math.trunc(input.limit ?? 50), 1), 200)
+      const offset = Math.max(Math.trunc(input.offset ?? 0), 0)
+      const action = input.action?.trim()
+      const userId = input.userId?.trim()
+      const from = typeof input.from === 'number' && Number.isFinite(input.from) ? Math.trunc(input.from) : undefined
+      const to = typeof input.to === 'number' && Number.isFinite(input.to) ? Math.trunc(input.to) : undefined
+      const filters: SQL[] = [
+        ...(action ? [like(auditLog.action, `%${action}%`)] : []),
+        ...(userId ? [eq(auditLog.userId, userId)] : []),
+        ...(from !== undefined ? [gte(auditLog.createdAt, from)] : []),
+        ...(to !== undefined ? [lte(auditLog.createdAt, to)] : []),
+      ]
+      const where = filters.length ? and(...filters) : undefined
+      const totalQuery = db.select({ c: sql<number>`count(*)` }).from(auditLog)
+      const total = (where ? totalQuery.where(where) : totalQuery).get()?.c ?? 0
+      const rowsQuery = db.select().from(auditLog)
+      const rows = (where ? rowsQuery.where(where) : rowsQuery)
+        .orderBy(desc(auditLog.createdAt), desc(auditLog.id))
+        .limit(limit)
+        .offset(offset)
+        .all()
+      return ok({
+        events: rows.map((row) => ({
+          id: row.id,
+          action: row.action,
+          userId: row.userId,
+          path: row.path,
+          data: parseAuditData(row.data),
+          createdAt: row.createdAt,
+        })),
         total,
         limit,
         offset,

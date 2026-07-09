@@ -5,7 +5,7 @@ A practical guide for whoever picks this up next (human or AI). The user-facing 
 things are the way they are, what bit us, and exactly where to plug in the next features.
 
 - **As of:** 2026-07-10
-- **State:** v0.4.19 — a small but *complete and verified* vertical slice. Everything below marked ✅
+- **State:** v0.4.20 — a small but *complete and verified* vertical slice. Everything below marked ✅
   has been run and confirmed (tests + live HTTP + typed client + build + typecheck).
 - **Stack:** Bun 1.3 · Elysia · Drizzle ORM · SQLite/libSQL + FTS5 · Vue 3 · Vite ·
   UnoCSS · Pinia · CodeMirror 6 · Eden Treaty · SimpleWebAuthn (no codegen).
@@ -21,7 +21,7 @@ things are the way they are, what bit us, and exactly where to plug in the next 
 | DB schema + FTS5 migration | ✅ | SQLite default plus libSQL/Turso embedded-replica support |
 | Pages service (CRUD) | ✅ | transactional: render + revision + FTS index together |
 | Search service (FTS5/BM25) | ✅ | weighted columns, snippets, prefix queries |
-| Users + auth | ✅ | first-run `/setup`, local password, expiring/revocable JWT, generic auth-provider registry with OIDC implementation, TOTP, passkeys, private mode; first account fallback → admin |
+| Users + auth | ✅ | first-run `/setup`, local password, expiring/revocable JWT, generic auth-provider registry with OIDC implementation, TOTP with one-time recovery codes, passkeys, private mode; first account fallback → admin |
 | Groups + page rules | ✅ | role default groups, memberships, path ACL rules, deny precedence |
 | Assets upload | ✅ | local or R2 bytes, DB metadata, upload/picker UI, logo/favicon reuse |
 | Elysia HTTP app + Eden type | ✅ | exports `App`; error mapping centralised |
@@ -123,8 +123,9 @@ Cross-cutting principles (the "FP-leaning architecture" the user asked for):
    later is fine, but FTS5 will still need a manual migration step.
 9. **Backups are SQLite-first.** Use `.backup` for `data/ts-wiki.sqlite` and copy `data/assets/`.
    Git mirroring is a content mirror, not a full system backup.
-10. **Structured logs are stdout JSON.** Request logs cover method/path/status/duration/IP/user;
-   audit logs cover auth, page/admin mutations, asset uploads, Git sync, and collab autosave.
+10. **Structured logs are stdout JSON plus optional DB audit rows.** Request logs cover
+   method/path/status/duration/IP/user; audit logs cover auth, page/admin mutations, asset uploads,
+   Git sync, and collab autosave. `TS_WIKI_AUDIT_DB=false` keeps stdout-only mode.
 11. **Realtime auth split.** SSE and Yjs collab require tokens. Presence is cosmetic in public
    mode, but private wiki mode requires a valid token before opening the socket.
 12. **Custom head HTML is gated twice.** The server suppresses stored

@@ -10,6 +10,25 @@ export const verifyPassword = (password: string, hash: string): Promise<boolean>
   Bun.password.verify(password, hash)
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+const RECOVERY_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+export const normalizeRecoveryCode = (code: string): string =>
+  code.toUpperCase().replace(/[^A-Z0-9]/g, '')
+
+export const randomRecoveryCode = (): string => {
+  const bytes = randomBytes(12)
+  const chars = Array.from(bytes, (byte) => RECOVERY_CODE_ALPHABET[byte % RECOVERY_CODE_ALPHABET.length]!)
+  return `${chars.slice(0, 4).join('')}-${chars.slice(4, 8).join('')}-${chars.slice(8, 12).join('')}`
+}
+
+export const hashRecoveryCode = (code: string): Promise<string> =>
+  Bun.password.hash(normalizeRecoveryCode(code), { algorithm: 'bcrypt', cost: 10 })
+
+export const verifyRecoveryCode = (code: string, hash: string): Promise<boolean> => {
+  const normalized = normalizeRecoveryCode(code)
+  if (!/^[A-Z0-9]{8,32}$/.test(normalized)) return Promise.resolve(false)
+  return Bun.password.verify(normalized, hash)
+}
 
 export const randomBase32Secret = (bytes = 20): string => {
   const input = randomBytes(bytes)

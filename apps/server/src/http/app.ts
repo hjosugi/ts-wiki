@@ -22,6 +22,7 @@ import { createGitSyncHandlers, startGitSyncScheduler } from '../storage/git-syn
 import { isUserActive } from '../services/users.ts'
 import {
   audit,
+  createAuditLogger,
   consoleStructuredLogger,
   requestLog,
   type StructuredLogger,
@@ -107,12 +108,13 @@ const verifyTokenPrincipal = async (jwt: JwtVerifier, token: string | null | und
 export const createApp = ({
   db,
   env,
-  logger = consoleStructuredLogger,
+  logger: suppliedLogger = consoleStructuredLogger,
   assetStorage: suppliedAssetStorage,
   mailSender,
   webhookFetcher,
   webhookResolver,
 }: AppDeps) => {
+  const logger = createAuditLogger(db, suppliedLogger, env.audit)
   const assetStorage = suppliedAssetStorage ?? createAssetStorage(env.assetStorage)
   const services = createServices(db, {
     assetUrl: assetStorage.url,

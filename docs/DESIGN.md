@@ -178,7 +178,9 @@ and external Git commits import through normal page create/update/delete paths.
 
 Every HTTP request and write-side action emits structured JSON logs. Request logs
 record method, path, status, duration, IP, and user id when available. Audit logs
-record auth, page, admin, asset, Git sync, and collab autosave actions.
+record auth, page, admin, asset, Git sync, and collab autosave actions; by
+default those audit events are also retained in `audit_log` for Admin -> Audit,
+with `TS_WIKI_AUDIT_DB=false` available for stdout-only deployments.
 
 ## Backup Strategy
 

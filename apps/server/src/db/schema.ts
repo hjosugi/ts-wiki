@@ -92,6 +92,21 @@ export const passkeys = sqliteTable(
   (t) => [index('passkeys_user_idx').on(t.userId)],
 )
 
+export const totpRecoveryCodes = sqliteTable(
+  'totp_recovery_codes',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull(),
+    codeHash: text('code_hash').notNull(),
+    createdAt: integer('created_at').notNull(),
+    usedAt: integer('used_at'),
+  },
+  (t) => [
+    index('totp_recovery_codes_user_idx').on(t.userId),
+    index('totp_recovery_codes_used_idx').on(t.usedAt),
+  ],
+)
+
 export const webauthnChallenges = sqliteTable(
   'webauthn_challenges',
   {
@@ -429,6 +444,23 @@ export const automationRules = sqliteTable(
   ],
 )
 
+export const auditLog = sqliteTable(
+  'audit_log',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    action: text('action').notNull(),
+    userId: text('user_id'),
+    path: text('path'),
+    data: text('data').notNull().default('{}'),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [
+    index('audit_log_created_idx').on(t.createdAt),
+    index('audit_log_action_idx').on(t.action),
+    index('audit_log_user_idx').on(t.userId),
+  ],
+)
+
 export type User = typeof users.$inferSelect
 export type NewUser = typeof users.$inferInsert
 export type AuthAccount = typeof authAccounts.$inferSelect
@@ -436,6 +468,7 @@ export type OAuthState = typeof oauthStates.$inferSelect
 export type PasswordReset = typeof passwordResets.$inferSelect
 export type EmailVerification = typeof emailVerifications.$inferSelect
 export type Passkey = typeof passkeys.$inferSelect
+export type TotpRecoveryCode = typeof totpRecoveryCodes.$inferSelect
 export type WebauthnChallenge = typeof webauthnChallenges.$inferSelect
 export type ApiKey = typeof apiKeys.$inferSelect
 export type Group = typeof groups.$inferSelect
@@ -460,3 +493,4 @@ export type RealtimeTicket = typeof realtimeTickets.$inferSelect
 export type WebhookSubscription = typeof webhookSubscriptions.$inferSelect
 export type WebhookDelivery = typeof webhookDeliveries.$inferSelect
 export type AutomationRule = typeof automationRules.$inferSelect
+export type AuditLogRow = typeof auditLog.$inferSelect

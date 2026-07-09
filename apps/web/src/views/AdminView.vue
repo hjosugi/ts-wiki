@@ -13,6 +13,7 @@ const panels = [
   { id: 'pages', label: 'Pages', component: defineAsyncComponent(() => import('@/components/admin/AdminPagesPanel.vue')) },
   { id: 'templates', label: 'Templates', component: defineAsyncComponent(() => import('@/components/PageTemplatesPanel.vue')) },
   { id: 'history', label: 'History', component: defineAsyncComponent(() => import('@/components/admin/AdminHistoryPanel.vue')) },
+  { id: 'audit', label: 'Audit', component: defineAsyncComponent(() => import('@/components/admin/AdminAuditPanel.vue')) },
   { id: 'policy', label: 'Policy', component: defineAsyncComponent(() => import('@/components/admin/AdminPolicyPanel.vue')) },
   { id: 'security', label: 'Security', component: defineAsyncComponent(() => import('@/components/admin/AdminSecurityPanel.vue')) },
   { id: 'redirects', label: 'Redirects', component: defineAsyncComponent(() => import('@/components/admin/AdminRedirectsPanel.vue')) },

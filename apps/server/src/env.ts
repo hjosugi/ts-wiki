@@ -81,6 +81,12 @@ export interface WebhookEnv {
   readonly maxErrorBytes: number
 }
 
+export interface AuditEnv {
+  readonly persist: boolean
+  readonly retentionDays: number
+  readonly maxRows: number
+}
+
 export interface MailEnv {
   readonly smtpUrl: string | null
   readonly from: string
@@ -114,6 +120,7 @@ export interface Env {
   readonly search: SearchEnv
   readonly assetUpload: AssetUploadEnv
   readonly webhooks: WebhookEnv
+  readonly audit: AuditEnv
   readonly mail: MailEnv
   readonly branding: BrandingEnv
   readonly localization: LocalizationEnv
@@ -173,6 +180,11 @@ const parseAccentColor = (value: string | undefined): string | null => {
 
 const parseBoolean = (value: string | undefined): boolean =>
   value === 'true' || value === '1' || value === 'yes'
+
+const parseBooleanDefault = (value: string | undefined, fallback: boolean): boolean => {
+  if (value === undefined) return fallback
+  return parseBoolean(value)
+}
 
 const DEFAULT_WEBHOOK_BACKOFF_MS = [60_000, 120_000, 240_000, 480_000, 900_000] as const
 const DEFAULT_OIDC_SCOPES = ['openid', 'email', 'profile'] as const
@@ -528,6 +540,11 @@ export const loadEnv = (source: EnvSource = process.env): Env => {
       backoffMs: parsePositiveIntegerList(source.TS_WIKI_WEBHOOK_BACKOFF_MS, DEFAULT_WEBHOOK_BACKOFF_MS, 'TS_WIKI_WEBHOOK_BACKOFF_MS'),
       maxResponseBytes: parsePositiveInteger(source.TS_WIKI_WEBHOOK_MAX_RESPONSE_BYTES, 2000, 'TS_WIKI_WEBHOOK_MAX_RESPONSE_BYTES'),
       maxErrorBytes: parsePositiveInteger(source.TS_WIKI_WEBHOOK_MAX_ERROR_BYTES, 1000, 'TS_WIKI_WEBHOOK_MAX_ERROR_BYTES'),
+    },
+    audit: {
+      persist: parseBooleanDefault(source.TS_WIKI_AUDIT_DB, true),
+      retentionDays: parsePositiveInteger(source.TS_WIKI_AUDIT_RETENTION_DAYS, 90, 'TS_WIKI_AUDIT_RETENTION_DAYS'),
+      maxRows: parsePositiveInteger(source.TS_WIKI_AUDIT_MAX_ROWS, 10_000, 'TS_WIKI_AUDIT_MAX_ROWS'),
     },
     mail: loadMailEnv(source, auth.publicOrigin),
     branding: loadBrandingEnv(source),

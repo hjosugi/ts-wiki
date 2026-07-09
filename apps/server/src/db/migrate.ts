@@ -214,6 +214,16 @@ export const runMigrations = (sqlite: MigratableDatabase, options: MigrationOpti
     );
     CREATE INDEX IF NOT EXISTS passkeys_user_idx ON passkeys(user_id);
 
+    CREATE TABLE IF NOT EXISTS totp_recovery_codes (
+      id         TEXT PRIMARY KEY,
+      user_id    TEXT NOT NULL,
+      code_hash  TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      used_at    INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS totp_recovery_codes_user_idx ON totp_recovery_codes(user_id);
+    CREATE INDEX IF NOT EXISTS totp_recovery_codes_used_idx ON totp_recovery_codes(used_at);
+
     CREATE TABLE IF NOT EXISTS webauthn_challenges (
       challenge  TEXT PRIMARY KEY,
       user_id    TEXT,
@@ -485,6 +495,18 @@ export const runMigrations = (sqlite: MigratableDatabase, options: MigrationOpti
     CREATE INDEX IF NOT EXISTS automation_rules_enabled_idx ON automation_rules(enabled);
     CREATE INDEX IF NOT EXISTS automation_rules_type_idx ON automation_rules(type);
     CREATE INDEX IF NOT EXISTS automation_rules_order_idx ON automation_rules(enabled, priority, created_at);
+
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      action     TEXT NOT NULL,
+      user_id    TEXT,
+      path       TEXT,
+      data       TEXT NOT NULL DEFAULT '{}',
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS audit_log_created_idx ON audit_log(created_at);
+    CREATE INDEX IF NOT EXISTS audit_log_action_idx ON audit_log(action);
+    CREATE INDEX IF NOT EXISTS audit_log_user_idx ON audit_log(user_id);
   `)
 
   // Full-text search index. Columns: page_id (returned, not searched), then

@@ -58,6 +58,11 @@ const testEnv = (dataDir: string, cors: Env['cors'] = { origins: null }): Env =>
     maxResponseBytes: 2000,
     maxErrorBytes: 1000,
   },
+  audit: {
+    persist: true,
+    retentionDays: 90,
+    maxRows: 10_000,
+  },
   mail: {
     smtpUrl: null,
     from: 'ts-wiki <no-reply@localhost>',
@@ -601,7 +606,8 @@ describe('http app auth', () => {
   }, HTTP_TEST_TIMEOUT_MS)
 
   test('TOTP can be enabled and is then required at login', async () => {
-    const { app } = createFixture()
+    const { logger, events } = captureLogger()
+    const { app } = createFixture(undefined, { logger })
     const { token } = await register(app, 'admin@example.com')
 
     const setup = await app.handle(
@@ -619,7 +625,10 @@ describe('http app auth', () => {
       jsonRequest('/api/auth/totp/enable', { code }, token),
     )
     expect(enabled.status).toBe(200)
-    expect((await enabled.json()).user.totpEnabled).toBe(true)
+    const enabledBody = await enabled.json() as { user: { totpEnabled: boolean }; recoveryCodes: string[] }
+    expect(enabledBody.user.totpEnabled).toBe(true)
+    expect(enabledBody.recoveryCodes).toHaveLength(8)
+    expect(enabledBody.recoveryCodes[0]).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/)
 
     const missingCode = await app.handle(
       jsonRequest('/api/auth/login', { email: 'admin@example.com', password: 'password' }),
@@ -631,6 +640,30 @@ describe('http app auth', () => {
     )
     expect(loggedIn.status).toBe(200)
     expect((await loggedIn.json()).user.totpEnabled).toBe(true)
+
+    const recoveryLogin = await app.handle(
+      jsonRequest('/api/auth/login', {
+        email: 'admin@example.com',
+        password: 'password',
+        totpCode: enabledBody.recoveryCodes[0],
+      }),
+    )
+    expect(recoveryLogin.status).toBe(200)
+    expect(events).toContainEqual(expect.objectContaining({ type: 'audit', action: 'auth.totp.recovery_code.use' }))
+    const reusedRecoveryCode = await app.handle(
+      jsonRequest('/api/auth/login', {
+        email: 'admin@example.com',
+        password: 'password',
+        totpCode: enabledBody.recoveryCodes[0],
+      }),
+    )
+    expect(reusedRecoveryCode.status).toBe(401)
+
+    const regenerated = await app.handle(jsonRequest('/api/auth/totp/recovery-codes', { code }, token))
+    expect(regenerated.status).toBe(200)
+    const regeneratedBody = await regenerated.json() as { recoveryCodes: string[] }
+    expect(regeneratedBody.recoveryCodes).toHaveLength(8)
+    expect(regeneratedBody.recoveryCodes).not.toContain(enabledBody.recoveryCodes[1])
   }, HTTP_TEST_TIMEOUT_MS)
 
   test('required 2FA returns a setup-only token for accounts without a factor', async () => {
@@ -2557,6 +2590,44 @@ describe('http app structured logging', () => {
       expect.objectContaining({ type: 'audit', action: 'page.create', path: 'docs/logs' }),
     )
     expect(events).toContainEqual(expect.objectContaining({ type: 'request', method: 'POST', path: '/api/pages', status: 200 }))
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('persists audit events for the admin audit viewer', async () => {
+    const { app } = createFixture()
+    const { token } = await register(app, 'admin@example.com')
+
+    await createPage(app, token, 'docs/audit', 'hello')
+
+    const response = await app.handle(new Request('http://localhost/api/admin/audit?action=page.create', {
+      headers: { authorization: `Bearer ${token}` },
+    }))
+    expect(response.status).toBe(200)
+    const body = await response.json() as {
+      total: number
+      events: Array<{ action: string; userId: string | null; path: string | null; data: Record<string, unknown> }>
+    }
+    expect(body.total).toBeGreaterThanOrEqual(1)
+    expect(body.events).toContainEqual(expect.objectContaining({
+      action: 'page.create',
+      path: 'docs/audit',
+    }))
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('can disable audit DB persistence for minimal deployments', async () => {
+    const { app } = createFixture(undefined, {
+      env: (env) => ({ ...env, audit: { ...env.audit, persist: false } }),
+    })
+    const { token } = await register(app, 'admin@example.com')
+
+    await createPage(app, token, 'docs/audit-disabled', 'hello')
+
+    const response = await app.handle(new Request('http://localhost/api/admin/audit', {
+      headers: { authorization: `Bearer ${token}` },
+    }))
+    expect(response.status).toBe(200)
+    const body = await response.json() as { total: number; events: unknown[] }
+    expect(body.total).toBe(0)
+    expect(body.events).toEqual([])
   }, HTTP_TEST_TIMEOUT_MS)
 })
 
