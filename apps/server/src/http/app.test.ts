@@ -1465,6 +1465,11 @@ describe('http app authorization', () => {
     }))
     expect(directRead.status).toBe(403)
 
+    const deniedInsights = await app.handle(new Request('http://localhost/api/page/insights?path=secret/roadmap', {
+      headers: { authorization: `Bearer ${viewer.token}` },
+    }))
+    expect(deniedInsights.status).toBe(403)
+
     const viewerSearch = await app.handle(new Request('http://localhost/api/search?q=shared-acl-token&limit=10', {
       headers: { authorization: `Bearer ${viewer.token}` },
     }))
@@ -1643,6 +1648,7 @@ describe('http app settings', () => {
       siteTitle: 'ts-wiki',
       accentColor: '#7c3aed',
       homePath: 'home',
+      dailyNotesPath: 'journal',
       defaultLocale: 'und',
       timezone: 'UTC',
       dateFormat: 'medium',
@@ -1668,6 +1674,7 @@ describe('http app settings', () => {
           accentColor: '#2563eb',
           theme: 'system',
           homePath: '/docs/start',
+          dailyNotesPath: '/daily/notes',
           defaultLocale: 'ja-JP',
           timezone: 'Asia/Tokyo',
           dateFormat: 'long',
@@ -1705,6 +1712,7 @@ describe('http app settings', () => {
       siteTitle: 'Docs',
       accentColor: '#2563eb',
       homePath: 'docs/start',
+      dailyNotesPath: 'daily/notes',
       defaultLocale: 'ja-jp',
       timezone: 'Asia/Tokyo',
       dateFormat: 'long',
@@ -2694,6 +2702,21 @@ describe('http app page utilities', () => {
     const history = await app.handle(new Request('http://localhost/api/page/history?path=docs/target'))
     expect(history.status).toBe(200)
     expect((await history.json()).revisions.length).toBeGreaterThan(1)
+
+    const insights = await app.handle(new Request('http://localhost/api/page/insights?path=docs/target'))
+    expect(insights.status).toBe(200)
+    expect(await insights.json()).toMatchObject({
+      path: 'docs/target',
+      views: 1,
+      lastViewedAt: expect.any(Number),
+      revisionCount: 2,
+      contributors: [{
+        authorId: expect.any(String),
+        authorName: 'admin',
+        revisions: 2,
+        lastContributionAt: expect.any(Number),
+      }],
+    })
 
     const backlinks = await app.handle(new Request('http://localhost/api/page/backlinks?path=docs/target'))
     expect(backlinks.status).toBe(200)

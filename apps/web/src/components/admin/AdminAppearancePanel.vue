@@ -134,6 +134,7 @@ async function saveSettings(): Promise<void> {
       fontFamily: settings.value.fontFamily,
       background: settings.value.background,
       homePath: settings.value.homePath,
+      dailyNotesPath: settings.value.dailyNotesPath,
       defaultLocale: settings.value.defaultLocale,
       timezone: settings.value.timezone,
       dateFormat: settings.value.dateFormat,
@@ -270,10 +271,16 @@ onMounted(load)
           </label>
         </div>
       </div>
-      <label class="block space-y-1 text-sm">
-        <span class="font-medium">Home page path</span>
-        <input v-model="settings.homePath" class="input font-mono text-sm" placeholder="home" />
-      </label>
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label class="space-y-1 text-sm">
+          <span class="font-medium">Home page path</span>
+          <input v-model="settings.homePath" class="input font-mono text-sm" placeholder="home" />
+        </label>
+        <label class="space-y-1 text-sm">
+          <span class="font-medium">Daily notes path</span>
+          <input v-model="settings.dailyNotesPath" class="input font-mono text-sm" placeholder="journal" />
+        </label>
+      </div>
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <label class="space-y-1 text-sm">
           <span class="font-medium">Default locale</span>

@@ -63,6 +63,7 @@ const saving = ref(false)
 const error = ref<string | null>(null)
 const conflictDraft = ref<DraftSnapshot | null>(null)
 const selectedTemplate = ref('builtin:blank')
+let skipNextTemplateWatch = false
 const editorMode = ref<'markdown' | 'visual'>('markdown')
 const editorModeLoaded = ref(false)
 const collabDisabledForSession = ref(false)
@@ -275,6 +276,10 @@ function seedCreatePathFromRoute(): void {
   advancedPathOpen.value = true
 }
 
+function queryString(value: unknown): string {
+  return Array.isArray(value) ? String(value[0] ?? '') : String(value ?? '')
+}
+
 function templatePreviewHtml(template: PageTemplateOption): string {
   return markdownRenderer.value.renderMarkdown(template.content).html
 }
@@ -292,6 +297,26 @@ function applyTemplate(key: string): void {
   reviewAtDate.value = dateInputValue(template.metadata.reviewAt ?? null)
   locale.value = template.metadata.locale ?? defaultLocale.value
   content.value = template.content
+}
+
+function selectTemplate(key: string): void {
+  if (selectedTemplate.value !== key) {
+    skipNextTemplateWatch = true
+    selectedTemplate.value = key
+  }
+  applyTemplate(key)
+}
+
+function applyCreateQueryOverrides(): void {
+  const requestedTemplate = queryString(route.query.template).trim()
+  if (requestedTemplate && templateOptions.value.some((item) => item.key === requestedTemplate)) {
+    selectTemplate(requestedTemplate)
+  }
+  const requestedTitle = queryString(route.query.title).trim().slice(0, 160)
+  if (requestedTitle) {
+    title.value = requestedTitle
+    content.value = content.value.replace(/^# .*(\r?\n|$)/, `# ${requestedTitle}\n`)
+  }
 }
 
 async function loadTemplates(): Promise<void> {
@@ -424,11 +449,16 @@ onMounted(async () => {
     attachments.value = []
     attachmentsLoaded.value = false
     seedCreatePathFromRoute()
+    applyCreateQueryOverrides()
     markSaved()
   }
 })
 
 watch(selectedTemplate, (key, previous) => {
+  if (skipNextTemplateWatch) {
+    skipNextTemplateWatch = false
+    return
+  }
   if (!isEdit.value && key !== previous) applyTemplate(key)
 })
 
@@ -676,7 +706,7 @@ async function archive(): Promise<void> {
             class="min-h-56 rounded-md border p-3 text-left transition-colors"
             :class="selectedTemplate === template.key ? 'border-[var(--c-accent)] bg-[var(--c-surface-muted)]' : 'border-[var(--c-border)] bg-[var(--c-surface)] hover:bg-[var(--c-surface-muted)]'"
             type="button"
-            @click="selectedTemplate = template.key; applyTemplate(template.key)"
+            @click="selectTemplate(template.key)"
           >
             <span class="mb-2 flex items-start justify-between gap-3">
               <span>

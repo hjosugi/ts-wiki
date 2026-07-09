@@ -40,6 +40,7 @@ const isSettingKey = (value: string): value is SiteSettingKey =>
   SITE_SETTING_KEYS.includes(value as SiteSettingKey)
 
 const cleanHomePath = (value: string): string => normalizePath(value) || 'home'
+const cleanDailyNotesPath = (value: string): string => normalizePath(value) || 'journal'
 
 const LOCALE_PATTERN = /^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8}){0,3}$/
 
@@ -148,6 +149,7 @@ const parseStoredValue = (key: SiteSettingKey, value: string): unknown => {
     }
   }
   if (key === 'homePath') return cleanHomePath(value)
+  if (key === 'dailyNotesPath') return cleanDailyNotesPath(value)
   if (key === 'defaultLocale') return normalizeLocale(value)
   if (key === 'timezone') return cleanTimezone(value)
   if (key === 'dateFormat') return cleanDateFormat(value)
@@ -237,6 +239,7 @@ const validatePatch = (
     assetMaxBytes,
     defaultEditorMode,
     homePath: patch.homePath === undefined ? current.homePath : cleanHomePath(patch.homePath),
+    dailyNotesPath: patch.dailyNotesPath === undefined ? current.dailyNotesPath : cleanDailyNotesPath(patch.dailyNotesPath),
     defaultLocale: normalizeLocale(defaultLocale),
     timezone,
     dateFormat: patch.dateFormat === undefined ? current.dateFormat : cleanDateFormat(patch.dateFormat),
@@ -283,6 +286,7 @@ export const createSettingsService = (db: DB, options: SettingsServiceOptions = 
       { key: 'assetMaxBytes', value: String(settings.assetMaxBytes), updatedAt: now },
       { key: 'defaultEditorMode', value: settings.defaultEditorMode, updatedAt: now },
       { key: 'homePath', value: settings.homePath, updatedAt: now },
+      { key: 'dailyNotesPath', value: settings.dailyNotesPath, updatedAt: now },
       { key: 'defaultLocale', value: settings.defaultLocale, updatedAt: now },
       { key: 'timezone', value: settings.timezone, updatedAt: now },
       { key: 'dateFormat', value: settings.dateFormat, updatedAt: now },

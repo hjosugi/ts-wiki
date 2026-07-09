@@ -48,6 +48,7 @@ export interface SiteSettings {
   readonly assetMaxBytes: number
   readonly defaultEditorMode: EditorMode
   readonly homePath: string
+  readonly dailyNotesPath: string
   readonly defaultLocale: string
   readonly timezone: string
   readonly dateFormat: DateFormatStyle
@@ -83,6 +84,7 @@ export interface SettingsPatch {
   readonly assetMaxBytes?: number
   readonly defaultEditorMode?: EditorMode
   readonly homePath?: string
+  readonly dailyNotesPath?: string
   readonly defaultLocale?: string
   readonly timezone?: string
   readonly dateFormat?: DateFormatStyle
@@ -123,6 +125,7 @@ export const SITE_SETTING_KEYS = [
   'assetMaxBytes',
   'defaultEditorMode',
   'homePath',
+  'dailyNotesPath',
   'defaultLocale',
   'timezone',
   'dateFormat',
@@ -161,6 +164,7 @@ export const defaultSiteSettings = (): SiteSettings => ({
   assetMaxBytes: 25 * 1024 * 1024,
   defaultEditorMode: 'visual',
   homePath: 'home',
+  dailyNotesPath: 'journal',
   defaultLocale: 'und',
   timezone: 'UTC',
   dateFormat: 'medium',

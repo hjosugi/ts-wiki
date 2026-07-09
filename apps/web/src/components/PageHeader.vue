@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Api, type Page, type PageShareView } from '@/lib/api'
+import { Api, type Page, type PageInsight, type PageShareView } from '@/lib/api'
 import WikiBreadcrumbs from '@/components/WikiBreadcrumbs.vue'
 import { useI18n } from '@/lib/i18n'
 
@@ -15,6 +15,10 @@ const share = ref<PageShareView | null>(null)
 const shareBusy = ref(false)
 const shareMessage = ref<string | null>(null)
 const shareError = ref<string | null>(null)
+const insightsOpen = ref(false)
+const insightsLoading = ref(false)
+const insightsError = ref<string | null>(null)
+const insights = ref<PageInsight | null>(null)
 const { formatDate, formatDateTime, t } = useI18n()
 
 const updated = computed(() =>
@@ -46,6 +50,29 @@ const reviewDate = computed(() =>
 const shareUrl = computed(() =>
   share.value ? `${window.location.origin}/_share/${encodeURIComponent(share.value.token)}` : '',
 )
+const plainText = computed(() =>
+  props.page.content
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`[^`]*`/g, ' ')
+    .replace(/!\[[^\]]*]\([^)]*\)/g, ' ')
+    .replace(/\[[^\]]*]\([^)]*\)/g, ' ')
+    .replace(/[#>*_~|[\]()-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim(),
+)
+const readingStats = computed(() => {
+  const text = plainText.value
+  const cjkChars = text.match(/[\u3040-\u30ff\u3400-\u9fff]/g)?.length ?? 0
+  const latinWords = text
+    .replace(/[\u3040-\u30ff\u3400-\u9fff]/g, ' ')
+    .match(/[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*/g)?.length ?? 0
+  const wordLikeCount = latinWords + cjkChars
+  const readingUnits = latinWords + Math.ceil(cjkChars / 2)
+  return {
+    words: wordLikeCount,
+    minutes: Math.max(1, Math.ceil(readingUnits / 220)),
+  }
+})
 
 async function loadShare(): Promise<void> {
   if (!props.canEdit) {
@@ -57,6 +84,23 @@ async function loadShare(): Promise<void> {
   } catch {
     share.value = null
   }
+}
+
+async function loadInsights(): Promise<void> {
+  insightsLoading.value = true
+  insightsError.value = null
+  try {
+    insights.value = await Api.pageInsights(props.page.path)
+  } catch (e) {
+    insightsError.value = (e as Error).message
+  } finally {
+    insightsLoading.value = false
+  }
+}
+
+async function toggleInsights(): Promise<void> {
+  insightsOpen.value = !insightsOpen.value
+  if (insightsOpen.value && !insights.value && !insightsLoading.value) await loadInsights()
 }
 
 async function copyPath(): Promise<void> {
@@ -107,6 +151,9 @@ async function revokeShareLink(): Promise<void> {
 watch(() => [props.page.path, props.canEdit] as const, () => {
   shareMessage.value = null
   shareError.value = null
+  insightsOpen.value = false
+  insights.value = null
+  insightsError.value = null
   void loadShare()
 }, { immediate: true })
 </script>
@@ -155,6 +202,15 @@ watch(() => [props.page.path, props.canEdit] as const, () => {
             {{ copied ? t('copied') : t('copyPath') }}
           </button>
           <button
+            class="btn-ghost"
+            type="button"
+            :aria-expanded="insightsOpen"
+            aria-controls="page-insights"
+            @click="toggleInsights"
+          >
+            Insights
+          </button>
+          <button
             v-if="canEdit"
             class="btn-ghost"
             type="button"
@@ -186,6 +242,49 @@ watch(() => [props.page.path, props.canEdit] as const, () => {
         </div>
         <p v-if="shareError" class="text-right text-xs text-red-600">{{ shareError }}</p>
         <p v-else-if="shareMessage" class="text-right text-xs text-gray-500">{{ shareMessage }}</p>
+        <div
+          v-if="insightsOpen"
+          id="page-insights"
+          class="ml-auto max-w-md rounded-md border border-[var(--c-border)] bg-[var(--c-surface)] p-3 text-sm shadow-sm"
+        >
+          <p v-if="insightsError" class="text-red-600">{{ insightsError }}</p>
+          <p v-else-if="insightsLoading" class="text-[var(--c-text-muted)]">Loading insights...</p>
+          <div v-else class="grid gap-3">
+            <div class="grid grid-cols-3 gap-2 text-center">
+              <div class="rounded-md bg-[var(--c-surface-muted)] px-2 py-2">
+                <span class="block text-lg font-semibold">{{ insights?.views ?? 0 }}</span>
+                <span class="text-xs text-[var(--c-text-muted)]">Views</span>
+              </div>
+              <div class="rounded-md bg-[var(--c-surface-muted)] px-2 py-2">
+                <span class="block text-lg font-semibold">{{ readingStats.minutes }}m</span>
+                <span class="text-xs text-[var(--c-text-muted)]">{{ readingStats.words }} words</span>
+              </div>
+              <div class="rounded-md bg-[var(--c-surface-muted)] px-2 py-2">
+                <span class="block text-lg font-semibold">{{ insights?.revisionCount ?? 0 }}</span>
+                <span class="text-xs text-[var(--c-text-muted)]">Revisions</span>
+              </div>
+            </div>
+            <p v-if="insights?.lastViewedAt" class="text-xs text-[var(--c-text-muted)]">
+              Last viewed {{ formatDateTime(insights.lastViewedAt) }}
+            </p>
+            <div>
+              <h2 class="mb-1 text-xs font-semibold uppercase text-[var(--c-text-muted)]">Contributors</h2>
+              <ul v-if="insights?.contributors.length" class="space-y-1">
+                <li
+                  v-for="contributor in insights.contributors"
+                  :key="contributor.authorId ?? 'unknown'"
+                  class="flex items-center justify-between gap-3"
+                >
+                  <span class="min-w-0 truncate">{{ contributor.authorName }}</span>
+                  <span class="shrink-0 text-xs text-[var(--c-text-muted)]">
+                    {{ contributor.revisions }} revs · {{ formatDate(contributor.lastContributionAt) }}
+                  </span>
+                </li>
+              </ul>
+              <p v-else class="text-xs text-[var(--c-text-muted)]">No revisions yet.</p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </header>

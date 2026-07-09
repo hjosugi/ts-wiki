@@ -156,6 +156,7 @@ export const createAdminRoutes = ({
           assetMaxBytes: t.Optional(t.Numeric()),
           defaultEditorMode: t.Optional(t.Union([t.Literal('markdown'), t.Literal('visual')])),
           homePath: t.Optional(t.String()),
+          dailyNotesPath: t.Optional(t.String()),
           defaultLocale: t.Optional(t.String()),
           timezone: t.Optional(t.String()),
           dateFormat: t.Optional(t.Union([t.Literal('short'), t.Literal('medium'), t.Literal('long')])),

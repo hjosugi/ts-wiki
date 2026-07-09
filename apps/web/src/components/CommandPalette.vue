@@ -5,6 +5,7 @@ import { normalizePath } from '@ts-wiki/core'
 import { useAuth } from '@/stores/auth'
 import { usePages } from '@/stores/pages'
 import { useListNavigation, useSearch } from '@/composables/useSearch'
+import { Api } from '@/lib/api'
 import ModalDialog from '@/components/ModalDialog.vue'
 
 interface CommandItem {
@@ -21,6 +22,9 @@ const pages = usePages()
 const open = ref(false)
 const input = ref<HTMLInputElement | null>(null)
 const search = useSearch({ limit: 8, debounceMs: 120, scope: 'title' })
+const dailyNotesPath = ref('journal')
+const dailyNotesTimeZone = ref(browserTimeZone())
+const commandSettingsLoaded = ref(false)
 
 const localPages = computed(() => {
   const needle = search.q.value.trim().toLowerCase()
@@ -30,6 +34,42 @@ const localPages = computed(() => {
     .slice(0, 8)
 })
 const pageByPath = computed(() => new Map(pages.list.map((page) => [page.path, page])))
+const todayIso = computed(() => isoDateInTimeZone(dailyNotesTimeZone.value))
+const todayNotePath = computed(() => normalizePath(`${dailyNotesPath.value}/${todayIso.value}`) || `journal/${todayIso.value}`)
+const todayNoteTitle = computed(() => `Daily note ${todayIso.value}`)
+
+function browserTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  } catch {
+    return 'UTC'
+  }
+}
+
+function isoDateInTimeZone(timeZone: string): string {
+  const parts = new Intl.DateTimeFormat('en', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+  const value = (type: string): string => parts.find((part) => part.type === type)?.value ?? '01'
+  return `${value('year')}-${value('month')}-${value('day')}`
+}
+
+async function loadCommandSettings(): Promise<void> {
+  if (commandSettingsLoaded.value) return
+  try {
+    const settings = await Api.publicSettings()
+    dailyNotesPath.value = normalizePath(settings.dailyNotesPath) || 'journal'
+    dailyNotesTimeZone.value = settings.timezone || browserTimeZone()
+  } catch {
+    dailyNotesPath.value = 'journal'
+    dailyNotesTimeZone.value = browserTimeZone()
+  } finally {
+    commandSettingsLoaded.value = true
+  }
+}
 
 const items = computed<CommandItem[]>(() => {
   const out: CommandItem[] = []
@@ -56,6 +96,27 @@ const items = computed<CommandItem[]>(() => {
       label: `Create "${normalized}"`,
       detail: 'New page',
       run: () => router.push({ name: 'new', query: { path: normalized } }),
+    })
+  }
+
+  const todayPage = pageByPath.value.get(todayNotePath.value)
+  if (todayPage || auth.canEdit) {
+    out.push({
+      key: 'today-note',
+      icon: todayPage?.icon || '🗓️',
+      label: "Today's note",
+      detail: todayPage ? `/${todayPage.path}` : `Create /${todayNotePath.value}`,
+      run: () => {
+        if (todayPage) router.push('/' + todayPage.path)
+        else router.push({
+          name: 'new',
+          query: {
+            path: todayNotePath.value,
+            template: 'builtin:journal',
+            title: todayNoteTitle.value,
+          },
+        })
+      },
     })
   }
 
@@ -109,7 +170,10 @@ const items = computed<CommandItem[]>(() => {
 async function openPalette(): Promise<void> {
   open.value = true
   navigation.reset()
-  if (!pages.list.length) await pages.refresh()
+  await Promise.all([
+    pages.list.length ? Promise.resolve() : pages.refresh(),
+    loadCommandSettings(),
+  ])
   await nextTick()
   input.value?.focus()
   input.value?.select()

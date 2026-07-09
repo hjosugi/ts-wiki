@@ -197,6 +197,18 @@ export const createPageRoutes = ({
       { query: t.Object({ path: t.String() }) },
     )
     .get(
+      '/api/page/insights',
+      ({ query, services, principal }) => {
+        requirePageRead(principal, query.path)
+        const page = unwrap(services.pages.getByPath(query.path))
+        return {
+          ...services.analytics.page(page.path),
+          ...unwrap(services.pages.revisionInsights(page.path)),
+        }
+      },
+      { query: t.Object({ path: t.String() }) },
+    )
+    .get(
       '/api/page/share',
       ({ query, services, principal }) => ({
         share: unwrap(services.shares.activeForPath(query.path, principal)),

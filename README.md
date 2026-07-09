@@ -3,7 +3,7 @@
 A **modern, lean, FP-leaning** open-source wiki — a deliberate, *finishable* reaction to Wiki.js.
 Bun + Elysia + Drizzle (SQLite/FTS5) server, Vue 3 front end, end-to-end type safety with **zero codegen**.
 
-> **Status: v0.4.17** — a small, complete, runnable wiki: first-run `/setup`,
+> **Status: v0.4.18** — a small, complete, runnable wiki: first-run `/setup`,
 > Markdown pages with visual editing,
 > FTS search, local/OIDC/TOTP/passkey auth, private-wiki mode, groups/page rules,
 > R2 assets, libSQL/Turso support, webhooks plus event automation, persisted page
@@ -15,7 +15,7 @@ Bun + Elysia + Drizzle (SQLite/FTS5) server, Vue 3 front end, end-to-end type sa
 > decorated public profiles, privacy-friendly YouTube/Twitch embeds,
 > OG/oEmbed link cards, YouTube RSS latest-video widgets, VTuber templates,
 > theme presets/backgrounds/fonts, page icons/covers, landing-page widgets, and
-> a typed API.
+> page insights, daily notes, product-direction RFCs, and a typed API.
 
 ## Quick start
 
@@ -68,7 +68,12 @@ page metadata, move pages under a path, or fire custom webhook event types.
 Editors can manage reusable page templates from `/_templates`; admins see the
 same manager on the Admin page. `_new` combines built-in starters with custom
 templates, and the meeting-notes starter uses the browser timezone instead of a
-hardcoded default.
+hardcoded default. The command palette includes a daily-note shortcut that opens
+or creates `dailyNotesPath/YYYY-MM-DD`; admins can configure the base path from
+**Admin -> Appearance**.
+
+Product direction notes live in `docs/KAWAII_WIKI_DESIGN_RFC.md`,
+`docs/INLINE_COMMENTS_RFC.md`, and `docs/LIVE_PREVIEW_EDITOR_SPIKE.md`.
 
 Navigation is configurable from **Admin → Appearance**: admins can choose the
 home page path, reorder/hide built-in header items, and add icon or grouped
@@ -108,14 +113,14 @@ persistent volume, or Render Free backed by Turso/libSQL and R2. SQLite under
 Tagged releases publish a Docker image to GHCR:
 
 ```bash
-docker pull ghcr.io/hjosugi/ts-wiki:v0.4.17
+docker pull ghcr.io/hjosugi/ts-wiki:v0.4.18
 docker volume create ts-wiki-data
 export JWT_SECRET="$(openssl rand -hex 32)"
 docker run -d --name ts-wiki --restart unless-stopped \
   -p 4000:4000 -v ts-wiki-data:/data \
   -e NODE_ENV=production \
   -e JWT_SECRET="$JWT_SECRET" \
-  ghcr.io/hjosugi/ts-wiki:v0.4.17
+  ghcr.io/hjosugi/ts-wiki:v0.4.18
 ```
 
 Put Caddy, nginx, or a free Cloudflare Tunnel in front of port `4000` for TLS

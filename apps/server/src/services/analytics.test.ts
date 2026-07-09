@@ -13,6 +13,7 @@ describe('analytics service', () => {
     expect(analytics.recordPageView('docs/a', viewer).ok).toBe(true)
     expect(analytics.recordPageView('docs/a', viewer).ok).toBe(true)
     expect(analytics.recordPageView('docs/b', viewer).ok).toBe(true)
+    expect(analytics.page('docs/missing')).toEqual({ path: 'docs/missing', views: 0, lastViewedAt: null })
 
     const forbidden = analytics.summary(viewer)
     expect(forbidden.ok).toBe(false)

@@ -276,6 +276,24 @@ description:
     builtIn: true,
   },
   {
+    key: 'builtin:journal',
+    label: 'Daily note',
+    description: 'Journal entry with notes, decisions, and follow-ups.',
+    icon: 'Cal',
+    content: `# Daily note
+
+## Notes
+
+## Decisions
+
+## Follow-ups
+
+## Links
+`,
+    metadata: { title: 'Daily note', labels: ['journal'] },
+    builtIn: true,
+  },
+  {
     key: 'builtin:spec',
     label: 'Spec',
     description: '',

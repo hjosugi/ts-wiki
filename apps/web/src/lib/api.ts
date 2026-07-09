@@ -318,6 +318,19 @@ export interface PopularPage extends PageSummary {
   views: number
   lastViewedAt: number | null
 }
+export interface PageInsightContributor {
+  authorId: string | null
+  authorName: string
+  revisions: number
+  lastContributionAt: number
+}
+export interface PageInsight {
+  path: string
+  views: number
+  lastViewedAt: number | null
+  revisionCount: number
+  contributors: PageInsightContributor[]
+}
 export interface PageRedirectView {
   fromPath: string
   toPath: string
@@ -708,6 +721,8 @@ export const Api = {
     call<{ pages: PopularPage[] }>(
       client().api.pages.popular.get({ query: { ...(days ? { days } : {}), ...(limit ? { limit } : {}) } }),
     ).then((d) => d.pages),
+  pageInsights: (path: string) =>
+    call<PageInsight>(client().api.page.insights.get({ query: { path } })),
   redirects: () =>
     call<{ redirects: PageRedirectView[] }>(client().api.redirects.get()).then((d) => d.redirects),
   createRedirect: (fromPath: string, toPath: string) =>

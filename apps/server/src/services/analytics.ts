@@ -1,4 +1,4 @@
-import { desc, gte, sql } from 'drizzle-orm'
+import { desc, eq, gte, sql } from 'drizzle-orm'
 import { type AppError, type Principal, type Result, ok, requirePermission } from '@ts-wiki/core'
 import type { DB } from '../db/client.ts'
 import { pageAnalytics } from '../db/schema.ts'
@@ -16,6 +16,7 @@ export interface AnalyticsSummary {
 
 export interface AnalyticsService {
   recordPageView(path: string, principal: Principal | null): Result<void, AppError>
+  page(path: string): PageInsight
   summary(principal: Principal | null, limit?: number): Result<AnalyticsSummary, AppError>
   popular(days?: number, limit?: number): PageInsight[]
 }
@@ -35,6 +36,17 @@ export const createAnalyticsService = (db: DB): AnalyticsService => {
       if (!allowed.ok) return allowed
       upsert.run(path, Date.now())
       return ok(undefined)
+    },
+    page(path) {
+      return db
+        .select({
+          path: pageAnalytics.path,
+          views: pageAnalytics.views,
+          lastViewedAt: pageAnalytics.lastViewedAt,
+        })
+        .from(pageAnalytics)
+        .where(eq(pageAnalytics.path, path))
+        .get() ?? { path, views: 0, lastViewedAt: null }
     },
     summary(principal, limit = 10) {
       const allowed = requirePermission(principal, 'admin:access')

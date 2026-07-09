@@ -319,6 +319,7 @@ export const createApp = ({
   const privateAnonymousReadPaths = new Set([
     '/api/pages',
     '/api/page',
+    '/api/page/insights',
     '/api/search',
     '/api/spaces',
     '/api/graph',

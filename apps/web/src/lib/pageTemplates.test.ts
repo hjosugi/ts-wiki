@@ -13,6 +13,19 @@ describe('built-in page templates', () => {
     expect(new Set(keys).size).toBe(keys.length)
   })
 
+  test('includes a daily note template for journal shortcuts', () => {
+    const journal = builtInPageTemplates('Asia/Tokyo').find((template) => template.key === 'builtin:journal')
+    expect(journal).toMatchObject({
+      label: 'Daily note',
+      builtIn: true,
+      metadata: {
+        title: 'Daily note',
+        labels: ['journal'],
+      },
+    })
+    expect(journal?.content).toContain('## Follow-ups')
+  })
+
   test('includes the VTuber wiki starter templates with useful metadata', () => {
     const templates = builtInPageTemplates('Asia/Tokyo')
     const expected = [

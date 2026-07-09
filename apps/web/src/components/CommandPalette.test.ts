@@ -4,10 +4,12 @@ import { createRouter, createMemoryHistory, type Router } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import CommandPalette from './CommandPalette.vue'
 import type { PageSummary, SearchHit } from '@/lib/api'
+import { useAuth } from '@/stores/auth'
 
 const api = vi.hoisted(() => ({
   search: vi.fn(),
   listPages: vi.fn(),
+  publicSettings: vi.fn(),
 }))
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -52,6 +54,7 @@ const makeRouter = async (): Promise<Router> => {
     history: createMemoryHistory(),
     routes: [
       { path: '/', component: { template: '<div />' } },
+      { path: '/_new', name: 'new', component: { template: '<div />' } },
       { path: '/:path(.*)*', component: { template: '<div />' } },
     ],
   })
@@ -86,6 +89,8 @@ describe('CommandPalette', () => {
     installStorage()
     api.search.mockReset()
     api.listPages.mockResolvedValue([page('docs/local', 'Local page')])
+    api.publicSettings.mockReset()
+    api.publicSettings.mockResolvedValue({ dailyNotesPath: 'journal', timezone: 'UTC' })
   })
 
   afterEach(() => {
@@ -95,10 +100,10 @@ describe('CommandPalette', () => {
     vi.useRealTimers()
   })
 
-  const mountPalette = (router: Router): VueWrapper => {
+  const mountPalette = (router: Router, pinia = createPinia()): VueWrapper => {
     const wrapper = mount(CommandPalette, {
       attachTo: document.body,
-      global: { plugins: [createPinia(), router] },
+      global: { plugins: [pinia, router] },
     })
     wrappers.push(wrapper)
     return wrapper
@@ -157,5 +162,43 @@ describe('CommandPalette', () => {
     await settle()
 
     expect(router.currentRoute.value.path).toBe('/docs/banana')
+  })
+
+  test('offers a daily note command that creates the configured journal page', async () => {
+    vi.setSystemTime(new Date('2026-07-10T03:00:00Z'))
+    api.publicSettings.mockResolvedValue({ dailyNotesPath: 'daily/notes', timezone: 'UTC' })
+    const router = await makeRouter()
+    const pinia = createPinia()
+    mountPalette(router, pinia)
+    const auth = useAuth(pinia)
+    auth.user = {
+      id: 'editor-1',
+      email: 'editor@example.com',
+      name: 'Editor',
+      role: 'editor',
+      totpEnabled: false,
+      profileBio: '',
+      profileCoverUrl: '',
+      profileLinks: [],
+      profileFavoritePages: [],
+    }
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
+    await settle()
+    expect(document.body.textContent).toContain("Today's note")
+    expect(document.body.textContent).toContain('Create /daily/notes/2026-07-10')
+
+    const button = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')]
+      .find((item) => item.textContent?.includes("Today's note"))
+    expect(button).not.toBeNull()
+    await new DOMWrapper(button!).trigger('click')
+    await settle()
+
+    expect(router.currentRoute.value.name).toBe('new')
+    expect(router.currentRoute.value.query).toMatchObject({
+      path: 'daily/notes/2026-07-10',
+      template: 'builtin:journal',
+      title: 'Daily note 2026-07-10',
+    })
   })
 })

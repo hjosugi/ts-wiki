@@ -144,6 +144,18 @@ export interface PageRevisionSummary {
   readonly createdAt: number
 }
 
+export interface PageInsightContributor {
+  readonly authorId: string | null
+  readonly authorName: string
+  readonly revisions: number
+  readonly lastContributionAt: number
+}
+
+export interface PageRevisionInsight {
+  readonly revisionCount: number
+  readonly contributors: PageInsightContributor[]
+}
+
 export interface ResolvedPage {
   readonly page: Page
   readonly redirectedFrom: readonly string[]
@@ -199,6 +211,7 @@ export interface PageService {
   deleteRedirect(fromPath: string, principal: Principal | null): Result<{ fromPath: string }, AppError>
   events(): ExtractedCalendarEvent[]
   history(path: string): Result<PageRevisionSummary[], AppError>
+  revisionInsights(path: string): Result<PageRevisionInsight, AppError>
   getByPath(path: string): Result<Page, AppError>
   resolveByPath(path: string): Result<ResolvedPage, AppError>
   create(input: PageInput, principal: Principal | null): Result<Page, AppError>
@@ -655,6 +668,39 @@ export const createPageService = (
         .orderBy(desc(pageRevisions.createdAt), sql`page_revisions.rowid desc`)
         .all()
       return ok(revisions.map((r) => ({ ...r, authorName: r.authorName ?? null })))
+    },
+
+    revisionInsights(path) {
+      const page = findByPath(path)
+      if (page?.lifecycle !== 'active') return err(notFound(`No page at "${path}"`))
+      const revisionCount = Number(
+        db
+          .select({ total: sql<number>`count(*)` })
+          .from(pageRevisions)
+          .where(eq(pageRevisions.pageId, page.id))
+          .get()?.total ?? 0,
+      )
+      const lastContributionAt = sql<number>`max(${pageRevisions.createdAt})`
+      const contributors = db
+        .select({
+          authorId: pageRevisions.authorId,
+          authorName: users.name,
+          revisions: sql<number>`count(*)`,
+          lastContributionAt,
+        })
+        .from(pageRevisions)
+        .leftJoin(users, eq(users.id, pageRevisions.authorId))
+        .where(eq(pageRevisions.pageId, page.id))
+        .groupBy(pageRevisions.authorId, users.name)
+        .orderBy(desc(lastContributionAt), asc(users.name))
+        .all()
+        .map((row) => ({
+          authorId: row.authorId,
+          authorName: row.authorName ?? (row.authorId ? 'Unknown user' : 'Unknown'),
+          revisions: Number(row.revisions),
+          lastContributionAt: Number(row.lastContributionAt),
+        }))
+      return ok({ revisionCount, contributors })
     },
 
     getByPath(path) {
