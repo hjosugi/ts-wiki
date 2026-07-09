@@ -5,7 +5,7 @@ A practical guide for whoever picks this up next (human or AI). The user-facing 
 things are the way they are, what bit us, and exactly where to plug in the next features.
 
 - **As of:** 2026-07-10
-- **State:** v0.4.18 — a small but *complete and verified* vertical slice. Everything below marked ✅
+- **State:** v0.4.19 — a small but *complete and verified* vertical slice. Everything below marked ✅
   has been run and confirmed (tests + live HTTP + typed client + build + typecheck).
 - **Stack:** Bun 1.3 · Elysia · Drizzle ORM · SQLite/libSQL + FTS5 · Vue 3 · Vite ·
   UnoCSS · Pinia · CodeMirror 6 · Eden Treaty · SimpleWebAuthn (no codegen).
@@ -263,6 +263,7 @@ packages/core/src/
   permissions.ts   Role, Action, can()                          (pure)
   markdown.ts      createRenderer(), registerFenceRenderer(), renderMarkdown() → {html, toc},
                    typed fences, extractPageLinks(), toPlainText
+  frontmatter.ts   Markdown file parse/serialize/path mapping helpers
   page.ts          validatePageInput()                          (pure)
   core.test.ts     unit tests for all of the above
 
@@ -293,14 +294,25 @@ apps/server/src/
 apps/web/src/
   lib/api.ts       Eden Treaty client + Api.* methods (the only place treaty is used)
   lib/branding.ts  applies runtime title/favicon/custom CSS/custom head HTML
+  lib/i18n.ts      EN/JA message catalog + date/time formatting settings
   lib/markdownEnhance.ts  code-copy, KaTeX CSS, Mermaid rendering, content-tab enhancement
   lib/pageTemplates.ts  built-in starter templates + persisted-template helpers
+  lib/realtime.ts  SSE/WebSocket client helpers
+  composables/     useSearch, useTheme, useMarkdownFeatures, usePresence, useForceGraph, reduced motion
   stores/          auth.ts, pages.ts (Pinia)
   router/index.ts  routes (/_login /_search /_graph /_new /_edit/:path /:path) + paramToPath()
   components/      AppHeader.vue, AppFooter.vue, MarkdownEditor.vue, InteractiveGraph.vue,
                    PageHeader.vue, PageTree.vue, PageTemplatesPanel.vue, WikiBreadcrumbs.vue,
-                   EmptyState.vue, PageToc.vue
-  views/           PageView.vue, PageEdit.vue, PageTemplatesView.vue, SearchView.vue, GraphView.vue, LoginView.vue
+                   PageComments.vue, PageToc.vue, CommandPalette.vue, VisualEditor.vue,
+                   CollabEditor.vue, AssetPicker.vue, ImageUploadDialog.vue, ModalDialog.vue,
+                   DrawerSheet.vue, EmptyState.vue, Skeleton.vue, ShortcutsHelp.vue
+  components/admin/ AdminStatsPanel, AdminPagesPanel, AdminAppearancePanel, AdminPolicyPanel,
+                   AdminSecurityPanel, AdminUsersPanel, AdminGroupsPanel, AdminPageRulesPanel,
+                   AdminWebhook*, AdminAutomationPanel, AdminAssetsPanel, AdminTrashPanel
+  views/           AdminView.vue, PageView.vue, PageEdit.vue, PageTemplatesView.vue,
+                   SearchView.vue, GraphView.vue, EventsView.vue, ChangesView.vue,
+                   LinksView.vue, TagsView.vue, LoginView.vue, SetupView.vue,
+                   SharedPageView.vue, UserProfileView.vue
   main.ts, App.vue, app.css, uno.config.ts, vite.config.ts
 
 docs/
@@ -308,6 +320,9 @@ docs/
   INLINE_COMMENTS_RFC.md      block/heading anchored comments decision
   LIVE_PREVIEW_EDITOR_SPIKE.md optional CodeMirror live-preview editor spike
 ```
+
+Keep this map fresh by checking `rg --files packages/core/src apps/server/src apps/web/src docs`
+when a release adds new top-level modules, major components, or docs.
 
 ---
 

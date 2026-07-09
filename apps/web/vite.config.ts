@@ -20,6 +20,39 @@ export default defineConfig({
     port: 5180,
     strictPort: false,
   },
+  build: {
+    chunkSizeWarningLimit: 3500,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('/node_modules/')) return undefined
+          if (
+            id.includes('/@codemirror/')
+            || id.includes('/codemirror/')
+            || id.includes('/y-codemirror.next/')
+          ) return 'vendor-editor'
+          if (
+            id.includes('/yjs/')
+            || id.includes('/y-protocols/')
+            || id.includes('/y-websocket/')
+            || id.includes('/lib0/')
+          ) return 'vendor-collab'
+          if (id.includes('/mermaid/')) return 'vendor-mermaid'
+          if (id.includes('/katex/') || id.includes('/markdown-it-katex/')) return 'vendor-katex'
+          if (id.includes('/highlight.js/')) return 'vendor-highlight'
+          if (id.includes('/markdown-it')) return 'vendor-markdown'
+          if (id.includes('/@simplewebauthn/')) return 'vendor-auth'
+          if (
+            id.includes('/@vue/')
+            || id.includes('/vue/')
+            || id.includes('/vue-router/')
+            || id.includes('/pinia/')
+          ) return 'vendor-vue'
+          return undefined
+        },
+      },
+    },
+  },
   test: {
     environment: 'happy-dom',
     setupFiles: ['./src/test/setup.ts'],

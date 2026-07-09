@@ -3,7 +3,6 @@ import { createPinia } from 'pinia'
 
 import 'uno.css'
 import '@unocss/reset/tailwind.css'
-import 'highlight.js/styles/github.css'
 import './app.css'
 
 import App from './App.vue'

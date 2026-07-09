@@ -14,7 +14,27 @@ import taskLists from 'markdown-it-task-lists'
 import imsize from 'markdown-it-imsize'
 import katexPlugin from 'markdown-it-katex'
 import { full as emojiPlugin } from 'markdown-it-emoji'
-import hljs from 'highlight.js'
+import hljs from 'highlight.js/lib/core'
+import bash from 'highlight.js/lib/languages/bash'
+import c from 'highlight.js/lib/languages/c'
+import cpp from 'highlight.js/lib/languages/cpp'
+import csharp from 'highlight.js/lib/languages/csharp'
+import css from 'highlight.js/lib/languages/css'
+import diff from 'highlight.js/lib/languages/diff'
+import dockerfile from 'highlight.js/lib/languages/dockerfile'
+import go from 'highlight.js/lib/languages/go'
+import java from 'highlight.js/lib/languages/java'
+import javascript from 'highlight.js/lib/languages/javascript'
+import json from 'highlight.js/lib/languages/json'
+import markdown from 'highlight.js/lib/languages/markdown'
+import python from 'highlight.js/lib/languages/python'
+import ruby from 'highlight.js/lib/languages/ruby'
+import rust from 'highlight.js/lib/languages/rust'
+import shell from 'highlight.js/lib/languages/shell'
+import sql from 'highlight.js/lib/languages/sql'
+import typescript from 'highlight.js/lib/languages/typescript'
+import xml from 'highlight.js/lib/languages/xml'
+import yaml from 'highlight.js/lib/languages/yaml'
 import { slugifyHeading } from './slug.ts'
 import { parseMarkdownFrontmatter } from './frontmatter.ts'
 
@@ -87,6 +107,33 @@ const escapeHtml = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
 const escapeAttr = (s: string): string => escapeHtml(s).replace(/'/g, '&#39;')
+
+const commonHighlightLanguages = {
+  bash,
+  c,
+  cpp,
+  csharp,
+  css,
+  diff,
+  dockerfile,
+  go,
+  java,
+  javascript,
+  json,
+  markdown,
+  python,
+  ruby,
+  rust,
+  shell,
+  sql,
+  typescript,
+  xml,
+  yaml,
+} as const
+
+for (const [name, language] of Object.entries(commonHighlightLanguages)) {
+  hljs.registerLanguage(name, language)
+}
 
 const EVENT_KEYS = new Set(['title', 'start', 'end', 'timezone', 'location', 'url', 'platform', 'channelurl', 'description'])
 const CALLOUT_KEYS = new Set(['type', 'title'])

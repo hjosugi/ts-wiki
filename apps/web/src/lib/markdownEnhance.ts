@@ -28,6 +28,7 @@ interface MermaidApi {
 }
 
 let mermaidPromise: Promise<MermaidApi> | null = null
+let highlightCssPromise: Promise<unknown> | null = null
 
 export const markdownFeaturesFromSettings = (settings: PublicSettings): MarkdownFeatureSettings => ({
   enableMath: settings.enableMath,
@@ -85,6 +86,11 @@ export const rendererForMarkdownFeatures = (settings: MarkdownFeatureSettings): 
 
 const ensureKatexCss = async (): Promise<void> => {
   await import('katex/dist/katex.min.css')
+}
+
+const ensureHighlightCss = async (): Promise<void> => {
+  highlightCssPromise ??= import('highlight.js/styles/github.css')
+  await highlightCssPromise
 }
 
 const loadMermaid = async (): Promise<MermaidApi> => {
@@ -426,6 +432,7 @@ export const enhanceRenderedMarkdown = (root: HTMLElement, settings: MarkdownFea
   enhancePageWidgets(root)
   enhanceRecentWidgets(root)
   enhancePopularWidgets(root)
+  if (root.querySelector('.hljs')) void ensureHighlightCss()
   if (settings.enableMath && root.querySelector('.katex')) void ensureKatexCss()
   if (settings.enableMermaid) void enhanceMermaid(root)
 }

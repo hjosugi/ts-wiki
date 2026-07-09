@@ -38,6 +38,7 @@ ts-wiki/
 │           ├── slug.ts        Unicode-safe path/heading slugs (keeps 日本語)
 │           ├── permissions.ts can(principal, action) — one authz table
 │           ├── markdown.ts    markdown-it pipeline → { html, toc }
+│           ├── frontmatter.ts Markdown file frontmatter parse/serialize helpers
 │           └── page.ts        pure input validation
 ├── apps/
 │   ├── server/            @ts-wiki/server — Bun + Elysia
@@ -49,9 +50,13 @@ ts-wiki/
 │   └── web/               @ts-wiki/web — Vue 3 + Vite + UnoCSS + Pinia
 │       └── src/
 │           ├── lib/api.ts     Eden Treaty client (typed from the server's App)
+│           ├── lib/           branding · i18n · markdownEnhance · pageTemplates · realtime
+│           ├── composables/   useSearch · useTheme · useMarkdownFeatures · usePresence · useForceGraph
 │           ├── stores/        auth · pages (Pinia)
-│           ├── components/    AppHeader · MarkdownEditor (CodeMirror) · PageToc
-│           └── views/         PageView · PageEdit · SearchView · LoginView
+│           ├── components/    AppHeader/Footer · CommandPalette · PageHeader/Tree/Toc/Comments
+│           │                  MarkdownEditor · VisualEditor · CollabEditor · ImageUploadDialog
+│           │                  ModalDialog · DrawerSheet · InteractiveGraph · admin panels
+│           └── views/         Admin · Page/View/Edit · Search · Graph · Events · Changes · Auth/Profile
 └── reference/             Optional local Wiki.js v2/v3 source checkout for study, gitignored
 ```
 
@@ -123,12 +128,17 @@ one level of grouped children for desktop and mobile header menus.
 does `treaty<App>(...)`, so every request's path, query, and body is checked against the real
 routes at compile time.
 
-**Bundle size is measured from Vite output, not estimated.** As of v0.3.2,
-`bun run build` reports the two main entry chunks at about **415 KB gzip** and
-**853 KB gzip**. The warning is expected today because Markdown rendering,
-highlighting, Mermaid-adjacent parsing, CodeMirror, Yjs collaboration, and admin
-surfaces share entry dependencies. Future performance work should use this build
-output as the baseline rather than repeating older "`~43 KB gzip`" claims.
+**Bundle size is measured from Vite output, not estimated.** As of v0.4.19,
+Vite uses manual vendor chunks for Vue, Markdown rendering, CodeMirror, Yjs
+collaboration, auth helpers, KaTeX, Mermaid, and highlight.js. A representative
+`bun run build` reports: entry **36.56 KB gzip**, Vue **43.45 KB gzip**,
+Markdown pipeline **68.72 KB gzip**, selected highlight languages **29.33 KB
+gzip**, Yjs collaboration **29.57 KB gzip**, CodeMirror editor **855.62 KB
+gzip**, and opt-in Mermaid **943.61 KB gzip**. Markdown highlighting uses
+`highlight.js` core plus selected common languages, not the all-language entry.
+The highlight.js CSS theme is loaded by Markdown enhancement only when rendered
+code blocks are present. Future performance work should compare against the
+checked build output instead of repeating older "`~43 KB gzip`" claims.
 
 ## Multi-instance mode
 

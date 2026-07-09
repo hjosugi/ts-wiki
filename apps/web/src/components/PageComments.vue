@@ -4,6 +4,7 @@ import { Api, type PageComment } from '@/lib/api'
 import { useAuth } from '@/stores/auth'
 import { useMarkdownFeatures } from '@/composables/useMarkdownFeatures'
 import { vMarkdownEnhance } from '@/lib/markdownEnhance'
+import { useI18n } from '@/lib/i18n'
 import Skeleton from '@/components/Skeleton.vue'
 
 const props = defineProps<{ path: string }>()
@@ -15,9 +16,7 @@ const loading = ref(false)
 const saving = ref(false)
 const error = ref<string | null>(null)
 const { markdownFeatures, markdownRenderer } = useMarkdownFeatures()
-
-const formatDate = (value: number): string =>
-  new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
+const { formatDateTime, t } = useI18n()
 
 // Comments render through the same safe (raw-HTML-disabled) Markdown pipeline as
 // pages, so links/code/emphasis work without any XSS surface.
@@ -64,7 +63,7 @@ async function resolve(comment: PageComment): Promise<void> {
 }
 
 async function remove(comment: PageComment): Promise<void> {
-  if (!confirm('Delete this comment?')) return
+  if (!confirm(t('deleteCommentConfirm'))) return
   error.value = null
   try {
     await Api.deleteComment(comment.id)
@@ -80,12 +79,12 @@ watch(() => props.path, load, { immediate: true })
 <template>
   <section id="comments" class="mt-10 border-t border-gray-200 pt-5 dark:border-gray-800">
     <div class="flex items-center justify-between gap-3">
-      <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Comments</h2>
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">{{ t('comments') }}</h2>
       <span v-if="comments.length" class="text-xs text-[var(--c-text-muted)]">{{ comments.length }}</span>
     </div>
 
     <p v-if="error" class="mt-3 text-sm text-red-600">{{ error }}</p>
-    <Skeleton v-if="loading" class="mt-3" label="Loading comments" :lines="2" />
+    <Skeleton v-if="loading" class="mt-3" :label="t('loadingComments')" :lines="2" />
 
     <div v-else class="mt-3 space-y-3">
       <article
@@ -103,33 +102,37 @@ watch(() => props.path, load, { immediate: true })
             ></div>
             <div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
               <span v-if="comment.authorName" class="font-medium text-gray-700 dark:text-gray-300">{{ comment.authorName }}</span>
-              <span>{{ formatDate(comment.createdAt) }}</span>
-              <span v-if="comment.mentions.length">Mentions {{ comment.mentions.map((m) => '@' + m).join(', ') }}</span>
-              <span v-if="comment.resolvedAt">Resolved {{ formatDate(comment.resolvedAt) }}</span>
+              <span>{{ formatDateTime(comment.createdAt) }}</span>
+              <span v-if="comment.mentions.length">
+                {{ t('mentions', { names: comment.mentions.map((m) => '@' + m).join(', ') }) }}
+              </span>
+              <span v-if="comment.resolvedAt">
+                {{ t('resolved', { date: formatDateTime(comment.resolvedAt) }) }}
+              </span>
             </div>
           </div>
           <div v-if="canChange(comment)" class="flex gap-2">
             <button v-if="!comment.resolvedAt" class="btn-ghost" type="button" @click="resolve(comment)">
-              Resolve
+              {{ t('resolve') }}
             </button>
-            <button class="btn-danger" type="button" @click="remove(comment)">Delete</button>
+            <button class="btn-danger" type="button" @click="remove(comment)">{{ t('delete') }}</button>
           </div>
         </div>
       </article>
-      <p v-if="!comments.length" class="text-sm text-gray-500">No comments yet.</p>
+      <p v-if="!comments.length" class="text-sm text-gray-500">{{ t('noCommentsYet') }}</p>
     </div>
 
     <form v-if="auth.isAuthed" class="mt-4 space-y-2" @submit.prevent="submit">
       <textarea
         v-model="draft"
         class="input min-h-24"
-        placeholder="Add a comment. Use @name to mention someone."
-        aria-label="Comment body"
+        :placeholder="t('addCommentPlaceholder')"
+        :aria-label="t('commentBody')"
       ></textarea>
       <button class="btn-primary" type="submit" :disabled="saving || !draft.trim()">
-        {{ saving ? 'Posting...' : 'Post comment' }}
+        {{ saving ? t('posting') : t('postComment') }}
       </button>
     </form>
-    <RouterLink v-else to="/_login" class="btn-ghost mt-4">Sign in to comment</RouterLink>
+    <RouterLink v-else to="/_login" class="btn-ghost mt-4">{{ t('signInToComment') }}</RouterLink>
   </section>
 </template>
