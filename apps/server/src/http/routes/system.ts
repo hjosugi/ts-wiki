@@ -154,7 +154,7 @@ export const createSystemRoutes = ({
     })
 
   return app
-    .get('/api/health', () => ({ ok: true as const, name: 'ts-wiki', version: '0.4.21' }))
+    .get('/api/health', () => ({ ok: true as const, name: 'ts-wiki', version: '0.4.22' }))
     .get('/api/settings/public', () => publicSettings())
     .get(
       '/api/unfurl',

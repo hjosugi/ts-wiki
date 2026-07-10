@@ -75,6 +75,37 @@ describe('event bus', () => {
     }
   })
 
+  test('DB-backed bus idles without subscribers and resumes from the current event tail', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ts-wiki-bus-'))
+    const path = join(dir, 'ts-wiki.sqlite')
+    const dbA = createDb(path)
+    const dbB = createDb(path)
+    const busA = createDbEventBus(dbA, { sourceId: 'a', pollIntervalMs: 10 })
+    const busB = createDbEventBus(dbB, { sourceId: 'b', pollIntervalMs: 10 })
+
+    try {
+      const seenA: WikiEvent[] = []
+
+      busB.emit({ type: 'page:changed', action: 'created', path: 'before-subscribe' })
+      await Bun.sleep(40)
+      busA.subscribe((event) => seenA.push(event))
+      await Bun.sleep(40)
+
+      expect(seenA).toEqual([])
+
+      busB.emit({ type: 'page:changed', action: 'updated', path: 'after-subscribe' })
+      await eventually(() => seenA.length === 1)
+
+      expect(seenA[0]).toEqual({ type: 'page:changed', action: 'updated', path: 'after-subscribe' })
+    } finally {
+      busA.close()
+      busB.close()
+      dbA.$client.close()
+      dbB.$client.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   test('DB-backed bus prunes old stored events after the retention limit', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'ts-wiki-bus-'))
     const path = join(dir, 'ts-wiki.sqlite')

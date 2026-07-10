@@ -10,7 +10,7 @@
     },
     "apps/server": {
       "name": "@ts-wiki/server",
-      "version": "0.4.21",
+      "version": "0.4.22",
       "dependencies": {
         "@elysiajs/cors": "^1.3.0",
         "@elysiajs/jwt": "^1.3.0",
@@ -35,7 +35,7 @@
     },
     "apps/web": {
       "name": "@ts-wiki/web",
-      "version": "0.4.21",
+      "version": "0.4.22",
       "dependencies": {
         "@codemirror/autocomplete": "^6.20.3",
         "@codemirror/lang-markdown": "^6.3.0",
@@ -72,7 +72,7 @@
     },
     "packages/core": {
       "name": "@ts-wiki/core",
-      "version": "0.4.21",
+      "version": "0.4.22",
       "dependencies": {
         "highlight.js": "^11.11.1",
         "katex": "^0.17.0",

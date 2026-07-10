@@ -70,6 +70,8 @@ export interface DbEventBusOptions {
   readonly sourceId?: string
   /** How quickly this process observes events emitted by peers. */
   readonly pollIntervalMs?: number
+  /** How often retained DB events are pruned when there is no local traffic. */
+  readonly pruneIntervalMs?: number
   /** Maximum number of recent DB events to retain for peer polling. */
   readonly maxStoredEvents?: number
 }
@@ -84,6 +86,7 @@ export const createDbEventBus = (db: DB, options: DbEventBusOptions = {}): Event
   const listeners = new Set<Listener>()
   const sourceId = options.sourceId ?? crypto.randomUUID()
   const pollIntervalMs = Math.max(25, options.pollIntervalMs ?? 250)
+  const pruneIntervalMs = Math.max(pollIntervalMs, options.pruneIntervalMs ?? Math.max(60_000, pollIntervalMs * 20))
   const maxStoredEvents = maxStoredEventsFrom(options.maxStoredEvents)
   const ownDelivered = new Set<number>()
 
@@ -112,6 +115,7 @@ export const createDbEventBus = (db: DB, options: DbEventBusOptions = {}): Event
   }
 
   const poll = (): void => {
+    if (listeners.size === 0) return
     if (polling) return
     polling = true
     try {
@@ -143,6 +147,8 @@ export const createDbEventBus = (db: DB, options: DbEventBusOptions = {}): Event
 
   const timer = setInterval(poll, pollIntervalMs)
   ;(timer as unknown as { unref?: () => void }).unref?.()
+  const pruneTimer = setInterval(pruneBestEffort, pruneIntervalMs)
+  ;(pruneTimer as unknown as { unref?: () => void }).unref?.()
 
   return {
     emit(event) {
@@ -163,6 +169,7 @@ export const createDbEventBus = (db: DB, options: DbEventBusOptions = {}): Event
       pruneBestEffort()
     },
     subscribe(listener) {
+      if (listeners.size === 0) lastSeenId = getMaxEventId()
       listeners.add(listener)
       return () => {
         listeners.delete(listener)
@@ -173,6 +180,7 @@ export const createDbEventBus = (db: DB, options: DbEventBusOptions = {}): Event
     },
     close() {
       clearInterval(timer)
+      clearInterval(pruneTimer)
       listeners.clear()
       ownDelivered.clear()
     },
