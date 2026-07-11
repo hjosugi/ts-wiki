@@ -1,7 +1,5 @@
-import { asc, eq } from 'drizzle-orm'
 import { err, notFound, ok, requirePermission } from '@kawaii-wiki/core'
-import type { DB } from '../../db/client.ts'
-import { webhookSubscriptions, type WebhookSubscription } from '../../db/schema.ts'
+import type { WebhookSubscriptionRecord, WebhookSubscriptionRepository } from '../../repositories/webhooks.ts'
 import type {
   CreateWebhookSubscriptionInput,
   UpdateWebhookSubscriptionInput,
@@ -16,7 +14,7 @@ import {
   parseEventTypes,
 } from './shared.ts'
 
-const toSubscriptionView = (row: WebhookSubscription): WebhookSubscriptionView => ({
+const toSubscriptionView = (row: WebhookSubscriptionRecord): WebhookSubscriptionView => ({
   id: row.id,
   name: row.name,
   targetUrl: row.targetUrl,
@@ -27,8 +25,8 @@ const toSubscriptionView = (row: WebhookSubscription): WebhookSubscriptionView =
 })
 
 export interface WebhookSubscriptions {
-  findById(id: string): WebhookSubscription | null
-  enabledForEvent(eventType: string): WebhookSubscription[]
+  findById(id: string): Promise<WebhookSubscriptionRecord | undefined>
+  enabledForEvent(eventType: string): Promise<WebhookSubscriptionRecord[]>
   list: import('../webhooks.ts').WebhookService['listSubscriptions']
   create: import('../webhooks.ts').WebhookService['createSubscription']
   update: import('../webhooks.ts').WebhookService['updateSubscription']
@@ -41,32 +39,25 @@ export interface WebhookSubscriptionOptions {
 }
 
 export const createWebhookSubscriptions = (
-  db: DB,
+  repository: WebhookSubscriptionRepository,
   { allowPrivateTargets, now }: WebhookSubscriptionOptions,
 ): WebhookSubscriptions => {
-  const findById = (id: string): WebhookSubscription | null =>
-    db.select().from(webhookSubscriptions).where(eq(webhookSubscriptions.id, id)).get() ?? null
+  const findById = (id: string) => repository.findById(id)
 
   return {
     findById,
 
-    enabledForEvent(eventType) {
-      return db
-        .select()
-        .from(webhookSubscriptions)
-        .where(eq(webhookSubscriptions.enabled, true))
-        .orderBy(asc(webhookSubscriptions.createdAt))
-        .all()
-        .filter((subscription) => eventMatches(subscription, eventType))
+    async enabledForEvent(eventType) {
+      return (await repository.listEnabled()).filter((subscription) => eventMatches(subscription, eventType))
     },
 
-    list(principal) {
+    async list(principal) {
       const allowed = requirePermission(principal, 'automation:manage')
       if (!allowed.ok) return allowed
-      return ok(db.select().from(webhookSubscriptions).orderBy(asc(webhookSubscriptions.createdAt)).all().map(toSubscriptionView))
+      return ok((await repository.list()).map(toSubscriptionView))
     },
 
-    create(principal, input: CreateWebhookSubscriptionInput) {
+    async create(principal, input: CreateWebhookSubscriptionInput) {
       const allowed = requirePermission(principal, 'automation:manage')
       if (!allowed.ok) return allowed
       const targetUrl = cleanTargetUrl(input.targetUrl, allowPrivateTargets)
@@ -77,7 +68,7 @@ export const createWebhookSubscriptions = (
       if (!eventTypes.ok) return eventTypes
 
       const createdAt = now()
-      const row: WebhookSubscription = {
+      const row: WebhookSubscriptionRecord = {
         id: crypto.randomUUID(),
         name: cleanName(input.name, new URL(targetUrl.value).hostname),
         targetUrl: targetUrl.value,
@@ -87,14 +78,14 @@ export const createWebhookSubscriptions = (
         createdAt,
         updatedAt: createdAt,
       }
-      db.insert(webhookSubscriptions).values(row).run()
+      await repository.insert(row)
       return ok(toSubscriptionView(row))
     },
 
-    update(principal, id, input: UpdateWebhookSubscriptionInput) {
+    async update(principal, id, input: UpdateWebhookSubscriptionInput) {
       const allowed = requirePermission(principal, 'automation:manage')
       if (!allowed.ok) return allowed
-      const current = findById(id)
+      const current = await findById(id)
       if (!current) return err(notFound('Webhook subscription not found'))
 
       const changes: {
@@ -124,15 +115,15 @@ export const createWebhookSubscriptions = (
       }
       if (input.enabled !== undefined) changes.enabled = input.enabled
 
-      db.update(webhookSubscriptions).set(changes).where(eq(webhookSubscriptions.id, id)).run()
-      const updated = findById(id)
+      await repository.update(id, changes)
+      const updated = await findById(id)
       return updated ? ok(toSubscriptionView(updated)) : err(notFound('Webhook subscription not found after update'))
     },
 
-    delete(principal, id) {
+    async delete(principal, id) {
       const allowed = requirePermission(principal, 'automation:manage')
       if (!allowed.ok) return allowed
-      db.delete(webhookSubscriptions).where(eq(webhookSubscriptions.id, id)).run()
+      await repository.delete(id)
       return ok({ id })
     },
   }

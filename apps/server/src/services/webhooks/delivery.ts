@@ -1,9 +1,10 @@
 import { createHmac } from 'node:crypto'
 import { isIP } from 'node:net'
-import { asc, desc, eq, inArray, lte } from 'drizzle-orm'
+import { asc, desc, eq, lte } from 'drizzle-orm'
 import { err, notFound, ok, requirePermission, validationError } from '@kawaii-wiki/core'
 import type { DB } from '../../db/client.ts'
-import { webhookDeliveries, webhookSubscriptions, type WebhookDelivery, type WebhookSubscription } from '../../db/schema.ts'
+import { webhookDeliveries, type WebhookDelivery } from '../../db/schema.ts'
+import type { WebhookSubscriptionRecord } from '../../repositories/webhooks.ts'
 import type {
   WebhookDeliveryView,
   WebhookFetcher,
@@ -123,12 +124,12 @@ export interface WebhookDeliveryOptions {
   readonly resolver: WebhookHostnameResolver
   readonly allowPrivateTargets: boolean
   readonly now: () => number
-  readonly findSubscription: (id: string) => WebhookSubscription | null
+  readonly findSubscription: (id: string) => Promise<WebhookSubscriptionRecord | undefined>
   readonly policy?: Partial<WebhookDeliveryPolicy>
 }
 
 export interface WebhookDeliveryService {
-  publish(payload: WebhookPayload, subscriptions: WebhookSubscription[]): Promise<WebhookDeliveryView[]>
+  publish(payload: WebhookPayload, subscriptions: WebhookSubscriptionRecord[]): Promise<WebhookDeliveryView[]>
   listDeliveries: import('../webhooks.ts').WebhookService['listDeliveries']
   retryDelivery: import('../webhooks.ts').WebhookService['retryDelivery']
   processDueDeliveries: import('../webhooks.ts').WebhookService['processDueDeliveries']
@@ -149,10 +150,10 @@ export const createWebhookDelivery = (
   const findDelivery = (id: string): WebhookDelivery | null =>
     db.select().from(webhookDeliveries).where(eq(webhookDeliveries.id, id)).get() ?? null
 
-  const toDeliveryView = (row: WebhookDelivery): WebhookDeliveryView => ({
+  const toDeliveryView = async (row: WebhookDelivery): Promise<WebhookDeliveryView> => ({
     id: row.id,
     subscriptionId: row.subscriptionId,
-    subscriptionName: findSubscription(row.subscriptionId)?.name ?? null,
+    subscriptionName: (await findSubscription(row.subscriptionId))?.name ?? null,
     eventId: row.eventId,
     eventType: row.eventType,
     status: row.status,
@@ -166,7 +167,7 @@ export const createWebhookDelivery = (
     deliveredAt: row.deliveredAt,
   })
 
-  const deliver = async (delivery: WebhookDelivery, subscription: WebhookSubscription): Promise<WebhookDeliveryView> => {
+  const deliver = async (delivery: WebhookDelivery, subscription: WebhookSubscriptionRecord): Promise<WebhookDeliveryView> => {
     const startedAt = now()
     const attempts = delivery.attempts + 1
     const timestamp = String(startedAt)
@@ -224,10 +225,10 @@ export const createWebhookDelivery = (
 
     const persisted = findDelivery(delivery.id)
     if (!persisted) throw new Error(`Webhook delivery ${delivery.id} disappeared while it was being processed`)
-    return toDeliveryView(persisted)
+    return await toDeliveryView(persisted)
   }
 
-  const enqueue = (subscription: WebhookSubscription, payload: WebhookPayload): WebhookDelivery => {
+  const enqueue = (subscription: WebhookSubscriptionRecord, payload: WebhookPayload): WebhookDelivery => {
     const createdAt = now()
     const delivery: WebhookDelivery = {
       id: crypto.randomUUID(),
@@ -251,10 +252,10 @@ export const createWebhookDelivery = (
 
   return {
     async publish(payload, subscriptions) {
-      return subscriptions.map((subscription) => toDeliveryView(enqueue(subscription, payload)))
+      return await Promise.all(subscriptions.map((subscription) => toDeliveryView(enqueue(subscription, payload))))
     },
 
-    listDeliveries(principal, filters = {}) {
+    async listDeliveries(principal, filters = {}) {
       const allowed = requirePermission(principal, 'automation:manage')
       if (!allowed.ok) return allowed
       const limit = Math.max(1, Math.min(filters.limit ?? 100, 500))
@@ -272,17 +273,7 @@ export const createWebhookDelivery = (
             .orderBy(desc(webhookDeliveries.createdAt))
             .limit(limit)
             .all()
-      const subscriptionIds = [...new Set(rows.map((row) => row.subscriptionId))]
-      const names = new Map(
-        (subscriptionIds.length
-          ? db.select({ id: webhookSubscriptions.id, name: webhookSubscriptions.name })
-              .from(webhookSubscriptions)
-              .where(inArray(webhookSubscriptions.id, subscriptionIds))
-              .all()
-          : [])
-          .map((subscription) => [subscription.id, subscription.name]),
-      )
-      return ok(rows.map((row) => ({ ...toDeliveryView(row), subscriptionName: names.get(row.subscriptionId) ?? null })))
+      return ok(await Promise.all(rows.map(toDeliveryView)))
     },
 
     async retryDelivery(principal, id) {
@@ -290,7 +281,7 @@ export const createWebhookDelivery = (
       if (!allowed.ok) return allowed
       const delivery = findDelivery(id)
       if (!delivery) return err(notFound('Webhook delivery not found'))
-      const subscription = findSubscription(delivery.subscriptionId)
+      const subscription = await findSubscription(delivery.subscriptionId)
       if (!subscription) return err(notFound('Webhook subscription not found'))
       if (!subscription.enabled) return err(validationError('Webhook subscription is disabled', 'subscriptionId'))
 
@@ -315,10 +306,11 @@ export const createWebhookDelivery = (
         .all()
         .filter((delivery) => delivery.status !== 'succeeded' && delivery.attempts < policy.maxAttempts)
 
-      const tasks = rows.flatMap((delivery) => {
-        const subscription = findSubscription(delivery.subscriptionId)
-        return subscription?.enabled ? [deliver(delivery, subscription)] : []
-      })
+      const tasks: Array<Promise<WebhookDeliveryView>> = []
+      for (const delivery of rows) {
+        const subscription = await findSubscription(delivery.subscriptionId)
+        if (subscription?.enabled) tasks.push(deliver(delivery, subscription))
+      }
       return Promise.all(tasks)
     },
   }

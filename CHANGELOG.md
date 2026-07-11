@@ -3,6 +3,22 @@
 All notable changes are documented here. This project follows Semantic
 Versioning; API compatibility details are in `docs/API.md`.
 
+## [1.0.23] - 2026-07-12
+
+### Changed
+
+- Moved webhook subscription lookup, ordered listing, enabled-event selection,
+  creation, update, and deletion behind an asynchronous driver-neutral
+  repository.
+- Converted webhook subscription routes, delivery name resolution, retries,
+  and event publication to await remote-capable subscription persistence.
+- Removed database schema types from the shared webhook validation helpers.
+
+### Tests
+
+- Added shared SQLite and libSQL webhook subscription contract coverage for
+  ordering, enabled filtering, missing lookup, updates, and deletion.
+
 ## [1.0.22] - 2026-07-12
 
 ### Changed

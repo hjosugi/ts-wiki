@@ -338,8 +338,8 @@ export const createAdminRoutes = ({
     )
     .get(
       '/api/admin/webhooks/deliveries',
-      ({ query, services, principal }) => ({
-        deliveries: unwrap(services.webhooks.listDeliveries(principal, {
+      async ({ query, services, principal }) => ({
+        deliveries: unwrap(await services.webhooks.listDeliveries(principal, {
           status: query.status,
           limit: query.limit,
         })),
@@ -358,13 +358,13 @@ export const createAdminRoutes = ({
       }),
       { params: t.Object({ id: t.String() }) },
     )
-    .get('/api/admin/webhooks', ({ services, principal }) => ({
-      webhooks: unwrap(services.webhooks.listSubscriptions(principal)),
+    .get('/api/admin/webhooks', async ({ services, principal }) => ({
+      webhooks: unwrap(await services.webhooks.listSubscriptions(principal)),
     }))
     .post(
       '/api/admin/webhooks',
-      ({ body, services, principal }) => ({
-        webhook: unwrap(services.webhooks.createSubscription(principal, body)),
+      async ({ body, services, principal }) => ({
+        webhook: unwrap(await services.webhooks.createSubscription(principal, body)),
       }),
       {
         body: t.Object({
@@ -378,8 +378,8 @@ export const createAdminRoutes = ({
     )
     .put(
       '/api/admin/webhooks/:id',
-      ({ params, body, services, principal }) => ({
-        webhook: unwrap(services.webhooks.updateSubscription(principal, params.id, body)),
+      async ({ params, body, services, principal }) => ({
+        webhook: unwrap(await services.webhooks.updateSubscription(principal, params.id, body)),
       }),
       {
         params: t.Object({ id: t.String() }),
@@ -394,7 +394,7 @@ export const createAdminRoutes = ({
     )
     .delete(
       '/api/admin/webhooks/:id',
-      ({ params, services, principal }) => unwrap(services.webhooks.deleteSubscription(principal, params.id)),
+      async ({ params, services, principal }) => unwrap(await services.webhooks.deleteSubscription(principal, params.id)),
       { params: t.Object({ id: t.String() }) },
     )
     .get('/api/admin/automation-rules', ({ services, principal }) => ({
