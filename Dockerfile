@@ -1,4 +1,7 @@
-FROM docker.io/oven/bun:1.3.14 AS deps
+# Build and typecheck once on the native GitHub runner. The resulting source and
+# web assets are architecture-independent; only the final runtime dependency
+# install needs to run for each target platform.
+FROM --platform=$BUILDPLATFORM docker.io/oven/bun:1.3.14 AS deps
 
 WORKDIR /app
 

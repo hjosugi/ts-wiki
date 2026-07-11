@@ -3,6 +3,12 @@
 All notable changes are documented here. This project follows Semantic
 Versioning; API compatibility details are in `docs/API.md`.
 
+## [1.0.3] - 2026-07-11
+
+- Build architecture-independent web assets and typecheck on the native build
+  platform so multi-architecture Docker releases do not compile the frontend
+  under slow CPU emulation.
+
 ## [1.0.2] - 2026-07-11
 
 ### Added

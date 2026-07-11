@@ -3149,7 +3149,7 @@ describe('http app page utilities', () => {
     const installed = await app.handle(jsonRequest('/api/import/official-docs', {}, token))
     expect(installed.status).toBe(200)
     const body = await installed.json() as { version: string; results: Array<{ path: string; created: boolean }> }
-    expect(body.version).toBe('1.0.2')
+    expect(body.version).toBe('1.0.3')
     expect(body.results.length).toBeGreaterThanOrEqual(30)
     expect(body.results.every((result) => result.created)).toBe(true)
 
