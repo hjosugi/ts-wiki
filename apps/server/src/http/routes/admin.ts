@@ -397,13 +397,13 @@ export const createAdminRoutes = ({
       async ({ params, services, principal }) => unwrap(await services.webhooks.deleteSubscription(principal, params.id)),
       { params: t.Object({ id: t.String() }) },
     )
-    .get('/api/admin/automation-rules', ({ services, principal }) => ({
-      rules: unwrap(services.webhooks.listAutomationRules(principal)),
+    .get('/api/admin/automation-rules', async ({ services, principal }) => ({
+      rules: unwrap(await services.webhooks.listAutomationRules(principal)),
     }))
     .post(
       '/api/admin/automation-rules',
-      ({ body, services, principal }) => ({
-        rule: unwrap(services.webhooks.createAutomationRule(principal, body)),
+      async ({ body, services, principal }) => ({
+        rule: unwrap(await services.webhooks.createAutomationRule(principal, body)),
       }),
       {
         body: t.Object({
@@ -418,8 +418,8 @@ export const createAdminRoutes = ({
     )
     .put(
       '/api/admin/automation-rules/:id',
-      ({ params, body, services, principal }) => ({
-        rule: unwrap(services.webhooks.updateAutomationRule(principal, params.id, body)),
+      async ({ params, body, services, principal }) => ({
+        rule: unwrap(await services.webhooks.updateAutomationRule(principal, params.id, body)),
       }),
       {
         params: t.Object({ id: t.String() }),
@@ -434,7 +434,7 @@ export const createAdminRoutes = ({
     )
     .delete(
       '/api/admin/automation-rules/:id',
-      ({ params, services, principal }) => unwrap(services.webhooks.deleteAutomationRule(principal, params.id)),
+      async ({ params, services, principal }) => unwrap(await services.webhooks.deleteAutomationRule(principal, params.id)),
       { params: t.Object({ id: t.String() }) },
     )
     .put(

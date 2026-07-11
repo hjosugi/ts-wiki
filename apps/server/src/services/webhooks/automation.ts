@@ -1,7 +1,6 @@
-import { asc, eq } from 'drizzle-orm'
 import { err, isPageStatus, normalizeLabels, normalizePath, notFound, ok, requirePermission, type Principal, validationError } from '@kawaii-wiki/core'
-import type { DB } from '../../db/client.ts'
-import { automationRules, pages, type AutomationRule, type Page } from '../../db/schema.ts'
+import type { PageRecord } from '../../repositories/pages.ts'
+import type { AutomationRuleRecord, WebhookAutomationRepository } from '../../repositories/webhooks.ts'
 import type { PageService } from '../pages.ts'
 import type {
   AutomationEvent,
@@ -20,7 +19,7 @@ import {
   parseRuleConfig,
 } from './shared.ts'
 
-const toRuleView = (row: AutomationRule): AutomationRuleView => ({
+const toRuleView = (row: AutomationRuleRecord): AutomationRuleView => ({
   id: row.id,
   name: row.name,
   type: row.type,
@@ -38,7 +37,7 @@ export interface AutomationRuleApplication {
 }
 
 export interface AutomationRules {
-  applyRules(event: AutomationEvent): AutomationRuleApplication
+  applyRules(event: AutomationEvent): Promise<AutomationRuleApplication>
   list: import('../webhooks.ts').WebhookService['listAutomationRules']
   create: import('../webhooks.ts').WebhookService['createAutomationRule']
   update: import('../webhooks.ts').WebhookService['updateAutomationRule']
@@ -64,27 +63,27 @@ const cleanPriority = (value: unknown): number =>
 
 const pageLeaf = (path: string): string => path.split('/').filter(Boolean).at(-1) ?? 'page'
 
-export const createAutomationRules = (db: DB, { now, pageService }: AutomationRuleOptions): AutomationRules => {
-  const findPageForEvent = (event: AutomationEvent): Page | null => {
+export const createAutomationRules = (repository: WebhookAutomationRepository, { now, pageService }: AutomationRuleOptions): AutomationRules => {
+  const findPageForEvent = async (event: AutomationEvent): Promise<PageRecord | null> => {
     const page = recordFrom(event.data.page)
     const id = page?.id
     if (typeof id === 'string') {
-      const byId = db.select().from(pages).where(eq(pages.id, id)).get()
+      const byId = await repository.findPageById(id)
       if (byId) return byId
     }
     const path = page?.path
     if (typeof path === 'string') {
-      const byPath = db.select().from(pages).where(eq(pages.path, normalizePath(path))).get()
+      const byPath = await repository.findPageByPath(normalizePath(path))
       if (byPath) return byPath
     }
     const comment = recordFrom(event.data.comment)
     const commentPath = comment?.path
     return typeof commentPath === 'string'
-      ? db.select().from(pages).where(eq(pages.path, normalizePath(commentPath))).get() ?? null
+      ? await repository.findPageByPath(normalizePath(commentPath)) ?? null
       : null
   }
 
-  const contextFor = (event: AutomationEvent, current: Page | null) => {
+  const contextFor = (event: AutomationEvent, current: PageRecord | null) => {
     const page = recordFrom(event.data.page)
     const comment = recordFrom(event.data.comment)
     const path = current?.path ?? stringFrom(page?.path) ?? stringFrom(comment?.path) ?? stringFrom(event.data.path) ?? ''
@@ -119,7 +118,7 @@ export const createAutomationRules = (db: DB, { now, pageService }: AutomationRu
     return true
   }
 
-  const applyPageActions = (current: Page | null, actions: AutomationRuleActions): Page | null => {
+  const applyPageActions = (current: PageRecord | null, actions: AutomationRuleActions): PageRecord | null => {
     if (!current || current.lifecycle !== 'active' || !pageService) return current
     let next = current
     const labels = parseLabels(next.labels)
@@ -155,11 +154,11 @@ export const createAutomationRules = (db: DB, { now, pageService }: AutomationRu
 
   const applyRule = (
     event: AutomationEvent,
-    current: Page | null,
+    current: PageRecord | null,
     config: EventAutomationRuleConfig,
     data: Record<string, unknown>,
     extraEvents: AutomationEvent[],
-  ): { page: Page | null; data: Record<string, unknown> } => {
+  ): { page: PageRecord | null; data: Record<string, unknown> } => {
     const page = applyPageActions(current, config.actions)
     const nextData = page ? { ...data, page: pageSnapshot(page) } : data
     if (config.actions.fireWebhookEvent) {
@@ -173,17 +172,12 @@ export const createAutomationRules = (db: DB, { now, pageService }: AutomationRu
   }
 
   return {
-    applyRules(event) {
-      let current = findPageForEvent(event)
+    async applyRules(event) {
+      let current = await findPageForEvent(event)
       let data = event.data
       const extraEvents: AutomationEvent[] = []
 
-      for (const rule of db
-        .select()
-        .from(automationRules)
-        .where(eq(automationRules.enabled, true))
-        .orderBy(asc(automationRules.priority), asc(automationRules.createdAt))
-        .all()) {
+      for (const rule of await repository.listEnabledRules()) {
         if (rule.type !== 'event-rule' && rule.type !== 'page-updated-metadata') continue
         const config = parseRuleConfig(rule.config)
         if (config.trigger !== event.type) continue
@@ -198,13 +192,13 @@ export const createAutomationRules = (db: DB, { now, pageService }: AutomationRu
       return { data, extraEvents }
     },
 
-    list(principal) {
+    async list(principal) {
       const allowed = requirePermission(principal, 'automation:manage')
       if (!allowed.ok) return allowed
-      return ok(db.select().from(automationRules).orderBy(asc(automationRules.priority), asc(automationRules.createdAt)).all().map(toRuleView))
+      return ok((await repository.listRules()).map(toRuleView))
     },
 
-    create(principal, input: CreateAutomationRuleInput) {
+    async create(principal, input: CreateAutomationRuleInput) {
       const allowed = requirePermission(principal, 'automation:manage')
       if (!allowed.ok) return allowed
       if (input.type !== 'event-rule' && input.type !== 'page-updated-metadata') return err(validationError('Unknown automation rule type', 'type'))
@@ -212,7 +206,7 @@ export const createAutomationRules = (db: DB, { now, pageService }: AutomationRu
       if (!config.ok) return config
 
       const createdAt = now()
-      const rule: AutomationRule = {
+      const rule: AutomationRuleRecord = {
         id: crypto.randomUUID(),
         name: cleanName(input.name, 'Automation rule'),
         type: 'event-rule',
@@ -223,14 +217,14 @@ export const createAutomationRules = (db: DB, { now, pageService }: AutomationRu
         createdAt,
         updatedAt: createdAt,
       }
-      db.insert(automationRules).values(rule).run()
+      await repository.insertRule(rule)
       return ok(toRuleView(rule))
     },
 
-    update(principal, id, input: UpdateAutomationRuleInput) {
+    async update(principal, id, input: UpdateAutomationRuleInput) {
       const allowed = requirePermission(principal, 'automation:manage')
       if (!allowed.ok) return allowed
-      const current = db.select().from(automationRules).where(eq(automationRules.id, id)).get()
+      const current = await repository.findRule(id)
       if (!current) return err(notFound('Automation rule not found'))
 
       const changes: {
@@ -252,15 +246,15 @@ export const createAutomationRules = (db: DB, { now, pageService }: AutomationRu
         changes.config = JSON.stringify(config.value)
       }
 
-      db.update(automationRules).set(changes).where(eq(automationRules.id, id)).run()
-      const updated = db.select().from(automationRules).where(eq(automationRules.id, id)).get()
+      await repository.updateRule(id, changes)
+      const updated = await repository.findRule(id)
       return updated ? ok(toRuleView(updated)) : err(notFound('Automation rule not found after update'))
     },
 
-    delete(principal, id) {
+    async delete(principal, id) {
       const allowed = requirePermission(principal, 'automation:manage')
       if (!allowed.ok) return allowed
-      db.delete(automationRules).where(eq(automationRules.id, id)).run()
+      await repository.deleteRule(id)
       return ok({ id })
     },
   }

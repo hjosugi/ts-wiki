@@ -3,6 +3,23 @@
 All notable changes are documented here. This project follows Semantic
 Versioning; API compatibility details are in `docs/API.md`.
 
+## [1.0.25] - 2026-07-12
+
+### Changed
+
+- Moved automation rule CRUD, priority ordering, enabled selection, and event
+  page-context lookup behind an asynchronous driver-neutral repository.
+- Removed database, schema, and Drizzle imports from the webhook composition
+  and automation services while retaining condition matching and page actions
+  in the service layer.
+- Converted automation admin routes and event publication to await
+  remote-capable persistence.
+
+### Tests
+
+- Added shared SQLite and libSQL automation contract coverage for page lookup,
+  rule ordering, enabled filtering, updates, deletion, and missing records.
+
 ## [1.0.24] - 2026-07-12
 
 ### Changed

@@ -64,3 +64,37 @@ export interface WebhookDeliveryRepository {
   list(status: WebhookDeliveryStatus | undefined, limit: number): Promise<WebhookDeliveryRecord[]>
   listDue(dueAt: number, limit: number, maxAttempts: number): Promise<WebhookDeliveryRecord[]>
 }
+
+export type AutomationRuleType = 'event-rule' | 'page-updated-metadata'
+
+export interface AutomationRuleRecord {
+  readonly id: string
+  readonly name: string
+  readonly type: AutomationRuleType
+  readonly enabled: boolean
+  readonly priority: number
+  readonly stopOnMatch: boolean
+  readonly config: string
+  readonly createdAt: number
+  readonly updatedAt: number
+}
+
+export interface AutomationRuleChanges {
+  readonly name?: string
+  readonly enabled?: boolean
+  readonly priority?: number
+  readonly stopOnMatch?: boolean
+  readonly config?: string
+  readonly updatedAt: number
+}
+
+export interface WebhookAutomationRepository {
+  findPageById(id: string): Promise<import('./pages.ts').PageRecord | undefined>
+  findPageByPath(path: string): Promise<import('./pages.ts').PageRecord | undefined>
+  listEnabledRules(): Promise<AutomationRuleRecord[]>
+  listRules(): Promise<AutomationRuleRecord[]>
+  findRule(id: string): Promise<AutomationRuleRecord | undefined>
+  insertRule(record: AutomationRuleRecord): Promise<void>
+  updateRule(id: string, changes: AutomationRuleChanges): Promise<void>
+  deleteRule(id: string): Promise<void>
+}

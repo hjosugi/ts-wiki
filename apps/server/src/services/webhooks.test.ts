@@ -3,6 +3,7 @@ import type { Principal } from '@kawaii-wiki/core'
 import { createDb } from '../db/client.ts'
 import { createSqliteWebhookSubscriptionRepository } from '../db/repositories/webhook-subscriptions.ts'
 import { createSqliteWebhookDeliveryRepository } from '../db/repositories/webhook-deliveries.ts'
+import { createSqliteWebhookAutomationRepository } from '../db/repositories/webhook-automation.ts'
 import { createWebhookService, type WebhookFetcher } from './webhooks.ts'
 
 const admin: Principal = { id: 'admin-1', role: 'admin' }
@@ -23,9 +24,9 @@ describe('webhook service', () => {
     }
     const db = createDb(':memory:')
     const webhooks = createWebhookService(
-      db,
       createSqliteWebhookSubscriptionRepository(db),
       createSqliteWebhookDeliveryRepository(db),
+      createSqliteWebhookAutomationRepository(db),
       {
       now: () => now,
       fetcher,

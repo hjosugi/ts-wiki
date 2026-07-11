@@ -1,7 +1,7 @@
 import type { AppError, PageStatus, Principal, Result } from '@kawaii-wiki/core'
-import type { DB } from '../db/client.ts'
-import type { AutomationRule } from '../db/schema.ts'
 import type {
+  AutomationRuleType as AutomationRuleTypeValue,
+  WebhookAutomationRepository,
   WebhookDeliveryRepository,
   WebhookDeliveryStatus as WebhookDeliveryStatusValue,
   WebhookSubscriptionRepository,
@@ -20,7 +20,7 @@ export type WebhookFetcher = (url: string, init: RequestInit, target?: WebhookFe
 export type WebhookHostnameResolver = (hostname: string) => Promise<readonly string[]>
 
 export type WebhookDeliveryStatus = WebhookDeliveryStatusValue
-export type AutomationRuleType = AutomationRule['type']
+export type AutomationRuleType = AutomationRuleTypeValue
 export type AutomationTrigger = 'page.created' | 'page.updated' | 'page.deleted' | 'page.moved' | 'comment.created'
 
 export interface WebhookSubscriptionView {
@@ -156,17 +156,17 @@ export interface WebhookService {
     filters?: { readonly status?: WebhookDeliveryStatus; readonly limit?: number },
   ): Promise<Result<WebhookDeliveryView[], AppError>>
   retryDelivery(principal: Principal | null, id: string): Promise<Result<WebhookDeliveryView, AppError>>
-  listAutomationRules(principal: Principal | null): Result<AutomationRuleView[], AppError>
+  listAutomationRules(principal: Principal | null): Promise<Result<AutomationRuleView[], AppError>>
   createAutomationRule(
     principal: Principal | null,
     input: CreateAutomationRuleInput,
-  ): Result<AutomationRuleView, AppError>
+  ): Promise<Result<AutomationRuleView, AppError>>
   updateAutomationRule(
     principal: Principal | null,
     id: string,
     input: UpdateAutomationRuleInput,
-  ): Result<AutomationRuleView, AppError>
-  deleteAutomationRule(principal: Principal | null, id: string): Result<{ id: string }, AppError>
+  ): Promise<Result<AutomationRuleView, AppError>>
+  deleteAutomationRule(principal: Principal | null, id: string): Promise<Result<{ id: string }, AppError>>
   publish(event: AutomationEvent): Promise<WebhookDeliveryView[]>
   processDueDeliveries(limit?: number): Promise<WebhookDeliveryView[]>
 }
@@ -181,9 +181,9 @@ export interface WebhookServiceOptions {
 }
 
 export const createWebhookService = (
-  db: DB,
   subscriptionRepository: WebhookSubscriptionRepository,
   deliveryRepository: WebhookDeliveryRepository,
+  automationRepository: WebhookAutomationRepository,
   options: WebhookServiceOptions = {},
 ): WebhookService => {
   const fetcher = options.fetcher ?? defaultFetcher
@@ -192,7 +192,7 @@ export const createWebhookService = (
   const now = options.now ?? (() => Date.now())
 
   const subscriptions = createWebhookSubscriptions(subscriptionRepository, { allowPrivateTargets, now })
-  const automation = createAutomationRules(db, { now, pageService: options.pageService })
+  const automation = createAutomationRules(automationRepository, { now, pageService: options.pageService })
   const delivery = createWebhookDelivery(deliveryRepository, {
     fetcher,
     resolver,
@@ -215,7 +215,7 @@ export const createWebhookService = (
     deleteAutomationRule: automation.delete,
 
     async publish(event) {
-      const applied = automation.applyRules(event)
+      const applied = await automation.applyRules(event)
       const payload: WebhookPayload = {
         schemaVersion: 1,
         id: crypto.randomUUID(),
