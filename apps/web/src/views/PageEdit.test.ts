@@ -273,4 +273,22 @@ describe('PageEdit', () => {
     expect(mounted.wrapper.find('textarea[aria-label="Editor content"]').exists()).toBe(true)
     expect(mounted.wrapper.find('input[aria-label="Page title"]').exists()).toBe(false)
   })
+
+  test('does not expose editable settings until asynchronous initialization finishes', async () => {
+    let resolvePages: ((pages: Page[]) => void) | undefined
+    api.listPages.mockReturnValue(new Promise<Page[]>((resolve) => {
+      resolvePages = resolve
+    }))
+
+    const mounted = await mountEdit('/_new')
+    wrappers.push(mounted.wrapper)
+
+    expect(mounted.wrapper.find('input[aria-label="Page title"]').exists()).toBe(false)
+    expect(mounted.wrapper.text()).toContain('Loading editor')
+
+    resolvePages?.([page()])
+    await settle()
+
+    expect(mounted.wrapper.find('input[aria-label="Page title"]').exists()).toBe(true)
+  })
 })

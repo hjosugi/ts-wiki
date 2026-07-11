@@ -68,6 +68,7 @@ const {
   dateInputValue,
 } = usePageEditor()
 const defaultLocale = ref('und')
+const initializing = ref(true)
 const saving = ref(false)
 const error = ref<string | null>(null)
 const selectedTemplate = ref('builtin:blank')
@@ -351,50 +352,54 @@ async function uploadCover(files: FileList | null): Promise<void> {
 usePresence(originalPath, 'editing')
 
 onMounted(async () => {
-  if (!auth.canEdit) {
-    router.replace({ name: 'login', query: { redirect: route.fullPath } })
-    return
-  }
-  await pagesStore.refresh()
-  const publicSettings = await Api.publicSettings().catch(() => null)
-  defaultLocale.value = publicSettings?.defaultLocale ?? 'und'
-  const preferences = auth.isAuthed ? await Api.preferences().catch(() => ({} as UserPreferenceMap)) : {}
-  const preferredMode = preferences['editor:mode'] === 'markdown' || preferences['editor:mode'] === 'visual'
-    ? preferences['editor:mode']
-    : publicSettings?.defaultEditorMode ?? 'visual'
-  editorMode.value = preferredMode
-  if (preferredMode === 'visual' && isEdit.value) collabDisabledForSession.value = true
-  editorModeLoaded.value = true
-  void loadTemplates()
-  if (isEdit.value) {
-    const target = paramToPath(route.params.path)
-    try {
-      const page = await Api.getPage(target)
-      applyPage(page)
-      markSaved()
-      void loadAttachments(page.path)
-    } catch (e) {
-      error.value = friendlyError(e)
+  try {
+    if (!auth.canEdit) {
+      router.replace({ name: 'login', query: { redirect: route.fullPath } })
+      return
     }
-  } else {
-    title.value = ''
-    content.value = builtInTemplates.value[0]?.content ?? ''
-    labelsText.value = ''
-    icon.value = ''
-    coverUrl.value = ''
-    coverPosition.value = 'center'
-    status.value = 'draft'
-    reviewAtDate.value = ''
-    publishAtDateTime.value = ''
-    locale.value = defaultLocale.value
-    navOrderText.value = ''
-    pinned.value = false
-    originalUpdatedAt.value = null
-    attachments.value = []
-    attachmentsLoaded.value = false
-    seedCreatePathFromRoute()
-    applyCreateQueryOverrides()
-    markSaved()
+    await pagesStore.refresh()
+    const publicSettings = await Api.publicSettings().catch(() => null)
+    defaultLocale.value = publicSettings?.defaultLocale ?? 'und'
+    const preferences = auth.isAuthed ? await Api.preferences().catch(() => ({} as UserPreferenceMap)) : {}
+    const preferredMode = preferences['editor:mode'] === 'markdown' || preferences['editor:mode'] === 'visual'
+      ? preferences['editor:mode']
+      : publicSettings?.defaultEditorMode ?? 'visual'
+    editorMode.value = preferredMode
+    if (preferredMode === 'visual' && isEdit.value) collabDisabledForSession.value = true
+    editorModeLoaded.value = true
+    void loadTemplates()
+    if (isEdit.value) {
+      const target = paramToPath(route.params.path)
+      try {
+        const page = await Api.getPage(target)
+        applyPage(page)
+        markSaved()
+        void loadAttachments(page.path)
+      } catch (e) {
+        error.value = friendlyError(e)
+      }
+    } else {
+      title.value = ''
+      content.value = builtInTemplates.value[0]?.content ?? ''
+      labelsText.value = ''
+      icon.value = ''
+      coverUrl.value = ''
+      coverPosition.value = 'center'
+      status.value = 'draft'
+      reviewAtDate.value = ''
+      publishAtDateTime.value = ''
+      locale.value = defaultLocale.value
+      navOrderText.value = ''
+      pinned.value = false
+      originalUpdatedAt.value = null
+      attachments.value = []
+      attachmentsLoaded.value = false
+      seedCreatePathFromRoute()
+      applyCreateQueryOverrides()
+      markSaved()
+    }
+  } finally {
+    initializing.value = false
   }
 })
 
@@ -538,7 +543,8 @@ async function archive(): Promise<void> {
 
 <template>
   <div class="min-w-0">
-    <section v-if="editorView === 'settings'">
+    <Skeleton v-if="initializing" :label="t('loadingEditor')" title :lines="8" />
+    <section v-else-if="editorView === 'settings'">
     <div class="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--c-border)] pb-3">
       <div>
         <p class="text-xs font-semibold uppercase tracking-wide text-[var(--c-accent-text)]">{{ isEdit ? t('editingMode') : t('creatingMode') }}</p>

@@ -3,6 +3,13 @@
 All notable changes are documented here. This project follows Semantic
 Versioning; API compatibility details are in `docs/API.md`.
 
+## [1.0.6] - 2026-07-11
+
+### Fixed
+
+- Prevented late editor initialization from clearing a title entered immediately
+  after opening the new-page settings screen.
+
 ## [1.0.5] - 2026-07-11
 
 ### Changed
