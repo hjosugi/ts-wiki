@@ -5,6 +5,7 @@ import { Api } from '@/lib/api'
 import Skeleton from '@/components/Skeleton.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
 import { useI18n } from '@/lib/i18n'
+import EmptyState from '@/components/EmptyState.vue'
 
 const { data: events, loading, error, reload: load } = useAsyncData<ExtractedCalendarEvent[]>(Api.events, { initial: [] })
 const { t } = useI18n()
@@ -104,6 +105,14 @@ const icsUrl = (event: ExtractedCalendarEvent): string =>
       </div>
     </section>
 
-    <p v-if="!loading && !filteredEvents.length" class="text-gray-500">{{ filter === 'streams' ? 'No streams yet.' : 'No events yet.' }}</p>
+    <EmptyState
+      v-if="!loading && !filteredEvents.length"
+      :title="filter === 'streams' ? t('noStreamsYet') : t('noEventsYet')"
+      :message="t('eventIndexDescription')"
+    >
+      <template #actions>
+        <RouterLink to="/_new" class="btn-primary">{{ t('newPage') }}</RouterLink>
+      </template>
+    </EmptyState>
   </div>
 </template>

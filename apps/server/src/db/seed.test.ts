@@ -89,7 +89,7 @@ describe('sample guide content', () => {
     ])
     expect(pages[0]).toMatchObject({
       path: 'home',
-      title: 'Welcome to kawaii-wiki.ts',
+      title: 'kawaii-wiki.ts',
       pinned: true,
       navOrder: 0,
     })

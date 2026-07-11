@@ -3,6 +3,33 @@
 All notable changes are documented here. This project follows Semantic
 Versioning; API compatibility details are in `docs/API.md`.
 
+## [1.0.2] - 2026-07-11
+
+### Added
+
+- Bundled official documentation for users, administrators, operators, and
+  developers, plus an admin installer and a maintenance command for docs sites.
+- A searchable, categorized administration sidebar, REST/OpenAPI status panel,
+  Git setup guidance, and a persistent graph visibility preference.
+- A Docker Compose setup and a secure Docker entrypoint that generates and
+  persists the JWT secret when one is not supplied.
+
+### Changed
+
+- Simplified the README into a Docker-first entry point and moved detailed
+  product, deployment, backup, configuration, and development guidance into the
+  deployed documentation wiki.
+- Made the configured wiki title the primary brand, clarified view/edit modes
+  and navigation labels, replaced ambiguous emoji controls with accessible SVG
+  icons and tooltips, and consolidated secondary page actions.
+- Contained header, page rail, graph, tables, menus, and admin navigation at
+  narrow viewport widths.
+
+## [1.0.1] - 2026-07-11
+
+- Updated frontend dependencies and GitHub Actions without changing the public
+  product or API contract.
+
 ## [1.0.0] - 2026-07-11
 
 ### Added

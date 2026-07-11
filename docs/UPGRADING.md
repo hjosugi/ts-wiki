@@ -24,3 +24,15 @@ minor release unless that changelog explicitly says it is supported.
 
 Keep the old image and backup until the upgraded wiki has passed normal traffic
 and a fresh post-upgrade backup has completed.
+
+For the repository's Compose setup:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+The default `:1` tag follows compatible 1.x releases. Set
+`KAWAII_WIKI_VERSION` to an exact version when every update must be approved
+manually. Never run `docker compose down -v` during an update because `-v`
+deletes the wiki data volume.

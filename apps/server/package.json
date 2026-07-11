@@ -1,6 +1,6 @@
 {
   "name": "@kawaii-wiki/server",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "license": "0BSD",
   "private": true,
   "type": "module",
@@ -16,6 +16,7 @@
     "db:migrate": "bun src/db/migrate.ts",
     "db:reindex-search": "bun src/db/reindex-search.ts",
     "db:seed": "bun src/db/seed.ts",
+    "docs:install": "bun src/db/install-official-docs.ts",
     "db:reset": "bun src/db/reset.ts",
     "typecheck": "tsc --noEmit"
   },

@@ -56,7 +56,7 @@ jobs:
       - name: Start image
         run: |
           docker run -d --name kawaii-wiki-ci -p 4000:4000 \
-            -e JWT_SECRET=ci-only-secret-with-more-than-32-characters \
+            -v kawaii-wiki-ci-data:/data \
             kawaii-wiki-ci
 
       - name: Smoke health and setup
@@ -74,4 +74,6 @@ jobs:
 
       - name: Stop image
         if: always()
-        run: docker rm -f kawaii-wiki-ci || true
+        run: |
+          docker rm -f kawaii-wiki-ci || true
+          docker volume rm kawaii-wiki-ci-data || true

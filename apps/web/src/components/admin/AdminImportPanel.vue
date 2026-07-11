@@ -13,6 +13,7 @@ const importing = ref(false)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const resultMessage = ref('')
+const installingDocs = ref(false)
 
 const downloadBlob = (blob: Blob, filename: string): void => {
   const url = URL.createObjectURL(blob)
@@ -103,6 +104,20 @@ async function importMarkdown(): Promise<void> {
     importing.value = false
   }
 }
+
+async function installOfficialDocs(): Promise<void> {
+  installingDocs.value = true
+  error.value = null
+  try {
+    const result = await Api.installOfficialDocs()
+    resultMessage.value = `Official documentation ${result.version}: ${result.results.length} pages installed or updated.`
+    await pagesStore.refresh()
+  } catch (e) {
+    error.value = friendlyError(e)
+  } finally {
+    installingDocs.value = false
+  }
+}
 </script>
 
 <template>
@@ -111,6 +126,15 @@ async function importMarkdown(): Promise<void> {
     <p v-if="error" class="text-sm text-red-600 mb-3">{{ error }}</p>
     <p v-else-if="resultMessage" class="mb-3 text-sm text-emerald-700 dark:text-emerald-300">{{ resultMessage }}</p>
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <section class="card p-4 lg:col-span-2">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="max-w-2xl">
+            <h3 class="font-semibold">Official kawaii-wiki.ts documentation</h3>
+            <p class="mt-1 text-sm text-[var(--c-text-muted)]">Install or update the bundled Japanese user, admin, deployment, Git, API, and developer guides under <code>/docs</code>. Existing bundled documentation paths are updated.</p>
+          </div>
+          <button class="btn-primary" type="button" :disabled="installingDocs" @click="installOfficialDocs">{{ installingDocs ? 'Installing...' : 'Install / update docs' }}</button>
+        </div>
+      </section>
       <section class="card p-4">
         <h3 class="font-semibold mb-3">Site export</h3>
         <div class="flex flex-wrap gap-2">

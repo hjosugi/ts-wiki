@@ -79,7 +79,7 @@ export const createSetupRoutes = ({
 
         const home = unwrap(services.pages.create({
           path: 'home',
-          title: `Welcome to ${siteTitle}`,
+          title: siteTitle,
           content: createHomeContent(siteTitle, { includeGuideLinks: body.sampleContent }),
           labels: ['getting-started'],
           status: 'verified',

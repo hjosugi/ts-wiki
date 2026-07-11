@@ -13,7 +13,7 @@ const route = useRoute()
 const auth = useAuth()
 const { t } = useI18n()
 
-const siteTitle = ref('kawaii-wiki.ts')
+const siteTitle = ref('')
 const theme = ref<ThemeMode>('system')
 const tokenizer = ref<FtsTokenizer>('unicode61')
 const sampleContent = ref(true)
@@ -133,7 +133,8 @@ onMounted(async () => {
             <h2 class="text-base font-semibold">{{ t('site') }}</h2>
             <label class="block space-y-1">
               <span class="text-sm font-medium">{{ t('siteTitle') }}</span>
-              <input v-model="siteTitle" class="input" autocomplete="organization" required />
+              <input v-model="siteTitle" class="input" autocomplete="organization" :placeholder="t('siteTitlePlaceholder')" required />
+              <span class="block text-xs text-[var(--c-text-muted)]">{{ t('siteTitleDescription') }}</span>
             </label>
 
             <fieldset class="space-y-2">

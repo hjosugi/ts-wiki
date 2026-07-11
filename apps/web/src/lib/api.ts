@@ -1172,6 +1172,10 @@ export const Api = {
     call<{ deliveries: WebhookDeliveryView[] }>(
       client().api.admin.webhooks.deliveries.get({ query: { status } }),
     ).then((d) => d.deliveries),
+  installOfficialDocs: () =>
+    call<{ version: string; results: Array<{ path: string; created: boolean }> }>(
+      client().api.import['official-docs'].post(),
+    ),
   adminRetryWebhookDelivery: (id: string) =>
     call<{ delivery: WebhookDeliveryView }>(
       client().api.admin.webhooks.deliveries({ id }).retry.post(),

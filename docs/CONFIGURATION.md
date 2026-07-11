@@ -11,7 +11,8 @@ the preferred prefix; legacy `TS_WIKI_*` aliases remain accepted for 1.x.
 | --- | --- | --- |
 | `PORT` | `4000` | HTTP listen port |
 | `NODE_ENV` | unset | Use `production` in deployments |
-| `JWT_SECRET` | random per process outside production | Required in production; use at least 32 random bytes |
+| `JWT_SECRET` | random per process outside production | Required in production; use at least 32 random bytes. The official Docker image generates and persists one in `/data/.jwt-secret` when omitted. |
+| `KAWAII_WIKI_JWT_SECRET_FILE` | `/data/.jwt-secret` in Docker | File used by the Docker entrypoint when `JWT_SECRET` is omitted |
 | `DATA_DIR` | `./data` | Runtime files and local assets |
 | `WEB_DIST_DIR` | `apps/web/dist` | Built SPA directory |
 | `DATABASE_DRIVER` | `sqlite` | `sqlite` or `libsql` |
@@ -80,6 +81,23 @@ Multi-instance realtime uses `KAWAII_WIKI_EVENT_BUS`,
 
 Git mirroring uses `KAWAII_WIKI_GIT_ENABLED`, `KAWAII_WIKI_GIT_DIR`,
 `KAWAII_WIKI_GIT_BRANCH`, `KAWAII_WIKI_GIT_REMOTE`,
+`KAWAII_WIKI_GIT_REMOTE_URL`,
 `KAWAII_WIKI_GIT_AUTHOR_NAME`, `KAWAII_WIKI_GIT_AUTHOR_EMAIL`, and
 `KAWAII_WIKI_GIT_SYNC_INTERVAL_MS`. Git is a content mirror, not a database
 backup.
+
+Example for a public content repository:
+
+```env
+KAWAII_WIKI_GIT_ENABLED=true
+KAWAII_WIKI_GIT_REMOTE_URL=https://github.com/OWNER/wiki-content.git
+KAWAII_WIKI_GIT_BRANCH=main
+KAWAII_WIKI_GIT_AUTHOR_NAME=Wiki Editor
+KAWAII_WIKI_GIT_AUTHOR_EMAIL=wiki@example.com
+KAWAII_WIKI_GIT_SYNC_INTERVAL_MS=300000
+```
+
+Never embed a personal access token in `KAWAII_WIKI_GIT_REMOTE_URL`. Configure
+an SSH deploy key at the host/container level for private or writable remotes.
+The admin Git panel shows status and performs an explicit sync after the service
+has been redeployed with these settings.

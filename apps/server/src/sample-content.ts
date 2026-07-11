@@ -18,9 +18,9 @@ export const createHomeContent = (
 `
     : ''
 
-  return `# Welcome to ${siteTitle}
+  return `# ${siteTitle}
 
-This is your wiki home page. Replace it with notes your team uses every week.
+This is your wiki. Replace this introduction with the knowledge you want to grow and connect.
 
 ## First steps
 
@@ -156,7 +156,7 @@ title: ヒント
 export const sampleSeedPages = (siteTitle = 'kawaii-wiki.ts'): readonly SamplePageInput[] => [
   {
     path: 'home',
-    title: `Welcome to ${siteTitle}`,
+    title: siteTitle,
     content: createHomeContent(siteTitle, { includeGuideLinks: true }),
     labels: ['getting-started'],
     status: 'verified',

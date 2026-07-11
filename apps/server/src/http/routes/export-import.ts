@@ -12,6 +12,7 @@ import { requireHttpPermission } from '../permissions.ts'
 import { runPageWrite, type PageWriteEffectsInput } from '../page-write.ts'
 import type { BaseApp } from '../base.ts'
 import type { AssetStorage } from '../../storage/assets.ts'
+import { OFFICIAL_DOCS_VERSION, officialDocumentationPages } from '../../official-docs.ts'
 
 const htmlText = (value: string): string => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
@@ -164,6 +165,30 @@ export const createExportImportRoutes = ({
           locale: t.Optional(t.String()), navOrder: t.Optional(t.Union([t.Number(), t.Null()])), pinned: t.Optional(t.Boolean()),
         })),
       }),
+    })
+    .post('/api/import/official-docs', async ({ services, principal }) => {
+      requireHttpPermission(principal, 'admin:access')
+      const results: Array<{ path: string; created: boolean }> = []
+      for (const source of officialDocumentationPages) {
+        const result = unwrap(services.pages.upsertFromFile(source.path, {
+          title: source.title,
+          description: source.description,
+          content: source.content,
+        }, {
+          labels: source.labels,
+          status: source.status,
+          locale: source.locale,
+          navOrder: source.navOrder,
+          pinned: source.path === 'docs/home',
+        }, principal))
+        await runPageWrite(pageWriteEffects, {
+          action: result.created ? 'created' : 'updated', page: result.page, principal,
+          auditAction: 'page.import_official_docs', automationType: result.created ? 'page.created' : 'page.updated',
+          automationData: { source: 'bundled-official-docs', version: OFFICIAL_DOCS_VERSION }, previous: result.previous ?? null,
+        })
+        results.push({ path: result.page.path, created: result.created })
+      }
+      return { version: OFFICIAL_DOCS_VERSION, results }
     })
     .post('/api/import/bulk', async ({ body, services, principal }) => {
       requireHttpPermission(principal, 'page:write')

@@ -28,7 +28,7 @@ jobs:
       - name: Smoke release image
         run: |
           docker run -d --name kawaii-wiki-release-smoke -p 4000:4000 \
-            -e JWT_SECRET=release-smoke-secret-with-more-than-32-characters \
+            -v kawaii-wiki-release-smoke-data:/data \
             kawaii-wiki-release-smoke
           for attempt in {1..30}; do
             if curl --fail --silent http://127.0.0.1:4000/api/health >/dev/null; then break; fi
@@ -37,6 +37,7 @@ jobs:
           done
           curl --fail --silent http://127.0.0.1:4000/api/setup/status | grep 'needsSetup'
           docker rm -f kawaii-wiki-release-smoke
+          docker volume rm kawaii-wiki-release-smoke-data
 
       - name: Login to GHCR
         uses: docker/login-action@v4

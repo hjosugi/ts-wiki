@@ -21,6 +21,7 @@ import Skeleton from '@/components/Skeleton.vue'
 import type { PageGraph } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { useReadingPreferences } from '@/composables/useReadingPreferences'
+import AppIcon from '@/components/AppIcon.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -29,6 +30,12 @@ const { t } = useI18n()
 const { markdownFeatures } = useMarkdownFeatures()
 const reading = useReadingPreferences()
 const readingFontSizes = ['small', 'medium', 'large'] as const
+const GRAPH_PREFERENCE_KEY = 'kawaii-wiki:page-graph-visible'
+const storedGraphPreference = typeof window === 'undefined' ? null : window.localStorage.getItem(GRAPH_PREFERENCE_KEY)
+const graphVisible = ref(storedGraphPreference === null
+  ? (typeof window !== 'undefined' && Boolean(window.matchMedia?.('(min-width: 1280px)').matches))
+  : storedGraphPreference === 'true')
+const graphLoading = ref(false)
 
 const page = ref<Page | null>(null)
 const graph = ref<PageGraph>({ nodes: [], edges: [] })
@@ -57,6 +64,20 @@ const editorsLabel = computed(() => {
 })
 const toc = computed(() => page.value?.toc ?? [])
 
+async function setGraphVisible(next: boolean): Promise<void> {
+  graphVisible.value = next
+  window.localStorage.setItem(GRAPH_PREFERENCE_KEY, String(next))
+  if (!next || graph.value.nodes.length || graphLoading.value) return
+  graphLoading.value = true
+  try {
+    graph.value = await Api.graph()
+  } catch {
+    graph.value = { nodes: [], edges: [] }
+  } finally {
+    graphLoading.value = false
+  }
+}
+
 async function refreshPage(options: { showLoading: boolean; clearBefore?: boolean }): Promise<void> {
   if (options.showLoading) loading.value = true
   if (options.clearBefore) {
@@ -70,7 +91,7 @@ async function refreshPage(options: { showLoading: boolean; clearBefore?: boolea
   }
   try {
     const result = await Api.getPageResult(path.value)
-    const loadGraph = options.showLoading && typeof window !== 'undefined' && Boolean(window.matchMedia?.('(min-width: 1280px)').matches)
+    const loadGraph = options.showLoading && graphVisible.value
     const [nextGraph, nextBacklinks, nextUsage] = options.showLoading
       ? await Promise.all([
           loadGraph ? Api.graph().catch((): PageGraph => ({ nodes: [], edges: [] })) : Promise.resolve({ nodes: [], edges: [] } as PageGraph),
@@ -118,8 +139,8 @@ onUnmounted(stopRealtime)
 <template>
   <Skeleton v-if="loading" :label="t('loading')" title :lines="5" />
 
-  <div v-else-if="page" class="flex gap-8">
-    <article class="flex-1 min-w-0">
+  <div v-else-if="page" class="flex min-w-0 max-w-full gap-4 xl:gap-8">
+    <article class="w-full min-w-0 flex-1">
       <PageHeader :page="page" :can-edit="auth.canEdit" :home-path="homePath" />
       <p v-if="publicationNotice" class="mb-4 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
         {{ publicationNotice }}
@@ -158,7 +179,7 @@ onUnmounted(stopRealtime)
           <PageToc :entries="toc" :sticky="false" :show-title="false" />
         </div>
       </details>
-      <div class="page-reading-controls mb-4 flex flex-wrap items-center justify-end gap-3 text-xs text-[var(--c-text-muted)] print:hidden">
+      <div class="page-reading-controls mb-4 flex w-full min-w-0 flex-wrap items-center justify-start gap-3 text-xs text-[var(--c-text-muted)] print:hidden sm:justify-end">
         <span>{{ t('reading') }}</span>
         <div class="inline-flex rounded border border-[var(--c-border)] p-0.5" :aria-label="t('readingWidth')">
           <button class="rounded px-2 py-1" :class="reading.width.value === 'comfortable' ? 'bg-[var(--c-accent)] text-white' : ''" type="button" @click="reading.setWidth('comfortable')">{{ t('narrow') }}</button>
@@ -167,6 +188,20 @@ onUnmounted(stopRealtime)
         <div class="inline-flex rounded border border-[var(--c-border)] p-0.5" :aria-label="t('readingFontSize')">
           <button v-for="size in readingFontSizes" :key="size" class="rounded px-2 py-1 capitalize" :class="reading.fontSize.value === size ? 'bg-[var(--c-accent)] text-white' : ''" type="button" @click="reading.setFontSize(size)">{{ size[0] }}</button>
         </div>
+        <button
+          class="btn-ghost gap-1 px-2 py-1 text-xs"
+          type="button"
+          :aria-pressed="graphVisible"
+          :title="graphVisible ? t('hideGraph') : t('showGraph')"
+          @click="setGraphVisible(!graphVisible)"
+        >
+          <AppIcon name="graph" :size="16" />
+          {{ graphVisible ? t('hideGraph') : t('showGraph') }}
+        </button>
+      </div>
+      <div v-if="graphVisible" class="mb-5 xl:hidden">
+        <Skeleton v-if="graphLoading" :label="t('loading')" :lines="3" />
+        <InteractiveGraph v-else :graph="graph" :focus-path="page.path" compact />
       </div>
       <div
         v-markdown-enhance="markdownFeatures"
@@ -195,8 +230,8 @@ onUnmounted(stopRealtime)
       <PageComments :path="page.path" />
     </article>
 
-    <aside class="page-rail hidden xl:block w-72 shrink-0 space-y-6">
-      <InteractiveGraph :graph="graph" :focus-path="page.path" compact />
+    <aside v-if="graphVisible || toc.length" class="page-rail hidden w-72 max-w-full shrink-0 space-y-6 xl:block">
+      <InteractiveGraph v-if="graphVisible" :graph="graph" :focus-path="page.path" compact />
       <PageToc v-if="toc.length" :entries="toc" />
     </aside>
   </div>

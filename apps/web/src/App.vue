@@ -48,7 +48,7 @@ watch(() => route.path, async () => {
 </script>
 
 <template>
-  <div class="min-h-screen flex flex-col">
+  <div class="flex min-h-screen min-w-0 max-w-full flex-col overflow-x-clip">
     <a
       v-if="!shelllessLayout"
       href="#main"
@@ -79,7 +79,7 @@ watch(() => route.path, async () => {
     <DialogHost />
     <ToastHost />
     <div
-      class="flex-1 w-full flex"
+      class="flex min-w-0 w-full flex-1"
       :class="shelllessLayout ? '' : 'max-w-7xl mx-auto px-4 gap-6'"
     >
       <aside v-if="!shelllessLayout" class="app-sidebar hidden md:block w-60 shrink-0 py-6">

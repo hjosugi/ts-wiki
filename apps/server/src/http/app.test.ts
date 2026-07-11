@@ -330,7 +330,7 @@ describe('http app setup', () => {
     expect(body.token.length).toBeGreaterThan(20)
     expect(body.user).toMatchObject({ email: 'owner@example.com', role: 'admin', totpEnabled: false })
     expect(body.settings).toMatchObject({ siteTitle: 'Knowledge Base', theme: 'dark', homePath: 'home' })
-    expect(body.home).toMatchObject({ path: 'home', title: 'Welcome to Knowledge Base', pinned: true })
+    expect(body.home).toMatchObject({ path: 'home', title: 'Knowledge Base', pinned: true })
     expect(body.searchIndex.tokenizer).toBe('trigram')
     expect(tableCount(db, 'users')).toBe(1)
     expect(tableCount(db, 'pages')).toBe(1 + sampleGuidePages.length)
@@ -3137,6 +3137,31 @@ describe('http app page utilities', () => {
       expect.objectContaining({ path: 'bulk-one', ok: true }),
       expect.objectContaining({ path: 'nested/bulk-two', ok: true }),
     ]))
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('installs and updates bundled official documentation for admins', async () => {
+    const { app } = createFixture()
+    const { token } = await register(app, 'admin@example.com')
+
+    const denied = await app.handle(jsonRequest('/api/import/official-docs', {}))
+    expect(denied.status).toBe(403)
+
+    const installed = await app.handle(jsonRequest('/api/import/official-docs', {}, token))
+    expect(installed.status).toBe(200)
+    const body = await installed.json() as { version: string; results: Array<{ path: string; created: boolean }> }
+    expect(body.version).toBe('1.0.2')
+    expect(body.results.length).toBeGreaterThanOrEqual(30)
+    expect(body.results.every((result) => result.created)).toBe(true)
+
+    const updated = await app.handle(jsonRequest('/api/import/official-docs', {}, token))
+    expect(updated.status).toBe(200)
+    expect(((await updated.json()) as { results: Array<{ created: boolean }> }).results.every((result) => !result.created)).toBe(true)
+
+    const docsHome = await app.handle(new Request('http://localhost/api/page?path=docs/home', {
+      headers: { authorization: `Bearer ${token}` },
+    }))
+    expect(docsHome.status).toBe(200)
+    expect((await docsHome.json()).page).toMatchObject({ title: 'kawaii-wiki.ts ドキュメント', status: 'verified' })
   }, HTTP_TEST_TIMEOUT_MS)
 })
 

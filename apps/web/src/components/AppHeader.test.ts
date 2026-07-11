@@ -36,7 +36,7 @@ describe('AppHeader', () => {
     api.publicSettings.mockResolvedValue(defaultPublicSettings())
   })
 
-  test('exposes mobile navigation and command palette triggers', async () => {
+  test('exposes mobile navigation and search command triggers', async () => {
     const mobileNav = vi.fn()
     const commandPalette = vi.fn()
     window.addEventListener('open-mobile-navigation', mobileNav)
@@ -45,7 +45,7 @@ describe('AppHeader', () => {
       const wrapper = await mountHeader()
 
       await wrapper.find('button[aria-label="Open navigation"]').trigger('click')
-      await wrapper.find('button[aria-label="Command palette"]').trigger('click')
+      await wrapper.find('button[aria-label="Search pages and commands"]').trigger('click')
 
       expect(wrapper.find('input[aria-label="Search..."]').exists()).toBe(true)
       expect(mobileNav).toHaveBeenCalledTimes(1)

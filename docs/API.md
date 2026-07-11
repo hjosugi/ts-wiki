@@ -2,9 +2,13 @@
 
 kawaii-wiki.ts 1.x treats the HTTP routes under `/api` as a public integration
 surface. Interactive documentation is served at `/api/docs`; the generated
-OpenAPI document is available at `/api/openapi.json`. Runtime schemas in the
+OpenAPI document is available at `/api/docs/openapi.json`. Runtime schemas in the
 Elysia routes and the exported TypeScript contracts in `@kawaii-wiki/server`
 remain the source of truth.
+
+GraphQL is not part of the 1.x contract yet; integrations should use the REST
+routes so role checks,
+page rules, rate limits, and audit behavior remain identical to the web app.
 
 ## Stability policy
 

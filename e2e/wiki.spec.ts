@@ -31,4 +31,19 @@ test('owner setup, page creation, and search work through the production app', a
   await page.goto('/_search')
   await page.getByRole('combobox', { name: 'Search the wiki' }).fill('Browser smoke')
   await expect(page.getByText('E2E Release Page')).toBeVisible()
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/home')
+  await expect(page.getByRole('button', { name: 'Open navigation' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Search pages and commands' })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+
+  await page.goto('/_admin')
+  await expect(page.getByPlaceholder('Search settings')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.getByPlaceholder('Search settings').fill('git')
+  await expect(page.getByRole('link', { name: 'Git', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Pages', exact: true })).toBeHidden()
 })

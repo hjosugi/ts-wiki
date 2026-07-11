@@ -193,7 +193,7 @@ watch(() => [props.page.path, props.canEdit] as const, () => {
 </script>
 
 <template>
-  <header class="border-b border-gray-200 dark:border-gray-800 pb-5 mb-7">
+  <header class="mb-7 min-w-0 border-b border-gray-200 pb-5 dark:border-gray-800">
     <div
       v-if="page.coverUrl"
       class="mb-5 h-48 overflow-hidden rounded-md bg-[var(--c-surface-muted)] bg-cover sm:h-64"
@@ -202,18 +202,16 @@ watch(() => [props.page.path, props.canEdit] as const, () => {
     ></div>
     <WikiBreadcrumbs :path="page.path" :home-path="homePath" :current-icon="page.icon" />
 
-    <div class="flex flex-wrap items-start justify-between gap-4 mt-3">
-      <div class="min-w-0">
+    <div class="mt-3 flex min-w-0 flex-wrap items-start justify-between gap-4">
+      <div class="min-w-0 flex-1">
+        <p class="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--c-text-muted)]">{{ t('viewingMode') }}</p>
         <h1 class="flex min-w-0 items-center gap-3 text-3xl font-bold tracking-tight text-gray-950 dark:text-gray-50">
           <span v-if="page.icon" class="shrink-0 text-4xl leading-none" aria-hidden="true">{{ page.icon }}</span>
           <span class="min-w-0 break-words">{{ page.title }}</span>
         </h1>
         <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-500 dark:text-[var(--c-text-muted)]">
-          <span class="font-mono">/{{ page.path }}</span>
-          <span>{{ t('space', { space: page.spaceKey }) }}</span>
-          <span>{{ t('locale') }} {{ page.locale }}</span>
-          <span>{{ t('updated', { date: updated }) }}</span>
           <StatusBadge :status="page.status" />
+          <span>{{ t('updated', { date: updated }) }}</span>
           <span v-if="reviewDate">{{ t('review', { date: reviewDate }) }}</span>
         </div>
         <div v-if="labels.length" class="mt-3 flex flex-wrap gap-1.5">
@@ -228,61 +226,36 @@ watch(() => [props.page.path, props.canEdit] as const, () => {
         </div>
       </div>
 
-      <div class="shrink-0 space-y-2">
-        <div class="flex flex-wrap justify-end gap-2">
-          <button class="btn-ghost" type="button" @click="copyPath">
-            {{ copied ? t('copied') : t('copyPath') }}
-          </button>
+      <div class="w-full min-w-0 space-y-2 sm:w-auto">
+        <div class="flex flex-wrap justify-start gap-2 sm:justify-end">
           <button v-if="auth.isAuthed" class="btn-ghost" type="button" :disabled="watchBusy" :aria-pressed="watching" @click="toggleWatch">
             {{ watching ? t('watching') : t('watch') }}
           </button>
-          <button
-            class="btn-ghost"
-            type="button"
-            :aria-expanded="insightsOpen"
-            aria-controls="page-insights"
-            @click="toggleInsights"
-          >
-            Insights
-          </button>
-          <button
-            v-if="canEdit"
-            class="btn-ghost"
-            type="button"
-            :disabled="shareBusy"
-            @click="share ? copyShareLink() : createShareLink()"
-          >
-            {{ share ? t('copyShareLink') : t('share') }}
-          </button>
-          <button
-            v-if="canEdit && share"
-            class="btn-ghost"
-            type="button"
-            :disabled="shareBusy"
-            @click="revokeShareLink"
-          >
-            {{ t('revokeShare') }}
-          </button>
-          <RouterLink v-if="canEdit" :to="{ name: 'new', query: { path: childPath } }" class="btn-ghost">
-            {{ t('newChild') }}
-          </RouterLink>
-          <button v-if="canEdit" class="btn-ghost" type="button" @click="duplicatePage">Duplicate</button>
-          <RouterLink :to="'/_history/' + page.path" class="btn-ghost">
-            {{ t('history') }}
-          </RouterLink>
-          <a class="btn-ghost" :href="markdownExportUrl">{{ t('markdown') }}</a>
-          <a class="btn-ghost" :href="htmlExportUrl">{{ t('html') }}</a>
-          <a class="btn-ghost" :href="printExportUrl" target="_blank" rel="noopener">Print/PDF</a>
           <RouterLink v-if="canEdit" :to="'/_edit/' + page.path" class="btn-primary">
-            {{ t('edit') }}
+            {{ t('editPage') }}
           </RouterLink>
+          <details class="relative">
+            <summary class="btn-ghost cursor-pointer list-none">{{ t('moreActions') }}</summary>
+            <div class="absolute right-0 z-20 mt-2 grid w-[min(18rem,calc(100vw-2rem))] rounded-md border border-[var(--c-border)] bg-[var(--c-surface)] p-1 shadow-xl">
+              <button class="rounded px-3 py-2 text-left text-sm hover:bg-[var(--c-surface-muted)]" type="button" @click="copyPath">{{ copied ? t('copied') : t('copyPath') }}</button>
+              <button class="rounded px-3 py-2 text-left text-sm hover:bg-[var(--c-surface-muted)]" type="button" :aria-expanded="insightsOpen" aria-controls="page-insights" @click="toggleInsights">{{ t('insights') }}</button>
+              <button v-if="canEdit" class="rounded px-3 py-2 text-left text-sm hover:bg-[var(--c-surface-muted)]" type="button" :disabled="shareBusy" @click="share ? copyShareLink() : createShareLink()">{{ share ? t('copyShareLink') : t('share') }}</button>
+              <button v-if="canEdit && share" class="rounded px-3 py-2 text-left text-sm hover:bg-[var(--c-surface-muted)]" type="button" :disabled="shareBusy" @click="revokeShareLink">{{ t('revokeShare') }}</button>
+              <RouterLink v-if="canEdit" :to="{ name: 'new', query: { path: childPath } }" class="rounded px-3 py-2 text-sm hover:bg-[var(--c-surface-muted)]">{{ t('newChild') }}</RouterLink>
+              <button v-if="canEdit" class="rounded px-3 py-2 text-left text-sm hover:bg-[var(--c-surface-muted)]" type="button" @click="duplicatePage">{{ t('duplicate') }}</button>
+              <RouterLink :to="'/_history/' + page.path" class="rounded px-3 py-2 text-sm hover:bg-[var(--c-surface-muted)]">{{ t('history') }}</RouterLink>
+              <a class="rounded px-3 py-2 text-sm hover:bg-[var(--c-surface-muted)]" :href="markdownExportUrl">{{ t('downloadMarkdown') }}</a>
+              <a class="rounded px-3 py-2 text-sm hover:bg-[var(--c-surface-muted)]" :href="htmlExportUrl">{{ t('downloadHtml') }}</a>
+              <a class="rounded px-3 py-2 text-sm hover:bg-[var(--c-surface-muted)]" :href="printExportUrl" target="_blank" rel="noopener">{{ t('printPdf') }}</a>
+            </div>
+          </details>
         </div>
         <p v-if="shareError" class="text-right text-xs text-red-600">{{ shareError }}</p>
         <p v-else-if="shareMessage" class="text-right text-xs text-gray-500">{{ shareMessage }}</p>
         <div
           v-if="insightsOpen"
           id="page-insights"
-          class="ml-auto max-w-md rounded-md border border-[var(--c-border)] bg-[var(--c-surface)] p-3 text-sm shadow-sm"
+          class="ml-auto w-full max-w-md rounded-md border border-[var(--c-border)] bg-[var(--c-surface)] p-3 text-sm shadow-sm"
         >
           <p v-if="insightsError" class="text-red-600">{{ insightsError }}</p>
           <p v-else-if="insightsLoading" class="text-[var(--c-text-muted)]">Loading insights...</p>

@@ -11,12 +11,14 @@ import { setMarkdownFeatureSettings } from '@/lib/markdownEnhance'
 import { shortcutLabel } from '@/lib/platform'
 import { realtimeStatus } from '@/lib/realtime'
 import NotificationBell from '@/components/NotificationBell.vue'
+import AppIcon, { type AppIconName } from '@/components/AppIcon.vue'
 
 const router = useRouter()
 const auth = useAuth()
 const { t, locale, setLocale } = useI18n()
 const theme = useTheme()
-const themeIcon = computed(() => (theme.mode.value === 'light' ? '☀' : theme.mode.value === 'dark' ? '🌙' : '🖥'))
+const themeIcon = computed<AppIconName>(() => (theme.mode.value === 'light' ? 'sun' : theme.mode.value === 'dark' ? 'moon' : 'monitor'))
+const themeLabel = computed(() => `${t('theme')}: ${t(theme.mode.value === 'light' ? 'themeLight' : theme.mode.value === 'dark' ? 'themeDark' : 'themeSystem')}`)
 const q = ref('')
 const settings = ref<PublicSettings>(defaultPublicSettings())
 const headerEl = ref<HTMLElement | null>(null)
@@ -31,7 +33,7 @@ const realtimeLabel = computed(() => ({
 }[realtimeStatus.value]))
 const builtInNav = computed(() => {
   const definitions = {
-    changes: { to: '/_changes', label: t('changes'), show: true },
+    changes: { to: '/_changes', label: t('recentChanges'), show: true },
     events: { to: '/_events', label: t('events'), show: true },
     graph: { to: '/_graph', label: t('graph'), show: true },
     redirects: { to: '/_redirects', label: t('redirects'), show: auth.canEdit },
@@ -104,15 +106,17 @@ onMounted(async () => {
     ref="headerEl"
     class="app-shell-header sticky top-0 z-10 border-b border-[var(--c-border)] bg-[var(--c-surface)]/90 backdrop-blur"
   >
-    <div class="mx-auto flex h-14 max-w-7xl items-center gap-2 px-3 sm:gap-3 sm:px-4">
+    <div class="mx-auto flex h-14 min-w-0 max-w-7xl items-center gap-1.5 px-2 sm:gap-3 sm:px-4">
       <button
-        class="btn-ghost h-9 w-9 shrink-0 px-0 md:hidden"
+        class="btn-ghost icon-control h-9 w-9 shrink-0 px-0 md:hidden"
         type="button"
         :aria-label="t('openNavigation')"
         :title="t('openNavigation')"
+        :data-tooltip="t('openNavigation')"
+        data-tooltip-align="start"
         @click="openMobileNavigation"
       >
-        ☰
+        <AppIcon name="menu" />
       </button>
 
       <RouterLink :to="homeTo" class="flex min-w-0 shrink-0 items-center gap-1.5 text-lg font-bold">
@@ -121,13 +125,13 @@ onMounted(async () => {
         <span class="hidden max-w-[10rem] truncate sm:inline">{{ settings.siteTitle }}</span>
       </RouterLink>
 
-      <form class="min-w-0 flex-1 max-w-md" @submit.prevent="submitSearch">
+      <form class="hidden min-w-0 max-w-md flex-1 sm:block" @submit.prevent="submitSearch">
         <input v-model="q" class="input w-full py-1.5 text-sm sm:text-base" :placeholder="t('search')" :aria-label="t('search')" />
       </form>
 
-      <div class="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
+      <div class="ml-auto flex min-w-0 shrink-0 items-center gap-1 sm:gap-2">
         <span
-          class="hidden items-center gap-1.5 text-xs text-[var(--c-text-muted)] xl:inline-flex"
+          class="hidden items-center gap-1.5 text-xs text-[var(--c-text-muted)] 2xl:inline-flex"
           :title="realtimeLabel"
           role="status"
         >
@@ -139,7 +143,7 @@ onMounted(async () => {
           {{ realtimeStatus === 'connected' ? 'Live' : realtimeStatus === 'offline' ? 'Offline' : 'Syncing' }}
         </span>
         <select
-          class="input hidden w-auto py-1 text-xs sm:block"
+          class="input hidden w-auto py-1 text-xs md:block"
           :value="locale"
           :aria-label="t('locale')"
           @change="setLocale(($event.target as HTMLSelectElement).value === 'ja' ? 'ja' : 'en')"
@@ -149,25 +153,27 @@ onMounted(async () => {
         </select>
         <NotificationBell v-if="auth.isAuthed" />
         <button
-          class="btn-ghost h-9 w-9 px-0 sm:w-auto sm:px-3"
+          class="btn-ghost icon-control h-9 w-9 px-0 xl:w-auto xl:px-3"
           type="button"
-          :title="t('commandPalette')"
-          :aria-label="t('commandPalette')"
+          :title="t('searchAndCommands')"
+          :aria-label="t('searchAndCommands')"
+          :data-tooltip="`${t('searchAndCommands')} (${commandShortcut})`"
           @click="openCommandPalette"
         >
-          <span class="sm:hidden" aria-hidden="true">⌕</span>
-          <span class="hidden sm:inline">{{ commandShortcut }}</span>
+          <AppIcon name="search" />
+          <span class="hidden xl:inline">{{ t('search') }}</span>
         </button>
         <button
-          class="btn-ghost hidden sm:inline-flex"
+          class="btn-ghost icon-control hidden h-9 w-9 px-0 md:inline-flex"
           type="button"
-          :title="`Theme: ${theme.mode.value}`"
-          :aria-label="`Theme: ${theme.mode.value}. Click to change.`"
+          :title="themeLabel"
+          :aria-label="themeLabel"
+          :data-tooltip="themeLabel"
           @click="theme.cycle()"
         >
-          {{ themeIcon }}
+          <AppIcon :name="themeIcon" />
         </button>
-        <div class="hidden items-center gap-2 lg:flex">
+        <div class="hidden items-center gap-2 2xl:flex">
           <template v-for="link in settings.navLinks" :key="link.url + link.label">
             <details v-if="link.children.length" class="relative">
               <summary class="btn-ghost cursor-pointer list-none">
@@ -197,18 +203,20 @@ onMounted(async () => {
             {{ item.label }}
           </RouterLink>
         </div>
-        <RouterLink v-if="auth.isAdmin" to="/_admin" class="btn-ghost hidden md:inline-flex">{{ t('admin') }}</RouterLink>
-        <details class="relative lg:hidden">
+        <RouterLink v-if="auth.isAdmin" to="/_admin" class="btn-ghost hidden xl:inline-flex">{{ t('admin') }}</RouterLink>
+        <details class="relative 2xl:hidden">
           <summary
-            class="btn-ghost flex h-9 w-9 cursor-pointer list-none items-center justify-center px-0 md:w-auto md:px-3"
+            class="btn-ghost icon-control flex h-9 w-9 cursor-pointer list-none items-center justify-center px-0 xl:w-auto xl:px-3"
             :aria-label="t('openMenu')"
             :title="t('openMenu')"
+            :data-tooltip="t('openMenu')"
+            data-tooltip-align="end"
           >
-            <span class="md:hidden" aria-hidden="true">⋯</span>
-            <span class="hidden md:inline">{{ t('menu') }}</span>
+            <AppIcon name="more" />
+            <span class="hidden xl:inline">{{ t('menu') }}</span>
           </summary>
-          <div class="absolute right-0 mt-2 flex min-w-52 flex-col rounded-md border border-[var(--c-border)] bg-[var(--c-surface)] p-1 shadow-lg">
-            <div class="flex items-center gap-2 border-b border-[var(--c-border)] px-3 py-2 sm:hidden">
+          <div class="absolute right-0 mt-2 flex w-[min(18rem,calc(100vw-1rem))] flex-col rounded-md border border-[var(--c-border)] bg-[var(--c-surface)] p-1 shadow-lg">
+            <div class="flex items-center gap-2 border-b border-[var(--c-border)] px-3 py-2 md:hidden">
               <select
                 class="input min-w-0 flex-1 py-1 text-xs"
                 :value="locale"
@@ -221,11 +229,11 @@ onMounted(async () => {
               <button
                 class="btn-ghost h-8 px-2"
                 type="button"
-                :title="`Theme: ${theme.mode.value}`"
-                :aria-label="`Theme: ${theme.mode.value}. Click to change.`"
+                :title="themeLabel"
+                :aria-label="themeLabel"
                 @click="theme.cycle()"
               >
-                {{ themeIcon }}
+                <AppIcon :name="themeIcon" />
               </button>
             </div>
             <template v-for="link in settings.navLinks" :key="'mobile:' + link.url + link.label">
@@ -270,8 +278,8 @@ onMounted(async () => {
           </div>
         </details>
         <template v-if="auth.isAuthed">
-          <span class="hidden text-sm text-[var(--c-text-muted)] sm:inline">{{ auth.user?.name }}</span>
-          <button class="btn-ghost hidden sm:inline-flex" @click="auth.logout()">{{ t('signOut') }}</button>
+          <span class="hidden text-sm text-[var(--c-text-muted)] 2xl:inline">{{ auth.user?.name }}</span>
+          <button class="btn-ghost hidden 2xl:inline-flex" @click="auth.logout()">{{ t('signOut') }}</button>
         </template>
         <RouterLink v-else to="/_login" class="btn-ghost shrink-0">{{ t('signIn') }}</RouterLink>
       </div>

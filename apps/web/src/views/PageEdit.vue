@@ -489,7 +489,8 @@ async function archive(): Promise<void> {
 </script>
 
 <template>
-  <div>
+  <div class="min-w-0">
+    <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--c-accent)]">{{ isEdit ? t('editingMode') : t('creatingMode') }}</p>
     <PageMetaBar
       v-model:title="title"
       v-model:status="status"

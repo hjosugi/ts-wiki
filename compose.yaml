@@ -1,0 +1,15 @@
+services:
+  wiki:
+    image: ghcr.io/hjosugi/kawaii-wiki.ts:${KAWAII_WIKI_VERSION:-1}
+    pull_policy: always
+    restart: unless-stopped
+    ports:
+      - "${KAWAII_WIKI_PORT:-4000}:4000"
+    environment:
+      NODE_ENV: production
+      KAWAII_WIKI_FTS_TOKENIZER: ${KAWAII_WIKI_FTS_TOKENIZER:-trigram}
+    volumes:
+      - kawaii-wiki-data:/data
+
+volumes:
+  kawaii-wiki-data:
