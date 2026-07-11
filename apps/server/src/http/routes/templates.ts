@@ -32,11 +32,11 @@ const templateBody = t.Object({
 
 export const createTemplateRoutes = ({ logger }: TemplateRoutesContext) => (app: BaseApp) =>
   app
-    .get('/api/templates', ({ services, principal }) => ({
-      templates: unwrap(services.templates.list(principal)),
+    .get('/api/templates', async ({ services, principal }) => ({
+      templates: unwrap(await services.templates.list(principal)),
     }))
-    .post('/api/templates', ({ body, services, principal }) => {
-      const template = unwrap(services.templates.create(principal, body))
+    .post('/api/templates', async ({ body, services, principal }) => {
+      const template = unwrap(await services.templates.create(principal, body))
       audit(logger, 'template.create', {
         userId: principal?.id ?? null,
         templateId: template.id,
@@ -44,8 +44,8 @@ export const createTemplateRoutes = ({ logger }: TemplateRoutesContext) => (app:
       })
       return { template }
     }, { body: templateBody })
-    .put('/api/templates/:id', ({ params, body, services, principal }) => {
-      const template = unwrap(services.templates.update(principal, params.id, body))
+    .put('/api/templates/:id', async ({ params, body, services, principal }) => {
+      const template = unwrap(await services.templates.update(principal, params.id, body))
       audit(logger, 'template.update', {
         userId: principal?.id ?? null,
         templateId: template.id,
@@ -56,8 +56,8 @@ export const createTemplateRoutes = ({ logger }: TemplateRoutesContext) => (app:
       params: t.Object({ id: t.String() }),
       body: templateBody,
     })
-    .delete('/api/templates/:id', ({ params, services, principal }) => {
-      const result = unwrap(services.templates.remove(principal, params.id))
+    .delete('/api/templates/:id', async ({ params, services, principal }) => {
+      const result = unwrap(await services.templates.remove(principal, params.id))
       audit(logger, 'template.delete', {
         userId: principal?.id ?? null,
         templateId: result.id,

@@ -4,13 +4,13 @@ import type { BaseApp } from '../base.ts'
 
 export const createPreferenceRoutes = () => (app: BaseApp) =>
   app
-    .get('/api/me/preferences', ({ services, principal }) => ({
-      preferences: unwrap(services.preferences.get(principal)),
+    .get('/api/me/preferences', async ({ services, principal }) => ({
+      preferences: unwrap(await services.preferences.get(principal)),
     }))
     .put(
       '/api/me/preferences',
-      ({ body, services, principal }) => ({
-        preferences: unwrap(services.preferences.update(principal, body.preferences)),
+      async ({ body, services, principal }) => ({
+        preferences: unwrap(await services.preferences.update(principal, body.preferences)),
       }),
       {
         body: t.Object({

@@ -1,4 +1,3 @@
-import { asc, desc, eq } from 'drizzle-orm'
 import {
   type AppError,
   type PageStatus,
@@ -14,8 +13,10 @@ import {
   validationError,
   type Result,
 } from '@kawaii-wiki/core'
-import type { DB } from '../db/client.ts'
-import { pageTemplates, type PageTemplate } from '../db/schema.ts'
+import type {
+  PageTemplateRepository,
+  StoredPageTemplate,
+} from '../repositories/page-templates.ts'
 
 export interface PageTemplateMetadata {
   readonly title?: string
@@ -47,10 +48,10 @@ export interface PageTemplateView {
 }
 
 export interface PageTemplateService {
-  list(principal: Principal | null): Result<PageTemplateView[], AppError>
-  create(principal: Principal | null, input: PageTemplateInput): Result<PageTemplateView, AppError>
-  update(principal: Principal | null, id: string, input: PageTemplateInput): Result<PageTemplateView, AppError>
-  remove(principal: Principal | null, id: string): Result<{ id: string }, AppError>
+  list(principal: Principal | null): Promise<Result<PageTemplateView[], AppError>>
+  create(principal: Principal | null, input: PageTemplateInput): Promise<Result<PageTemplateView, AppError>>
+  update(principal: Principal | null, id: string, input: PageTemplateInput): Promise<Result<PageTemplateView, AppError>>
+  remove(principal: Principal | null, id: string): Promise<Result<{ id: string }, AppError>>
 }
 
 const cleanText = (value: string | undefined, max: number): string =>
@@ -86,7 +87,7 @@ const cleanMetadata = (metadata: PageTemplateMetadata | null | undefined): Resul
   return ok(next)
 }
 
-const cleanInput = (input: PageTemplateInput, existing?: PageTemplate): Result<{
+const cleanInput = (input: PageTemplateInput, existing?: StoredPageTemplate): Result<{
   name: string
   description: string
   icon: string
@@ -107,7 +108,7 @@ const cleanInput = (input: PageTemplateInput, existing?: PageTemplate): Result<{
   })
 }
 
-const toView = (row: PageTemplate): PageTemplateView => ({
+const toView = (row: StoredPageTemplate): PageTemplateView => ({
   id: row.id,
   name: row.name,
   description: row.description,
@@ -119,27 +120,24 @@ const toView = (row: PageTemplate): PageTemplateView => ({
   updatedAt: row.updatedAt,
 })
 
-export const createPageTemplateService = (db: DB): PageTemplateService => {
+export const createPageTemplateService = (repository: PageTemplateRepository): PageTemplateService => {
   const requireEditor = (principal: Principal | null): Result<true, AppError> =>
     requirePermission(principal, 'page:create')
 
-  const find = (id: string): PageTemplate | undefined =>
-    db.select().from(pageTemplates).where(eq(pageTemplates.id, id)).get()
-
   return {
-    list(principal) {
+    async list(principal) {
       const allowed = requireEditor(principal)
       if (!allowed.ok) return allowed
-      return ok(db.select().from(pageTemplates).orderBy(asc(pageTemplates.name), desc(pageTemplates.updatedAt)).all().map(toView))
+      return ok((await repository.list()).map(toView))
     },
 
-    create(principal, input) {
+    async create(principal, input) {
       const allowed = requireEditor(principal)
       if (!allowed.ok) return allowed
       const clean = cleanInput(input)
       if (!clean.ok) return clean
       const now = Date.now()
-      const row: PageTemplate = {
+      const row: StoredPageTemplate = {
         id: crypto.randomUUID(),
         name: clean.value.name,
         description: clean.value.description,
@@ -150,38 +148,35 @@ export const createPageTemplateService = (db: DB): PageTemplateService => {
         createdAt: now,
         updatedAt: now,
       }
-      db.insert(pageTemplates).values(row).run()
+      await repository.insert(row)
       return ok(toView(row))
     },
 
-    update(principal, id, input) {
+    async update(principal, id, input) {
       const allowed = requireEditor(principal)
       if (!allowed.ok) return allowed
-      const existing = find(id)
+      const existing = await repository.findById(id)
       if (!existing) return err(notFound('Template not found'))
       const clean = cleanInput(input, existing)
       if (!clean.ok) return clean
       const updatedAt = Date.now()
-      db.update(pageTemplates)
-        .set({
-          name: clean.value.name,
-          description: clean.value.description,
-          icon: clean.value.icon,
-          content: clean.value.content,
-          metadata: JSON.stringify(clean.value.metadata),
-          updatedAt,
-        })
-        .where(eq(pageTemplates.id, id))
-        .run()
+      await repository.update(id, {
+        name: clean.value.name,
+        description: clean.value.description,
+        icon: clean.value.icon,
+        content: clean.value.content,
+        metadata: JSON.stringify(clean.value.metadata),
+        updatedAt,
+      })
       return ok(toView({ ...existing, ...clean.value, metadata: JSON.stringify(clean.value.metadata), updatedAt }))
     },
 
-    remove(principal, id) {
+    async remove(principal, id) {
       const allowed = requireEditor(principal)
       if (!allowed.ok) return allowed
-      const existing = find(id)
+      const existing = await repository.findById(id)
       if (!existing) return err(notFound('Template not found'))
-      db.delete(pageTemplates).where(eq(pageTemplates.id, id)).run()
+      await repository.delete(id)
       return ok({ id })
     },
   }

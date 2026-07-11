@@ -6,6 +6,7 @@ import type { DB } from '../db/client.ts'
 import { createRenderer, type MarkdownRenderer } from '@kawaii-wiki/core'
 import type { AssetUploadEnv, AuthEnv, BrandingEnv, LocalizationEnv, MailEnv, SearchEnv, WebhookEnv } from '../env.ts'
 import type { StructuredLogger } from '../observability/logging.ts'
+import { createDatabaseRepositories } from '../db/repositories/index.ts'
 import { createPageService, type PageService } from './pages.ts'
 import { createFtsSearchIndexer, createSearchService, type SearchService } from './search.ts'
 import { createUserService, type UserService } from './users.ts'
@@ -111,6 +112,7 @@ const defaultLocalization: LocalizationEnv = {
 }
 
 export const createServices = (db: DB, options: ServiceOptions = {}): Services => {
+  const repositories = createDatabaseRepositories(db)
   const authz = createAuthzService(db)
   authz.ensureDefaults()
   const auth = options.auth ?? defaultAuth
@@ -187,8 +189,8 @@ export const createServices = (db: DB, options: ServiceOptions = {}): Services =
     oidc: createOidcService(db, auth, authz),
     passkeys: createPasskeyService(db, auth),
     shares: createPageShareService(db),
-    templates: createPageTemplateService(db),
-    preferences: createUserPreferenceService(db),
+    templates: createPageTemplateService(repositories.pageTemplates),
+    preferences: createUserPreferenceService(repositories.userPreferences),
     linkPreviews: createLinkPreviewService(db, {
       fetcher: options.webhookFetcher,
       resolver: options.webhookResolver,

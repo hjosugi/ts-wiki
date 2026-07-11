@@ -100,6 +100,21 @@ LIBSQL_AUTH_TOKEN=your-turso-token
 LIBSQL_REPLICA_PATH=/data/kawaii-wiki.ts-libsql-replica.db
 ```
 
+### Database repository boundary
+
+Cross-database work is being migrated behind asynchronous repository contracts
+under `src/repositories`. Concrete SQLite/libSQL queries live under
+`src/db/repositories`; service modules consume only the driver-neutral
+interfaces. Repository methods return promises even for embedded SQLite so a
+remote or pooled database driver does not require another HTTP/service API
+rewrite.
+
+User preferences and page templates currently use this boundary and run the
+same repository contract suite against both SQLite and libSQL. Remaining
+services are being migrated incrementally under GitHub issue #363; until that
+work is complete, PostgreSQL and MySQL are intentionally not exposed as
+selectable production drivers.
+
 Passkeys/WebAuthn need a stable HTTPS origin in production:
 
 ```bash
@@ -210,6 +225,8 @@ bun test apps/server
 | `src/services/oidc.ts` / `src/services/passkeys.ts` | external login and WebAuthn auth |
 | `src/services/authz.ts` | groups, membership, and page rules |
 | `src/services/webhooks.ts` | signed webhooks, delivery history, automation rules |
+| `src/repositories/` | asynchronous, driver-neutral persistence contracts |
+| `src/db/repositories/` | SQLite/libSQL implementations of repository contracts |
 | `src/db/schema.ts` | SQLite tables and relationships |
 | `src/db/migrate.ts` | local schema setup, including FTS5 |
 

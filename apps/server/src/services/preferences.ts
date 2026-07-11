@@ -1,4 +1,3 @@
-import { and, eq } from 'drizzle-orm'
 import {
   type AppError,
   type Principal,
@@ -8,15 +7,17 @@ import {
   unauthorized,
   validationError,
 } from '@kawaii-wiki/core'
-import type { DB } from '../db/client.ts'
-import { userPreferences } from '../db/schema.ts'
+import type {
+  UserPreferenceMutation,
+  UserPreferenceRepository,
+} from '../repositories/user-preferences.ts'
 
 export type UserPreferenceKey = 'nav:collapsed' | 'nav:starred' | 'nav:page-order' | 'editor:mode'
 export type UserPreferenceMap = Record<UserPreferenceKey, unknown>
 
 export interface UserPreferenceService {
-  get(principal: Principal | null): Result<Partial<UserPreferenceMap>, AppError>
-  update(principal: Principal | null, preferences: unknown): Result<Partial<UserPreferenceMap>, AppError>
+  get(principal: Principal | null): Promise<Result<Partial<UserPreferenceMap>, AppError>>
+  update(principal: Principal | null, preferences: unknown): Promise<Result<Partial<UserPreferenceMap>, AppError>>
 }
 
 const ALLOWED_KEYS = new Set<UserPreferenceKey>(['nav:collapsed', 'nav:starred', 'nav:page-order', 'editor:mode'])
@@ -80,13 +81,13 @@ const parseStored = (key: string, value: string): unknown | undefined => {
   }
 }
 
-export const createUserPreferenceService = (db: DB): UserPreferenceService => {
+export const createUserPreferenceService = (repository: UserPreferenceRepository): UserPreferenceService => {
   const requireUser = (principal: Principal | null): Result<Principal, AppError> =>
     principal ? ok(principal) : err(unauthorized())
 
-  const getForUser = (userId: string): Partial<UserPreferenceMap> => {
+  const getForUser = async (userId: string): Promise<Partial<UserPreferenceMap>> => {
     const preferences: Partial<UserPreferenceMap> = {}
-    for (const row of db.select().from(userPreferences).where(eq(userPreferences.userId, userId)).all()) {
+    for (const row of await repository.listForUser(userId)) {
       const value = parseStored(row.key, row.value)
       if (value !== undefined && isPreferenceKey(row.key)) preferences[row.key] = value
     }
@@ -94,13 +95,13 @@ export const createUserPreferenceService = (db: DB): UserPreferenceService => {
   }
 
   return {
-    get(principal) {
+    async get(principal) {
       const user = requireUser(principal)
       if (!user.ok) return user
-      return ok(getForUser(user.value.id))
+      return ok(await getForUser(user.value.id))
     },
 
-    update(principal, preferences) {
+    async update(principal, preferences) {
       const user = requireUser(principal)
       if (!user.ok) return user
       if (!preferences || typeof preferences !== 'object' || Array.isArray(preferences)) {
@@ -108,27 +109,19 @@ export const createUserPreferenceService = (db: DB): UserPreferenceService => {
       }
 
       const now = Date.now()
+      const mutations: UserPreferenceMutation[] = []
       for (const [key, value] of Object.entries(preferences as Record<string, unknown>)) {
         if (!isPreferenceKey(key)) return err(validationError(`Unknown preference key: ${key}`, key))
         const cleaned = cleanPreference(key, value)
         if (!cleaned.ok) return cleaned
-        if (cleaned.value === null) {
-          db.delete(userPreferences)
-            .where(and(eq(userPreferences.userId, user.value.id), eq(userPreferences.key, key)))
-            .run()
-          continue
-        }
-        const encoded = JSON.stringify(cleaned.value)
-        db.insert(userPreferences)
-          .values({ userId: user.value.id, key, value: encoded, updatedAt: now })
-          .onConflictDoUpdate({
-            target: [userPreferences.userId, userPreferences.key],
-            set: { value: encoded, updatedAt: now },
-          })
-          .run()
+        mutations.push({
+          key,
+          value: cleaned.value === null ? null : JSON.stringify(cleaned.value),
+        })
       }
 
-      return ok(getForUser(user.value.id))
+      await repository.applyForUser(user.value.id, mutations, now)
+      return ok(await getForUser(user.value.id))
     },
   }
 }

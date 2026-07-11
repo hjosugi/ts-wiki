@@ -3,6 +3,21 @@
 All notable changes are documented here. This project follows Semantic
 Versioning; API compatibility details are in `docs/API.md`.
 
+## [1.0.8] - 2026-07-11
+
+### Changed
+
+- Began the cross-database repository migration from issue #363 with
+  asynchronous, driver-neutral contracts for user preferences and page
+  templates.
+- Kept concrete Drizzle queries below the SQLite/libSQL adapter boundary and
+  made multi-preference updates transactional.
+
+### Tests
+
+- Added shared repository contract suites that run against both in-memory
+  SQLite and libSQL.
+
 ## [1.0.7] - 2026-07-11
 
 ### Added
