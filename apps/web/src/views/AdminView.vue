@@ -80,15 +80,14 @@ onBeforeUnmount(() => window.removeEventListener('hashchange', syncPanelFromHash
   <div class="min-w-0 max-w-full space-y-5">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <h1 class="text-2xl font-bold tracking-tight">{{ t('admin') }}</h1>
-      <span class="text-sm text-[var(--c-text-muted)]">{{ t(activePanel.label) }}</span>
     </div>
-    <div class="grid min-w-0 gap-6 lg:grid-cols-[15rem_minmax(0,1fr)]">
-      <aside class="min-w-0 lg:sticky lg:top-20 lg:self-start">
+    <div class="grid min-w-0 gap-6 xl:grid-cols-[16rem_minmax(0,1fr)]">
+      <aside class="min-w-0 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:self-start xl:overflow-y-auto xl:pr-2">
         <label class="block">
           <span class="sr-only">{{ t('searchSettings') }}</span>
           <input v-model="settingsQuery" class="input text-sm" type="search" :placeholder="t('searchSettings')" />
         </label>
-        <label class="mt-3 block lg:hidden">
+        <label class="mt-3 block xl:hidden">
           <span class="sr-only">{{ t('adminSections') }}</span>
           <select v-model="activePanelId" class="input" @change="activatePanel(activePanelId)">
             <optgroup v-for="category in panelsByCategory" :key="`select:${category.id}`" :label="t(category.label)">
@@ -96,15 +95,15 @@ onBeforeUnmount(() => window.removeEventListener('hashchange', syncPanelFromHash
             </optgroup>
           </select>
         </label>
-        <nav class="mt-4 hidden space-y-4 lg:block" :aria-label="t('adminSections')">
+        <nav class="mt-4 hidden space-y-5 xl:block" :aria-label="t('adminSections')">
           <section v-for="category in panelsByCategory" :key="category.id">
-            <h2 class="px-2 text-xs font-semibold uppercase tracking-wide text-[var(--c-text-muted)]">{{ t(category.label) }}</h2>
+            <h2 class="px-2 text-[13px] font-bold tracking-wide text-[var(--c-text-muted)]">{{ t(category.label) }}</h2>
             <div class="mt-1 space-y-0.5">
               <a
                 v-for="panel in category.panels"
                 :key="panel.id"
                 :href="`#${panel.id}`"
-                class="block rounded-md px-2.5 py-2 text-sm font-medium"
+                class="block rounded-md px-3 py-2.5 text-[15px] font-medium"
                 :class="activePanelId === panel.id ? 'bg-[var(--c-accent)] text-white' : 'text-[var(--c-text-muted)] hover:bg-[var(--c-surface-muted)] hover:text-[var(--c-text)]'"
                 :aria-current="activePanelId === panel.id ? 'page' : undefined"
                 @click.prevent="activatePanel(panel.id)"

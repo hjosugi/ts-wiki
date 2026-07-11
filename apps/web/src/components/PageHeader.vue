@@ -8,6 +8,7 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import { useAuth } from '@/stores/auth'
 import { useDialogs } from '@/composables/useDialogs'
 import { useRouter } from 'vue-router'
+import AppIcon from '@/components/AppIcon.vue'
 
 const props = defineProps<{
   page: Page
@@ -47,7 +48,7 @@ const childPath = computed(() => `${props.page.path}/new-page`)
 const markdownExportUrl = computed(() => `/api/export/page?path=${encodeURIComponent(props.page.path)}&format=markdown`)
 const htmlExportUrl = computed(() => `/api/export/page?path=${encodeURIComponent(props.page.path)}&format=html`)
 const printExportUrl = computed(() => `/api/export/page?path=${encodeURIComponent(props.page.path)}&format=print`)
-const labels = computed(() => props.page.labels)
+const labels = computed(() => props.page.labels.filter((label) => !label.startsWith('kawaii-wiki-')))
 const reviewDate = computed(() =>
   props.page.reviewAt ? formatDate(props.page.reviewAt) : null,
 )
@@ -193,7 +194,7 @@ watch(() => [props.page.path, props.canEdit] as const, () => {
 </script>
 
 <template>
-  <header class="mb-7 min-w-0 border-b border-gray-200 pb-5 dark:border-gray-800">
+  <header class="mb-5 min-w-0 border-b border-gray-200 pb-5 dark:border-gray-800">
     <div
       v-if="page.coverUrl"
       class="mb-5 h-48 overflow-hidden rounded-md bg-[var(--c-surface-muted)] bg-cover sm:h-64"
@@ -205,7 +206,7 @@ watch(() => [props.page.path, props.canEdit] as const, () => {
     <div class="mt-3 flex min-w-0 flex-wrap items-start justify-between gap-4">
       <div class="min-w-0 flex-1">
         <p class="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--c-text-muted)]">{{ t('viewingMode') }}</p>
-        <h1 class="flex min-w-0 items-center gap-3 text-3xl font-bold tracking-tight text-gray-950 dark:text-gray-50">
+        <h1 class="flex min-w-0 items-center gap-3 text-2xl font-bold tracking-tight text-gray-950 dark:text-gray-50 sm:text-3xl">
           <span v-if="page.icon" class="shrink-0 text-4xl leading-none" aria-hidden="true">{{ page.icon }}</span>
           <span class="min-w-0 break-words">{{ page.title }}</span>
         </h1>
@@ -228,14 +229,16 @@ watch(() => [props.page.path, props.canEdit] as const, () => {
 
       <div class="w-full min-w-0 space-y-2 sm:w-auto">
         <div class="flex flex-wrap justify-start gap-2 sm:justify-end">
-          <button v-if="auth.isAuthed" class="btn-ghost" type="button" :disabled="watchBusy" :aria-pressed="watching" @click="toggleWatch">
+          <button v-if="auth.isAuthed" class="btn-ghost gap-1.5" type="button" :disabled="watchBusy" :aria-pressed="watching" @click="toggleWatch">
+            <AppIcon name="eye" :size="16" />
             {{ watching ? t('watching') : t('watch') }}
           </button>
-          <RouterLink v-if="canEdit" :to="'/_edit/' + page.path" class="btn-primary">
+          <RouterLink v-if="canEdit" :to="'/_edit/' + page.path" class="btn-primary gap-1.5">
+            <AppIcon name="edit" :size="16" />
             {{ t('editPage') }}
           </RouterLink>
           <details class="relative">
-            <summary class="btn-ghost cursor-pointer list-none">{{ t('moreActions') }}</summary>
+            <summary class="btn-ghost cursor-pointer list-none gap-1.5"><AppIcon name="more" :size="16" />{{ t('moreActions') }}</summary>
             <div class="absolute right-0 z-20 mt-2 grid w-[min(18rem,calc(100vw-2rem))] rounded-md border border-[var(--c-border)] bg-[var(--c-surface)] p-1 shadow-xl">
               <button class="rounded px-3 py-2 text-left text-sm hover:bg-[var(--c-surface-muted)]" type="button" @click="copyPath">{{ copied ? t('copied') : t('copyPath') }}</button>
               <button class="rounded px-3 py-2 text-left text-sm hover:bg-[var(--c-surface-muted)]" type="button" :aria-expanded="insightsOpen" aria-controls="page-insights" @click="toggleInsights">{{ t('insights') }}</button>

@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import { Api, type PublicSettings } from '@/lib/api'
 import Skeleton from '@/components/Skeleton.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
+import { useI18n } from '@/lib/i18n'
 
 type PolicySettings = Pick<
   PublicSettings,
@@ -22,6 +23,7 @@ const sessionHours = ref(24 * 30)
 const uploadMegabytes = ref(25)
 const saving = ref(false)
 const notice = ref<string | null>(null)
+const { t } = useI18n()
 
 const canSave = computed(() =>
   Boolean(settings.value)
@@ -79,7 +81,7 @@ async function save(): Promise<void> {
       defaultEditorMode: saved.defaultEditorMode,
       mailConfigured: settings.value.mailConfigured,
     })
-    notice.value = 'Site policy saved.'
+    notice.value = t('sitePolicySaved')
   } catch (e) {
     error.value = friendlyError(e)
   } finally {
@@ -91,7 +93,7 @@ async function save(): Promise<void> {
 
 <template>
   <section>
-    <h2 class="mb-3 text-lg font-semibold">Site policy</h2>
+    <h2 class="mb-3 text-lg font-semibold">{{ t('sitePolicy') }}</h2>
     <p v-if="error" class="mb-3 text-sm text-red-600 dark:text-red-400">{{ error }}</p>
     <p v-if="notice" class="mb-3 text-sm text-emerald-700 dark:text-emerald-300">{{ notice }}</p>
     <Skeleton v-if="loading" class="mb-3" label="Loading site policy" :lines="4" />
@@ -99,38 +101,38 @@ async function save(): Promise<void> {
     <form v-if="settings" class="card max-w-3xl space-y-5 p-4" @submit.prevent="save">
       <div class="grid gap-3 sm:grid-cols-2">
         <label class="space-y-1 text-sm">
-          <span class="font-medium">Account registration</span>
+          <span class="font-medium">{{ t('accountRegistration') }}</span>
           <select v-model="settings.registration" class="input">
-            <option value="open">Open</option>
-            <option value="off">Off</option>
+            <option value="open">{{ t('registrationOpen') }}</option>
+            <option value="off">{{ t('registrationOff') }}</option>
           </select>
-          <span class="block text-xs text-[var(--c-text-muted)]">First-run owner setup still works before an admin exists.</span>
+          <span class="block text-xs text-[var(--c-text-muted)]">{{ t('ownerSetupHint') }}</span>
         </label>
 
         <label class="space-y-1 text-sm">
-          <span class="font-medium">Default editor</span>
+          <span class="font-medium">{{ t('defaultEditor') }}</span>
           <select v-model="settings.defaultEditorMode" class="input">
-            <option value="visual">Visual</option>
-            <option value="markdown">Markdown</option>
+            <option value="visual">{{ t('visual') }}</option>
+            <option value="markdown">{{ t('markdown') }}</option>
           </select>
-          <span class="block text-xs text-[var(--c-text-muted)]">Users can override this by switching modes while editing.</span>
+          <span class="block text-xs text-[var(--c-text-muted)]">{{ t('editorOverrideHint') }}</span>
         </label>
       </div>
 
       <div class="grid gap-3 sm:grid-cols-2">
         <label class="space-y-1 text-sm">
-          <span class="font-medium">Session lifetime</span>
+          <span class="font-medium">{{ t('sessionLifetime') }}</span>
           <span class="flex items-center gap-2">
             <input v-model.number="sessionHours" class="input" type="number" min="1" max="8760" step="1" />
-            <span class="shrink-0 text-sm text-[var(--c-text-muted)]">hours</span>
+            <span class="shrink-0 text-sm text-[var(--c-text-muted)]">{{ t('hours') }}</span>
           </span>
         </label>
 
         <label class="flex items-start gap-3 rounded-[var(--radius)] border border-[var(--c-border)] p-3 text-sm">
           <input v-model="settings.privateWiki" class="mt-1" type="checkbox" />
           <span>
-            <span class="block font-medium">Private wiki</span>
-            <span class="block text-[var(--c-text-muted)]">Anonymous visitors must sign in before reading pages.</span>
+            <span class="block font-medium">{{ t('privateWiki') }}</span>
+            <span class="block text-[var(--c-text-muted)]">{{ t('privateWikiHint') }}</span>
           </span>
         </label>
       </div>
@@ -139,8 +141,8 @@ async function save(): Promise<void> {
         <label class="flex items-start gap-3 rounded-[var(--radius)] border border-[var(--c-border)] p-3 text-sm">
           <input v-model="settings.requireTwoFactor" class="mt-1" type="checkbox" />
           <span>
-            <span class="block font-medium">Require two-factor authentication</span>
-            <span class="block text-[var(--c-text-muted)]">Users without a passkey or TOTP code are guided through setup at login.</span>
+            <span class="block font-medium">{{ t('requireTwoFactor') }}</span>
+            <span class="block text-[var(--c-text-muted)]">{{ t('requireTwoFactorHint') }}</span>
           </span>
         </label>
       </div>
@@ -153,21 +155,21 @@ async function save(): Promise<void> {
           :disabled="!settings.mailConfigured && !settings.requireEmailVerification"
         />
         <span>
-          <span class="block font-medium">Require email verification</span>
+          <span class="block font-medium">{{ t('requireEmailVerification') }}</span>
           <span class="block text-[var(--c-text-muted)]">
             {{
               settings.mailConfigured
-                ? 'New local accounts must verify email before login.'
+                ? t('emailVerificationReadyHint')
                 : settings.requireEmailVerification
-                  ? 'SMTP is not configured; disable this policy or configure SMTP.'
-                  : 'Configure SMTP before enabling email verification.'
+                  ? t('emailVerificationEnabledNoSmtp')
+                  : t('emailVerificationNeedsSmtp')
             }}
           </span>
         </span>
       </label>
 
       <label class="block space-y-1 text-sm sm:max-w-xs">
-        <span class="font-medium">Upload limit</span>
+        <span class="font-medium">{{ t('uploadLimit') }}</span>
         <span class="flex items-center gap-2">
           <input v-model.number="uploadMegabytes" class="input" type="number" min="1" max="100" step="1" />
           <span class="shrink-0 text-sm text-[var(--c-text-muted)]">MB</span>
@@ -175,11 +177,11 @@ async function save(): Promise<void> {
       </label>
 
       <p class="rounded-[var(--radius)] border border-[var(--c-border)] bg-[var(--c-surface-muted)] px-3 py-2 text-xs text-[var(--c-text-muted)]">
-        Database, storage credentials, SMTP connection details, OIDC secrets, webhook SSRF policy, ports, CORS, and Git remotes stay in server environment settings.
+        {{ t('serverSettingsHint') }}
       </p>
 
       <button class="btn-primary" type="submit" :disabled="saving || !canSave">
-        {{ saving ? 'Saving...' : 'Save site policy' }}
+        {{ saving ? t('saving') : t('saveSitePolicy') }}
       </button>
     </form>
   </section>

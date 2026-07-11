@@ -122,7 +122,7 @@ onMounted(async () => {
       <RouterLink :to="homeTo" class="flex min-w-0 shrink-0 items-center gap-1.5 text-lg font-bold">
         <img v-if="settings.logoUrl" :src="settings.logoUrl" alt="" class="h-7 w-7 rounded object-cover" />
         <span v-else :style="accentStyle">▲</span>
-        <span class="hidden max-w-[10rem] truncate sm:inline">{{ settings.siteTitle }}</span>
+        <span class="hidden max-w-[15rem] truncate sm:inline">{{ settings.siteTitle }}</span>
       </RouterLink>
 
       <form class="hidden min-w-0 max-w-md flex-1 sm:block" @submit.prevent="submitSearch">

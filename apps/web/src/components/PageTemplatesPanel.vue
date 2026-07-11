@@ -4,9 +4,11 @@ import { onMounted, ref } from 'vue'
 import { Api, type Page, type PageTemplate } from '@/lib/api'
 import Skeleton from '@/components/Skeleton.vue'
 import { useDialogs } from '@/composables/useDialogs'
+import { useI18n } from '@/lib/i18n'
 
 const emit = defineEmits<{ changed: [] }>()
 const dialogs = useDialogs()
+const { t } = useI18n()
 
 const templates = ref<PageTemplate[]>([])
 const loading = ref(false)
@@ -131,24 +133,24 @@ onMounted(() => {
 <template>
   <section>
     <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
-      <h2 class="text-lg font-semibold">Page templates</h2>
+      <h2 class="text-lg font-semibold">{{ t('pageTemplates') }}</h2>
       <button class="btn-ghost" type="button" :disabled="loading" @click="load">
-        Refresh
+        {{ t('refresh') }}
       </button>
     </div>
     <p v-if="error" class="mb-3 text-sm text-red-600">{{ error }}</p>
     <Skeleton v-if="loading" class="mb-3" label="Loading templates" :lines="3" />
 
-    <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]">
+    <div class="admin-template-layout">
       <form class="card space-y-3 p-4" @submit.prevent="save">
         <div class="grid gap-2 sm:grid-cols-[5rem_minmax(0,1fr)]">
-          <input v-model="icon" class="input" maxlength="24" placeholder="Icon" aria-label="Template icon" />
-          <input v-model="name" class="input" required placeholder="Template name" aria-label="Template name" />
+          <input v-model="icon" class="input" maxlength="24" :placeholder="t('templateIcon')" :aria-label="t('templateIcon')" />
+          <input v-model="name" class="input" required :placeholder="t('templateName')" :aria-label="t('templateName')" />
         </div>
-        <input v-model="description" class="input" placeholder="Description" aria-label="Template description" />
+        <input v-model="description" class="input" :placeholder="t('description')" :aria-label="t('description')" />
         <div class="grid gap-2 sm:grid-cols-2">
-          <input v-model="title" class="input" placeholder="Default page title" aria-label="Default page title" />
-          <input v-model="path" class="input font-mono text-sm" placeholder="default/path" aria-label="Default page path" />
+          <input v-model="title" class="input" :placeholder="t('defaultPageTitle')" :aria-label="t('defaultPageTitle')" />
+          <input v-model="path" class="input font-mono text-sm" placeholder="default/path" :aria-label="t('defaultPagePath')" />
         </div>
         <div class="grid gap-2 sm:grid-cols-3">
           <select v-model="status" class="input" aria-label="Default status">
@@ -157,16 +159,16 @@ onMounted(() => {
             <option value="verified">verified</option>
             <option value="outdated">outdated</option>
           </select>
-          <input v-model="locale" class="input" placeholder="locale" aria-label="Default locale" />
-          <input v-model="reviewAtDate" class="input" type="date" aria-label="Default review date" />
+          <input v-model="locale" class="input" :placeholder="t('locale')" :aria-label="t('locale')" />
+          <input v-model="reviewAtDate" class="input" type="date" :aria-label="t('reviewDate')" />
         </div>
         <input v-model="labelsText" class="input" placeholder="labels, comma separated" aria-label="Default labels" />
-        <textarea v-model="content" class="input min-h-72 font-mono text-sm" spellcheck="false" aria-label="Template content"></textarea>
+        <textarea v-model="content" class="input min-h-72 font-mono text-sm" spellcheck="false" :aria-label="t('templateContent')"></textarea>
         <div class="flex flex-wrap gap-2">
           <button class="btn-primary" type="submit" :disabled="saving || !name">
-            {{ saving ? 'Saving...' : editingId ? 'Update template' : 'Create template' }}
+            {{ saving ? t('saving') : editingId ? t('updateTemplate') : t('createTemplate') }}
           </button>
-          <button class="btn-ghost" type="button" @click="resetForm">New template</button>
+          <button class="btn-ghost" type="button" @click="resetForm">{{ t('newTemplate') }}</button>
         </div>
       </form>
 
@@ -185,17 +187,17 @@ onMounted(() => {
                 {{ template.description }}
               </p>
               <p class="mt-1 truncate font-mono text-xs text-[var(--c-text-muted)]">
-                {{ template.metadata.path || 'No default path' }}
+                {{ template.metadata.path || t('noDefaultPath') }}
               </p>
             </div>
             <div class="flex shrink-0 gap-1">
-              <button class="btn-ghost" type="button" @click="edit(template)">Edit</button>
-              <button class="btn-danger" type="button" :disabled="saving" @click="remove(template)">Delete</button>
+              <button class="btn-ghost" type="button" @click="edit(template)">{{ t('edit') }}</button>
+              <button class="btn-danger" type="button" :disabled="saving" @click="remove(template)">{{ t('delete') }}</button>
             </div>
           </div>
         </div>
         <p v-if="!templates.length && !loading" class="text-sm text-[var(--c-text-muted)]">
-          No custom templates yet.
+          {{ t('noCustomTemplatesYet') }}
         </p>
       </div>
     </div>

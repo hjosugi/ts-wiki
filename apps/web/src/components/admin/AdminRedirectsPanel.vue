@@ -10,7 +10,7 @@ import { useAsyncData } from '@/composables/useAsyncData'
 const { data: redirects, loading, error, reload: load } = useAsyncData<PageRedirectView[]>(Api.redirects, { initial: [] })
 const fromPath = ref('')
 const toPath = ref('')
-const { formatDateTime } = useI18n()
+const { formatDateTime, t } = useI18n()
 const dialogs = useDialogs()
 
 async function createRedirect(): Promise<void> {
@@ -42,21 +42,21 @@ async function deleteRedirect(redirect: PageRedirectView): Promise<void> {
 <template>
   <section>
     <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
-      <h2 class="text-lg font-semibold">Redirects and aliases</h2>
+      <h2 class="text-lg font-semibold">{{ t('redirectsAndAliases') }}</h2>
       <button class="btn-ghost" type="button" :disabled="loading" @click="load">
-        {{ loading ? 'Loading...' : 'Refresh' }}
+        {{ loading ? t('loading') : t('refresh') }}
       </button>
     </div>
     <p v-if="error" class="text-sm text-red-600 mb-3">{{ error }}</p>
-    <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_22rem] gap-4">
+    <div class="admin-redirect-layout">
       <div class="card overflow-hidden">
         <table class="w-full text-sm">
           <thead class="text-left text-[var(--c-text-muted)] border-b border-gray-200 dark:border-gray-800">
             <tr>
-              <th class="p-3 font-medium">Alias</th>
-              <th class="p-3 font-medium">Target</th>
-              <th class="p-3 font-medium">Created</th>
-              <th class="p-3 font-medium w-28">Actions</th>
+              <th class="p-3 font-medium">{{ t('alias') }}</th>
+              <th class="p-3 font-medium">{{ t('target') }}</th>
+              <th class="p-3 font-medium">{{ t('created') }}</th>
+              <th class="p-3 font-medium w-28">{{ t('actions') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -64,7 +64,7 @@ async function deleteRedirect(redirect: PageRedirectView): Promise<void> {
               <td class="p-3" colspan="4"><Skeleton label="Loading redirects" :lines="3" /></td>
             </tr>
             <tr v-else-if="!redirects.length">
-              <td class="p-3 text-gray-500" colspan="4">No redirects yet.</td>
+              <td class="p-3 text-gray-500" colspan="4">{{ t('noRedirectsYet') }}</td>
             </tr>
             <tr v-for="redirect in redirects" :key="redirect.fromPath" class="border-b border-gray-100 dark:border-gray-800/60 last:border-0">
               <td class="p-3 font-mono text-gray-700 dark:text-gray-200">/{{ redirect.fromPath }}</td>
@@ -73,16 +73,16 @@ async function deleteRedirect(redirect: PageRedirectView): Promise<void> {
               </td>
               <td class="p-3 text-gray-500">{{ formatDateTime(redirect.createdAt) }}</td>
               <td class="p-3">
-                <button class="btn-danger py-1 text-xs" type="button" @click="deleteRedirect(redirect)">Delete</button>
+                <button class="btn-danger py-1 text-xs" type="button" @click="deleteRedirect(redirect)">{{ t('delete') }}</button>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
       <form class="card p-4 space-y-2" @submit.prevent="createRedirect">
-        <input v-model.trim="fromPath" class="input" placeholder="old/path" aria-label="Old path" />
-        <input v-model.trim="toPath" class="input" placeholder="target/path" aria-label="Target path" />
-        <button class="btn-primary" type="submit" :disabled="!fromPath || !toPath">Create alias</button>
+        <input v-model.trim="fromPath" class="input" placeholder="old/path" :aria-label="t('oldPath')" />
+        <input v-model.trim="toPath" class="input" placeholder="target/path" :aria-label="t('targetPath')" />
+        <button class="btn-primary" type="submit" :disabled="!fromPath || !toPath">{{ t('createAlias') }}</button>
       </form>
     </div>
   </section>

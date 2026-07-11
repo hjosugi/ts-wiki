@@ -10,7 +10,7 @@ import { usePages } from '@/stores/pages'
 import { usePresence } from '@/composables/usePresence'
 import { useMarkdownFeatures } from '@/composables/useMarkdownFeatures'
 import { assetFolderFromPagePath, attachmentsForPage } from '@/lib/assets'
-import { useI18n } from '@/lib/i18n'
+import { useI18n, type MessageKey } from '@/lib/i18n'
 import { useDialogs } from '@/composables/useDialogs'
 import { vMarkdownEnhance } from '@/lib/markdownEnhance'
 import { unsupportedVisualMarkdownFeatures } from '@/lib/visualMarkdownCapabilities'
@@ -18,6 +18,7 @@ import Skeleton from '@/components/Skeleton.vue'
 import FormField from '@/components/FormField.vue'
 import SegmentedControl from '@/components/SegmentedControl.vue'
 import PageMetaBar from '@/components/PageMetaBar.vue'
+import AppIcon from '@/components/AppIcon.vue'
 import { usePageEditor } from '@/composables/usePageEditor'
 import {
   builtInPageTemplates,
@@ -89,6 +90,36 @@ const attachmentsLoaded = ref(false)
 const builtInTemplates = builtInPageTemplates()
 const customTemplates = ref<PageTemplateOption[]>([])
 const templateOptions = computed(() => [...builtInTemplates, ...customTemplates.value])
+const templateQuery = ref('')
+const builtInTemplateKeys: Record<string, MessageKey> = {
+  'builtin:blank': 'templateBlank',
+  'builtin:decision': 'templateDecision',
+  'builtin:how-to': 'templateHowTo',
+  'builtin:talent-profile': 'templateTalentProfile',
+  'builtin:stream-log': 'templateStreamLog',
+  'builtin:song-list': 'templateSongList',
+  'builtin:glossary': 'templateGlossary',
+  'builtin:event-announcement': 'templateEventAnnouncement',
+  'builtin:meeting': 'templateMeetingNotes',
+  'builtin:journal': 'templateDailyNote',
+  'builtin:spec': 'templateSpec',
+}
+const templateDisplayLabel = (template: PageTemplateOption): string => {
+  const key = builtInTemplateKeys[template.key]
+  return key ? t(key) : template.label
+}
+const filteredTemplateOptions = computed(() => {
+  const query = templateQuery.value.trim().toLocaleLowerCase()
+  if (!query) return templateOptions.value
+  return templateOptions.value.filter((template) => [
+    templateDisplayLabel(template),
+    template.label,
+    template.description,
+    template.metadata.title ?? '',
+    template.metadata.path ?? '',
+    ...(template.metadata.labels ?? []),
+  ].some((value) => value.toLocaleLowerCase().includes(query)))
+})
 const templatesLoading = ref(false)
 const showTemplateSave = ref(false)
 const templateName = ref('')
@@ -548,9 +579,17 @@ async function archive(): Promise<void> {
           <h2 class="text-sm font-semibold">{{ t('chooseTemplate') }}</h2>
           <Skeleton v-if="templatesLoading" class="w-40" :label="t('loadingTemplates')" :lines="1" />
         </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <label class="relative min-w-[14rem] flex-1">
+            <span class="sr-only">{{ t('searchTemplates') }}</span>
+            <input v-model="templateQuery" class="input h-10 w-full pl-9" type="search" :placeholder="t('searchTemplates')" />
+            <AppIcon class="pointer-events-none absolute left-3 top-3 text-[var(--c-text-muted)]" name="search" :size="15" />
+          </label>
+          <span class="text-sm text-[var(--c-text-muted)]">{{ t('templateCount', { count: filteredTemplateOptions.length }) }}</span>
+        </div>
         <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <button
-            v-for="template in templateOptions"
+            v-for="template in filteredTemplateOptions"
             :key="template.key"
             class="min-h-56 rounded-md border p-3 text-left transition-colors"
             :class="selectedTemplate === template.key ? 'border-[var(--c-accent)] bg-[var(--c-surface-muted)]' : 'border-[var(--c-border)] bg-[var(--c-surface)] hover:bg-[var(--c-surface-muted)]'"
@@ -559,7 +598,7 @@ async function archive(): Promise<void> {
           >
             <span class="mb-2 flex items-start justify-between gap-3">
               <span>
-                <span class="block text-sm font-semibold">{{ template.icon ? `${template.icon} ` : '' }}{{ template.label }}</span>
+                <span class="block text-sm font-semibold">{{ template.icon ? `${template.icon} ` : '' }}{{ templateDisplayLabel(template) }}</span>
                 <span class="block text-xs text-[var(--c-text-muted)]">{{ template.description || (template.builtIn ? t('builtInStarter') : t('customTemplate')) }}</span>
               </span>
               <span v-if="selectedTemplate === template.key" class="text-xs font-semibold text-[var(--c-accent)]">{{ t('selected') }}</span>
@@ -571,6 +610,9 @@ async function archive(): Promise<void> {
             ></span>
           </button>
         </div>
+        <p v-if="!filteredTemplateOptions.length" class="rounded-md border border-dashed border-[var(--c-border)] p-6 text-center text-sm text-[var(--c-text-muted)]">
+          {{ t('noMatchingTemplates') }}
+        </p>
       </section>
     </section>
 

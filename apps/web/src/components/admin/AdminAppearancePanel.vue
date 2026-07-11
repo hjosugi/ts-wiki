@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { friendlyError } from '@/lib/friendlyErrors'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Api, type PublicSettings } from '@/lib/api'
 import { applyBranding } from '@/lib/branding'
 import { setMarkdownFeatureSettings } from '@/lib/markdownEnhance'
-import { setDateFormatSettings } from '@/lib/i18n'
+import { setDateFormatSettings, useI18n } from '@/lib/i18n'
 import Skeleton from '@/components/Skeleton.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
 
@@ -13,22 +13,23 @@ type ThemePreset = PublicSettings['themePreset']
 type FontFamily = PublicSettings['fontFamily']
 type BackgroundType = PublicSettings['background']['type']
 
-const themePresets: Array<{ value: ThemePreset; label: string; note: string }> = [
-  { value: 'classic', label: 'Classic', note: 'Default wiki palette' },
-  { value: 'kawaii', label: 'Kawaii', note: 'Soft pink surfaces' },
-  { value: 'pop', label: 'Pop', note: 'Bright cyan accents' },
-  { value: 'minimal', label: 'Minimal', note: 'Quiet neutral UI' },
-  { value: 'gamer', label: 'Gamer', note: 'High contrast neon' },
-  { value: 'custom', label: 'Custom', note: 'Use custom CSS' },
-]
+const { t } = useI18n()
+const themePresets = computed<Array<{ value: ThemePreset; label: string; note: string }>>(() => [
+  { value: 'classic', label: t('presetClassic'), note: t('presetClassicHint') },
+  { value: 'kawaii', label: t('presetKawaii'), note: t('presetKawaiiHint') },
+  { value: 'pop', label: t('presetPop'), note: t('presetPopHint') },
+  { value: 'minimal', label: t('presetMinimal'), note: t('presetMinimalHint') },
+  { value: 'gamer', label: t('presetGamer'), note: t('presetGamerHint') },
+  { value: 'custom', label: t('presetCustom'), note: t('presetCustomHint') },
+])
 
-const fontOptions: Array<{ value: FontFamily; label: string }> = [
-  { value: 'system', label: 'System' },
-  { value: 'rounded', label: 'Rounded' },
-  { value: 'maru', label: 'Maru Gothic' },
-  { value: 'sans-jp', label: 'Japanese sans' },
-  { value: 'serif', label: 'Serif' },
-]
+const fontOptions = computed<Array<{ value: FontFamily; label: string }>>(() => [
+  { value: 'system', label: t('fontSystem') },
+  { value: 'rounded', label: t('fontRounded') },
+  { value: 'maru', label: t('fontMaru') },
+  { value: 'sans-jp', label: t('fontJapaneseSans') },
+  { value: 'serif', label: t('fontSerif') },
+])
 
 const backgroundDefaults: Record<BackgroundType, string> = {
   none: '',
@@ -183,17 +184,17 @@ async function uploadBrandAsset(kind: 'logo' | 'favicon' | 'background', files: 
 
 <template>
   <section>
-    <h2 class="text-lg font-semibold mb-3">Appearance</h2>
+    <h2 class="text-lg font-semibold mb-3">{{ t('appearance') }}</h2>
     <p v-if="error" class="text-sm text-red-600 mb-3">{{ error }}</p>
     <Skeleton v-if="loading" class="mb-3" label="Loading appearance settings" :lines="4" />
     <form v-if="settings" class="card p-4 space-y-4 max-w-3xl" @submit.prevent="saveSettings">
-      <input v-model="settings.siteTitle" class="input" placeholder="Site title" aria-label="Site title" />
+      <input v-model="settings.siteTitle" class="input" :placeholder="t('siteTitle')" :aria-label="t('siteTitle')" />
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <input v-model="settings.accentColor" class="input" placeholder="#7c3aed" aria-label="Accent color" />
-        <select v-model="settings.theme" class="input" aria-label="Theme"><option value="system">system</option><option value="light">light</option><option value="dark">dark</option></select>
+        <input v-model="settings.accentColor" class="input" placeholder="#7c3aed" :aria-label="t('accentColor')" />
+        <select v-model="settings.theme" class="input" :aria-label="t('theme')"><option value="system">{{ t('themeSystem') }}</option><option value="light">{{ t('themeLight') }}</option><option value="dark">{{ t('themeDark') }}</option></select>
       </div>
       <fieldset class="space-y-2 rounded-[var(--radius)] border border-[var(--c-border)] p-3 text-sm">
-        <legend class="px-1 font-medium">Theme preset</legend>
+        <legend class="px-1 font-medium">{{ t('themePreset') }}</legend>
         <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <button
             v-for="preset in themePresets"
@@ -211,38 +212,38 @@ async function uploadBrandAsset(kind: 'logo' | 'favicon' | 'background', files: 
       </fieldset>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label class="space-y-1 text-sm">
-          <span class="font-medium">Font</span>
+          <span class="font-medium">{{ t('font') }}</span>
           <select v-model="settings.fontFamily" class="input">
             <option v-for="font in fontOptions" :key="font.value" :value="font.value">{{ font.label }}</option>
           </select>
         </label>
         <label class="space-y-1 text-sm">
-          <span class="font-medium">Background type</span>
+          <span class="font-medium">{{ t('backgroundType') }}</span>
           <select
             class="input"
             :value="settings.background.type"
             @change="onBackgroundTypeChange"
           >
-            <option value="none">none</option>
-            <option value="color">color</option>
-            <option value="gradient">gradient</option>
-            <option value="pattern">pattern</option>
-            <option value="image">image</option>
+            <option value="none">{{ t('backgroundNone') }}</option>
+            <option value="color">{{ t('backgroundColor') }}</option>
+            <option value="gradient">{{ t('backgroundGradient') }}</option>
+            <option value="pattern">{{ t('backgroundPattern') }}</option>
+            <option value="image">{{ t('backgroundImage') }}</option>
           </select>
         </label>
       </div>
       <div v-if="settings.background.type !== 'none'" class="rounded-[var(--radius)] border border-[var(--c-border)] p-3 text-sm">
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label v-if="settings.background.type === 'color'" class="space-y-1">
-            <span class="font-medium">Background color</span>
+            <span class="font-medium">{{ t('backgroundColor') }}</span>
             <input v-model="settings.background.value" class="input" placeholder="#f9fafb" />
           </label>
           <label v-else-if="settings.background.type === 'gradient'" class="space-y-1">
-            <span class="font-medium">Gradient</span>
+            <span class="font-medium">{{ t('backgroundGradient') }}</span>
             <input v-model="settings.background.value" class="input font-mono text-xs" placeholder="linear-gradient(...)" />
           </label>
           <label v-else-if="settings.background.type === 'pattern'" class="space-y-1">
-            <span class="font-medium">Pattern</span>
+            <span class="font-medium">{{ t('backgroundPattern') }}</span>
             <select v-model="settings.background.value" class="input">
               <option value="dots">dots</option>
               <option value="grid">grid</option>
@@ -251,13 +252,13 @@ async function uploadBrandAsset(kind: 'logo' | 'favicon' | 'background', files: 
             </select>
           </label>
           <label v-else class="space-y-1">
-            <span class="font-medium">Background image</span>
+            <span class="font-medium">{{ t('backgroundImage') }}</span>
             <input v-model="settings.background.value" class="input" placeholder="/assets/background.jpg" />
             <input class="text-sm" type="file" accept="image/*" aria-label="Upload background" @change="uploadBrandAsset('background', ($event.target as HTMLInputElement).files)" />
             <span v-if="uploading === 'background'" class="text-xs text-[var(--c-text-muted)]">Uploading...</span>
           </label>
           <label class="space-y-1">
-            <span class="font-medium">Overlay</span>
+            <span class="font-medium">{{ t('overlay') }}</span>
             <input v-model.number="settings.background.overlayOpacity" class="w-full" type="range" min="0" max="0.85" step="0.05" />
             <span class="text-xs text-[var(--c-text-muted)]">{{ Math.round(settings.background.overlayOpacity * 100) }}%</span>
           </label>
@@ -265,25 +266,25 @@ async function uploadBrandAsset(kind: 'logo' | 'favicon' | 'background', files: 
       </div>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label class="space-y-1 text-sm">
-          <span class="font-medium">Home page path</span>
+          <span class="font-medium">{{ t('homePagePath') }}</span>
           <input v-model="settings.homePath" class="input font-mono text-sm" placeholder="home" />
         </label>
         <label class="space-y-1 text-sm">
-          <span class="font-medium">Daily notes path</span>
+          <span class="font-medium">{{ t('dailyNotesPath') }}</span>
           <input v-model="settings.dailyNotesPath" class="input font-mono text-sm" placeholder="journal" />
         </label>
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <label class="space-y-1 text-sm">
-          <span class="font-medium">Default locale</span>
+          <span class="font-medium">{{ t('defaultLocale') }}</span>
           <input v-model="settings.defaultLocale" class="input" placeholder="en" />
         </label>
         <label class="space-y-1 text-sm">
-          <span class="font-medium">Timezone</span>
+          <span class="font-medium">{{ t('timezoneLabel') }}</span>
           <input v-model="settings.timezone" class="input" placeholder="UTC" />
         </label>
         <label class="space-y-1 text-sm">
-          <span class="font-medium">Date format</span>
+          <span class="font-medium">{{ t('dateFormat') }}</span>
           <select v-model="settings.dateFormat" class="input">
             <option value="short">short</option>
             <option value="medium">medium</option>
@@ -293,59 +294,59 @@ async function uploadBrandAsset(kind: 'logo' | 'favicon' | 'background', files: 
       </div>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label class="space-y-1 text-sm">
-          <span class="font-medium">Logo URL</span>
+          <span class="font-medium">{{ t('logoUrl') }}</span>
           <input v-model="settings.logoUrl" class="input" placeholder="/assets/logo.png" />
           <input class="text-sm" type="file" accept="image/*" aria-label="Upload logo" @change="uploadBrandAsset('logo', ($event.target as HTMLInputElement).files)" />
           <span v-if="uploading === 'logo'" class="text-xs text-[var(--c-text-muted)]">Uploading...</span>
         </label>
         <label class="space-y-1 text-sm">
-          <span class="font-medium">Favicon URL</span>
+          <span class="font-medium">{{ t('faviconUrl') }}</span>
           <input v-model="settings.faviconUrl" class="input" placeholder="/assets/favicon.png" />
           <input class="text-sm" type="file" accept="image/*" aria-label="Upload favicon" @change="uploadBrandAsset('favicon', ($event.target as HTMLInputElement).files)" />
           <span v-if="uploading === 'favicon'" class="text-xs text-[var(--c-text-muted)]">Uploading...</span>
         </label>
       </div>
       <label class="block space-y-1 text-sm">
-        <span class="font-medium">Header links</span>
+        <span class="font-medium">{{ t('headerLinks') }}</span>
         <textarea v-model="navLinksText" class="input min-h-24 font-mono text-sm" placeholder="📚|Docs|/docs&#10;Links|&#10;  ▶|YouTube|https://youtube.com/@handle"></textarea>
       </label>
       <label class="block space-y-1 text-sm">
-        <span class="font-medium">Built-in navigation</span>
+        <span class="font-medium">{{ t('builtInNavigation') }}</span>
         <textarea v-model="navItemsText" class="input min-h-28 font-mono text-sm" placeholder="changes|true&#10;events|true&#10;graph|true&#10;redirects|true&#10;templates|true&#10;new|true"></textarea>
       </label>
       <label class="block space-y-1 text-sm">
-        <span class="font-medium">Footer text</span>
+        <span class="font-medium">{{ t('footerText') }}</span>
         <input v-model="settings.footerText" class="input" placeholder="© Your team" />
       </label>
       <label class="block space-y-1 text-sm">
-        <span class="font-medium">Footer links</span>
+        <span class="font-medium">{{ t('footerLinks') }}</span>
         <textarea v-model="footerLinksText" class="input min-h-20 font-mono text-sm" placeholder="Terms|/terms&#10;Contact|https://example.com/contact"></textarea>
       </label>
       <label class="block space-y-1 text-sm">
-        <span class="font-medium">Custom CSS</span>
+        <span class="font-medium">{{ t('customCss') }}</span>
         <textarea v-model="settings.customCss" class="input min-h-36 font-mono text-sm" placeholder=":root { --radius: 0.75rem; }"></textarea>
       </label>
       <label class="block space-y-1 text-sm">
-        <span class="font-medium">Custom head HTML</span>
+        <span class="font-medium">{{ t('customHeadHtml') }}</span>
         <textarea v-model="settings.customHeadHtml" class="input min-h-28 font-mono text-sm" placeholder="<script defer data-domain=&quot;wiki.example.com&quot; src=&quot;https://plausible.io/js/script.js&quot;></script>"></textarea>
-        <span class="text-xs text-[var(--c-text-muted)]">Applied only when KAWAII_WIKI_ALLOW_HEAD_INJECTION is enabled on the server.</span>
+        <span class="text-xs text-[var(--c-text-muted)]">{{ t('headInjectionHint') }}</span>
       </label>
       <fieldset class="space-y-2 rounded-[var(--radius)] border border-[var(--c-border)] p-3 text-sm">
-        <legend class="px-1 font-medium">Markdown features</legend>
+        <legend class="px-1 font-medium">{{ t('markdownFeatures') }}</legend>
         <label class="flex items-center gap-2">
           <input v-model="settings.enableEmoji" type="checkbox" />
-          <span>Emoji shortcodes</span>
+          <span>{{ t('emojiShortcodes') }}</span>
         </label>
         <label class="flex items-center gap-2">
           <input v-model="settings.enableMath" type="checkbox" />
-          <span>KaTeX math</span>
+          <span>{{ t('katexMath') }}</span>
         </label>
         <label class="flex items-center gap-2">
           <input v-model="settings.enableMermaid" type="checkbox" />
-          <span>Mermaid diagrams</span>
+          <span>{{ t('mermaidDiagrams') }}</span>
         </label>
       </fieldset>
-      <button class="btn-primary" type="submit" :disabled="saving">{{ saving ? 'Saving...' : 'Save appearance' }}</button>
+      <button class="btn-primary" type="submit" :disabled="saving">{{ saving ? t('saving') : t('saveAppearance') }}</button>
     </form>
   </section>
 </template>

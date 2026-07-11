@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { prefersReducedMotion } from '@/composables/useReducedMotion'
+import { useI18n } from '@/lib/i18n'
 interface TocEntry {
   id: string
   text: string
@@ -16,6 +17,7 @@ const props = withDefaults(defineProps<{
 })
 
 const activeId = ref('')
+const { t } = useI18n()
 let observer: IntersectionObserver | null = null
 
 const observeHeadings = async (): Promise<void> => {
@@ -52,7 +54,7 @@ onBeforeUnmount(() => observer?.disconnect())
 
 <template>
   <nav class="text-sm" :class="sticky ? 'sticky top-20 self-start' : ''">
-    <div v-if="showTitle" class="text-xs uppercase tracking-wide text-[var(--c-text-muted)] font-semibold mb-2">On this page</div>
+    <div v-if="showTitle" class="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--c-text-muted)]">{{ t('onThisPage') }}</div>
     <ul class="border-l border-gray-200 dark:border-gray-800">
       <li
         v-for="e in entries"

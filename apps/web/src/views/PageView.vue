@@ -33,7 +33,7 @@ const readingFontSizes = ['small', 'medium', 'large'] as const
 const GRAPH_PREFERENCE_KEY = 'kawaii-wiki:page-graph-visible'
 const storedGraphPreference = typeof window === 'undefined' ? null : window.localStorage.getItem(GRAPH_PREFERENCE_KEY)
 const graphVisible = ref(storedGraphPreference === null
-  ? (typeof window !== 'undefined' && Boolean(window.matchMedia?.('(min-width: 1280px)').matches))
+  ? false
   : storedGraphPreference === 'true')
 const graphLoading = ref(false)
 
@@ -63,6 +63,20 @@ const editorsLabel = computed(() => {
   return `${names.length} people editing`
 })
 const toc = computed(() => page.value?.toc ?? [])
+const contentToc = computed(() => toc.value.filter((entry, index) => !(
+  index === 0
+  && entry.level === 1
+  && entry.text.trim().toLocaleLowerCase() === page.value?.title.trim().toLocaleLowerCase()
+)))
+const renderedContent = computed(() => {
+  const current = page.value
+  if (!current || typeof document === 'undefined') return current?.renderedHtml ?? ''
+  const template = document.createElement('template')
+  template.innerHTML = current.renderedHtml
+  const first = template.content.firstElementChild
+  if (first?.tagName === 'H1' && first.textContent?.trim() === current.title.trim()) first.remove()
+  return template.innerHTML
+})
 
 async function setGraphVisible(next: boolean): Promise<void> {
   graphVisible.value = next
@@ -169,25 +183,38 @@ onUnmounted(stopRealtime)
         </span>
       </div>
       <details
-        v-if="toc.length"
-        class="mb-5 rounded-[var(--radius)] border border-[var(--c-border)] bg-[var(--c-surface)] xl:hidden"
+        v-if="contentToc.length"
+        class="mb-4 xl:hidden"
       >
-        <summary class="cursor-pointer list-none px-3 py-2 text-sm font-medium">
-          On this page
+        <summary class="btn-ghost inline-flex cursor-pointer list-none items-center gap-2 px-3 py-1.5 text-sm font-medium">
+          <AppIcon name="book" :size="15" />
+          {{ t('onThisPage') }}
         </summary>
-        <div class="border-t border-[var(--c-border)] p-3">
-          <PageToc :entries="toc" :sticky="false" :show-title="false" />
+        <div class="mt-2 max-w-xl rounded-[var(--radius)] border border-[var(--c-border)] bg-[var(--c-surface)] p-3">
+          <PageToc :entries="contentToc" :sticky="false" :show-title="false" />
         </div>
       </details>
-      <div class="page-reading-controls mb-4 flex w-full min-w-0 flex-wrap items-center justify-start gap-3 text-xs text-[var(--c-text-muted)] print:hidden sm:justify-end">
-        <span>{{ t('reading') }}</span>
-        <div class="inline-flex rounded border border-[var(--c-border)] p-0.5" :aria-label="t('readingWidth')">
-          <button class="rounded px-2 py-1" :class="reading.width.value === 'comfortable' ? 'bg-[var(--c-accent)] text-white' : ''" type="button" @click="reading.setWidth('comfortable')">{{ t('narrow') }}</button>
-          <button class="rounded px-2 py-1" :class="reading.width.value === 'wide' ? 'bg-[var(--c-accent)] text-white' : ''" type="button" @click="reading.setWidth('wide')">{{ t('wide') }}</button>
-        </div>
-        <div class="inline-flex rounded border border-[var(--c-border)] p-0.5" :aria-label="t('readingFontSize')">
-          <button v-for="size in readingFontSizes" :key="size" class="rounded px-2 py-1 capitalize" :class="reading.fontSize.value === size ? 'bg-[var(--c-accent)] text-white' : ''" type="button" @click="reading.setFontSize(size)">{{ size[0] }}</button>
-        </div>
+      <div class="page-reading-controls mb-4 flex w-full min-w-0 items-center justify-end gap-2 text-xs text-[var(--c-text-muted)] print:hidden">
+        <details class="relative">
+          <summary class="btn-ghost inline-flex cursor-pointer list-none items-center gap-1.5 px-2 py-1.5 text-xs">
+            <AppIcon name="sliders" :size="15" />{{ t('reading') }}
+          </summary>
+          <div class="absolute right-0 z-20 mt-2 grid w-[min(18rem,calc(100vw-2rem))] gap-3 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface)] p-3 shadow-xl">
+            <div class="flex items-center justify-between gap-3">
+              <span>{{ t('readingWidth') }}</span>
+              <div class="inline-flex rounded border border-[var(--c-border)] p-0.5">
+                <button class="rounded px-2 py-1" :class="reading.width.value === 'comfortable' ? 'bg-[var(--c-accent)] text-white' : ''" type="button" @click="reading.setWidth('comfortable')">{{ t('narrow') }}</button>
+                <button class="rounded px-2 py-1" :class="reading.width.value === 'wide' ? 'bg-[var(--c-accent)] text-white' : ''" type="button" @click="reading.setWidth('wide')">{{ t('wide') }}</button>
+              </div>
+            </div>
+            <div class="flex items-center justify-between gap-3">
+              <span>{{ t('readingFontSize') }}</span>
+              <div class="inline-flex rounded border border-[var(--c-border)] p-0.5">
+                <button v-for="size in readingFontSizes" :key="size" class="rounded px-2 py-1 capitalize" :class="reading.fontSize.value === size ? 'bg-[var(--c-accent)] text-white' : ''" type="button" @click="reading.setFontSize(size)">{{ size[0] }}</button>
+              </div>
+            </div>
+          </div>
+        </details>
         <button
           class="btn-ghost gap-1 px-2 py-1 text-xs"
           type="button"
@@ -210,7 +237,7 @@ onUnmounted(stopRealtime)
           reading.width.value === 'comfortable' ? 'max-w-[72ch]' : 'max-w-none',
           reading.fontSize.value === 'small' ? 'text-sm' : reading.fontSize.value === 'large' ? 'text-lg' : 'text-base',
         ]"
-        v-html="page.renderedHtml"
+        v-html="renderedContent"
       ></div>
       <PageAttachments :assets="attachments" />
       <section v-if="backlinks.length" class="mt-10 border-t border-gray-200 dark:border-gray-800 pt-5">
@@ -230,9 +257,9 @@ onUnmounted(stopRealtime)
       <PageComments :path="page.path" />
     </article>
 
-    <aside v-if="graphVisible || toc.length" class="page-rail hidden w-72 max-w-full shrink-0 space-y-6 xl:block">
+    <aside v-if="graphVisible || contentToc.length" class="page-rail hidden w-64 max-w-full shrink-0 space-y-6 xl:block">
       <InteractiveGraph v-if="graphVisible" :graph="graph" :focus-path="page.path" compact />
-      <PageToc v-if="toc.length" :entries="toc" />
+      <PageToc v-if="contentToc.length" :entries="contentToc" />
     </aside>
   </div>
 

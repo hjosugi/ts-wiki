@@ -3,6 +3,27 @@
 All notable changes are documented here. This project follows Semantic
 Versioning; API compatibility details are in `docs/API.md`.
 
+## [1.0.4] - 2026-07-11
+
+### Added
+
+- Searchable page and template lists, a collapsible Recent section, persistent
+  sidebar visibility/density controls, and a desktop sidebar toggle.
+- Localized template names and Japanese administration labels for appearance,
+  policy, import, redirects, and custom templates.
+- SSH client support in the production image so Git mirrors can use writable
+  GitHub Deploy Keys without embedding access tokens in remote URLs.
+
+### Changed
+
+- Reworked the administration layout to use the available content width,
+  remove the redundant page sidebar, enlarge navigation text, and make cards,
+  forms, API badges, exports, and tables responsive.
+- Simplified page reading controls, hid graphs by default, removed duplicate
+  article headings and internal documentation labels, improved page-tree icons
+  and hierarchy, and kept the configured wiki title visible as the primary
+  brand.
+
 ## [1.0.3] - 2026-07-11
 
 - Build architecture-independent web assets and typecheck on the native build

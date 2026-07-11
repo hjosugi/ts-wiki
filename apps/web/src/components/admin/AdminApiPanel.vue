@@ -14,14 +14,14 @@ const example = computed(() => `curl -H "Authorization: Bearer YOUR_API_KEY" \\\
       <p class="mt-1 text-sm text-[var(--c-text-muted)]">{{ t('developerApiDescription') }}</p>
     </div>
 
-    <div class="grid gap-4 md:grid-cols-2">
+    <div class="admin-api-grid">
       <section class="card p-4">
         <div class="flex items-start justify-between gap-3">
           <div>
             <h3 class="font-semibold">REST API</h3>
             <p class="mt-1 text-sm text-[var(--c-text-muted)]">{{ t('restApiReady') }}</p>
           </div>
-          <span class="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">{{ t('available') }}</span>
+          <span class="shrink-0 whitespace-nowrap rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">{{ t('available') }}</span>
         </div>
         <div class="mt-4 flex flex-wrap gap-2">
           <a class="btn-primary" href="/api/docs" target="_blank" rel="noopener">{{ t('openApiExplorer') }}</a>
@@ -35,7 +35,7 @@ const example = computed(() => `curl -H "Authorization: Bearer YOUR_API_KEY" \\\
             <h3 class="font-semibold">GraphQL</h3>
             <p class="mt-1 text-sm text-[var(--c-text-muted)]">{{ t('graphqlNotAvailableDescription') }}</p>
           </div>
-          <span class="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-200">{{ t('notAvailable') }}</span>
+          <span class="shrink-0 whitespace-nowrap rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-200">{{ t('notAvailable') }}</span>
         </div>
       </section>
     </div>

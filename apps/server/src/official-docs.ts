@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import type { PageInput, PageStatus } from '@kawaii-wiki/core'
 
-export const OFFICIAL_DOCS_VERSION = '1.0.3'
+export const OFFICIAL_DOCS_VERSION = '1.0.4'
 
 export interface OfficialDocumentationPage extends PageInput {
   readonly path: string
@@ -22,7 +22,7 @@ const page = (
   title,
   description,
   content,
-  labels: ['kawaii-wiki-docs', 'guide', 'ja'],
+  labels: ['kawaii-wiki-docs'],
   status: 'verified',
   locale: 'ja',
   navOrder,
@@ -65,7 +65,7 @@ const referencePage = (
   title: source.title,
   description: source.description,
   content: `> Source: \`${source.sourcePath.replace(/^\.\.\/\.\.\/\.\.\//, '')}\`\n\n${readFileSync(new URL(source.sourcePath, import.meta.url), 'utf8')}`,
-  labels: ['kawaii-wiki-docs', 'reference', 'en'],
+  labels: ['kawaii-wiki-docs'],
   status: 'verified',
   locale: 'en',
   navOrder,
