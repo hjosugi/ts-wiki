@@ -1,14 +1,13 @@
 <script setup lang="ts">
-import { friendlyError } from '@/lib/friendlyErrors'
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Api, type AdminAuditEvent } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import Skeleton from '@/components/Skeleton.vue'
+import { useAsyncData } from '@/composables/useAsyncData'
+import AdminAsyncState from './AdminAsyncState.vue'
 
 const { formatDateTime } = useI18n()
 const events = ref<AdminAuditEvent[]>([])
-const loading = ref(false)
-const error = ref<string | null>(null)
 const action = ref('')
 const userId = ref('')
 const from = ref('')
@@ -16,6 +15,7 @@ const to = ref('')
 const limit = 50
 const offset = ref(0)
 const total = ref(0)
+const requestedOffset = ref(0)
 
 const hasPrevious = computed(() => offset.value > 0)
 const hasNext = computed(() => offset.value + events.value.length < total.value)
@@ -33,13 +33,10 @@ function compactData(event: AdminAuditEvent): string {
   return JSON.stringify(Object.fromEntries(entries))
 }
 
-async function load(nextOffset = offset.value): Promise<void> {
-  loading.value = true
-  error.value = null
-  try {
+const { loading, error, reload } = useAsyncData(async () => {
     const result = await Api.adminAudit({
       limit,
-      offset: nextOffset,
+      offset: requestedOffset.value,
       ...(action.value.trim() ? { action: action.value.trim() } : {}),
       ...(userId.value.trim() ? { userId: userId.value.trim() } : {}),
       ...(localDateTimeToMs(from.value) !== undefined ? { from: localDateTimeToMs(from.value) } : {}),
@@ -48,11 +45,12 @@ async function load(nextOffset = offset.value): Promise<void> {
     events.value = result.events
     total.value = result.total
     offset.value = result.offset
-  } catch (e) {
-    error.value = friendlyError(e)
-  } finally {
-    loading.value = false
-  }
+    return result
+})
+
+async function load(nextOffset = offset.value): Promise<void> {
+  requestedOffset.value = nextOffset
+  await reload()
 }
 
 function applyFilters(): void {
@@ -67,13 +65,12 @@ function nextPage(): void {
   if (hasNext.value) void load(offset.value + limit)
 }
 
-onMounted(() => void load())
 </script>
 
 <template>
   <section>
     <h2 class="mb-3 text-lg font-semibold">Audit log</h2>
-    <p v-if="error" class="mb-3 text-sm text-red-600">{{ error }}</p>
+    <AdminAsyncState :error="error" :loading="loading" @retry="load()" />
     <div class="card overflow-hidden">
       <form class="flex flex-wrap gap-2 border-b border-[var(--c-border)] p-3" @submit.prevent="applyFilters">
         <input v-model="action" class="input max-w-48" placeholder="action" aria-label="Audit action" />

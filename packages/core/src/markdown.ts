@@ -11,8 +11,8 @@ import MarkdownIt from 'markdown-it'
 import anchor from 'markdown-it-anchor'
 import footnote from 'markdown-it-footnote'
 import taskLists from 'markdown-it-task-lists'
-import imsize from 'markdown-it-imsize'
-import katexPlugin from 'markdown-it-katex'
+import { legacyImgSize } from '@mdit/plugin-img-size'
+import { katex as katexPlugin } from '@mdit/plugin-katex'
 import { full as emojiPlugin } from 'markdown-it-emoji'
 import hljs from 'highlight.js/lib/core'
 import bash from 'highlight.js/lib/languages/bash'
@@ -149,7 +149,7 @@ const createMarkdownIt = (rendererOptions: MarkdownRendererOptions = {}): Markdo
     })
     .use(footnote)
     .use(taskLists, { label: true })
-    .use(imsize)
+    .use(legacyImgSize)
 
   if (rendererOptions.features?.emoji) renderer.use(emojiPlugin)
   if (rendererOptions.features?.math) renderer.use(katexPlugin, { throwOnError: false, strict: false })

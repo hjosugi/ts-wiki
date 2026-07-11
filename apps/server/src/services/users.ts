@@ -16,6 +16,7 @@ import {
   normalizePath,
 } from '@kawaii-wiki/core'
 import type { DB } from '../db/client.ts'
+import { isUniqueConstraintError } from '../db/errors.ts'
 import { users, type User } from '../db/schema.ts'
 import { hashPassword, verifyPassword } from './auth.ts'
 
@@ -184,7 +185,12 @@ export const createUserService = (db: DB): UserService => ({
       profileFavoritePages: '[]',
       createdAt: now,
     }
-    db.insert(users).values(user).run()
+    try {
+      db.insert(users).values(user).run()
+    } catch (error) {
+      if (isUniqueConstraintError(error)) return err(conflict('An account with that email already exists'))
+      throw error
+    }
     return ok(user)
   },
 })

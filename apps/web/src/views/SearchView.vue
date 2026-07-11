@@ -140,7 +140,7 @@ watch(() => search.hits.value.length, () => navigation.reset())
 
 const resultSummary = computed(() => {
   if (!search.q.value.trim() || search.loading.value) return ''
-  return `${search.total.value} result${search.total.value === 1 ? '' : 's'}`
+  return t(search.total.value === 1 ? 'oneSearchResult' : 'manySearchResults', { count: search.total.value })
 })
 
 onMounted(async () => {
@@ -180,7 +180,7 @@ onMounted(async () => {
             :class="search.scope.value === 'title' ? 'border-violet-400 text-violet-600' : ''"
             @click="search.scope.value = search.scope.value === 'title' ? 'all' : 'title'; runNow()"
           >
-            Title
+            {{ t('titleOnly') }}
           </button>
           <button
             class="btn-ghost"
@@ -188,14 +188,14 @@ onMounted(async () => {
             :class="search.sort.value === 'recent' ? 'border-violet-400 text-violet-600' : ''"
             @click="search.sort.value = search.sort.value === 'recent' ? 'relevance' : 'recent'; runNow()"
           >
-            Recent
+            {{ t('recent') }}
           </button>
-          <button class="btn-ghost" type="button" @click="filtersOpen = !filtersOpen">Filters</button>
+          <button class="btn-ghost" type="button" @click="filtersOpen = !filtersOpen">{{ t('filters') }}</button>
         </div>
       </div>
 
       <div v-if="!search.q.value.trim() && search.recentSearches.value.length" class="flex flex-wrap items-center gap-2 text-sm">
-        <span class="text-gray-500">Recent</span>
+        <span class="text-gray-500">{{ t('recent') }}</span>
         <button
           v-for="recent in search.recentSearches.value"
           :key="recent"
@@ -209,19 +209,19 @@ onMounted(async () => {
 
       <div v-if="filtersOpen" class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
         <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          <input v-model.trim="pathPrefix" class="input text-sm" placeholder="Path prefix" aria-label="Path prefix" @input="onInput" />
-          <select v-model="spaceKey" class="input text-sm" aria-label="Space" @change="runNow">
-            <option value="">Any space</option>
+          <input v-model.trim="pathPrefix" class="input text-sm" :placeholder="t('pathPrefix')" :aria-label="t('pathPrefix')" @input="onInput" />
+          <select v-model="spaceKey" class="input text-sm" :aria-label="t('spaceFilter')" @change="runNow">
+            <option value="">{{ t('anySpace') }}</option>
             <option v-for="space in spaces" :key="space.key" :value="space.key">{{ space.key }}</option>
           </select>
-          <input v-model.trim="locale" class="input text-sm" placeholder="Locale" aria-label="Locale" @input="onInput" />
-          <select v-model="status" class="input text-sm" aria-label="Status" @change="runNow">
-            <option value="">Any status</option>
+          <input v-model.trim="locale" class="input text-sm" :placeholder="t('locale')" :aria-label="t('locale')" @input="onInput" />
+          <select v-model="status" class="input text-sm" :aria-label="t('pageStatus')" @change="runNow">
+            <option value="">{{ t('anyStatus') }}</option>
             <option v-for="item in statusOptions" :key="item" :value="item">{{ item }}</option>
           </select>
-          <input v-model.trim="author" class="input text-sm" placeholder="Author" aria-label="Author" @input="onInput" />
-          <input v-model="updatedAfter" class="input text-sm" type="date" aria-label="Updated after" @change="runNow" />
-          <input v-model="updatedBefore" class="input text-sm" type="date" aria-label="Updated before" @change="runNow" />
+          <input v-model.trim="author" class="input text-sm" :placeholder="t('author')" :aria-label="t('author')" @input="onInput" />
+          <input v-model="updatedAfter" class="input text-sm" type="date" :aria-label="t('updatedAfter')" @change="runNow" />
+          <input v-model="updatedBefore" class="input text-sm" type="date" :aria-label="t('updatedBefore')" @change="runNow" />
         </div>
         <div v-if="labels.length" class="mt-3 flex flex-wrap gap-2">
           <button
@@ -238,9 +238,9 @@ onMounted(async () => {
       </div>
 
       <details class="text-sm text-gray-500">
-        <summary class="cursor-pointer">Search syntax</summary>
+        <summary class="cursor-pointer">{{ t('searchSyntax') }}</summary>
         <p class="mt-2">
-          Words are matched as prefixes. Use quoted phrases for exact phrase search, prefix a word with <code>-</code> to exclude it, and enable Title to search titles only.
+          {{ t('searchSyntaxDescription') }}
         </p>
       </details>
     </div>
@@ -281,7 +281,7 @@ onMounted(async () => {
               <span v-if="h.icon && h.coverUrl" aria-hidden="true">{{ h.icon }}</span>
               <span class="font-semibold text-violet-600">{{ h.title }}</span>
               <span v-if="h.kind !== 'page'" class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                {{ h.kind === 'comment' ? 'in comments' : 'in assets' }}
+                {{ h.kind === 'comment' ? t('inComments') : t('inAssets') }}
               </span>
             </div>
             <div class="mb-1 font-mono text-xs text-gray-500">/{{ h.path }}</div>
@@ -292,7 +292,7 @@ onMounted(async () => {
     </ul>
 
     <button v-if="search.hasMore.value" class="btn-ghost mt-4" type="button" :disabled="search.loading.value" @click="search.loadMore">
-      {{ search.loading.value ? 'Loading...' : 'Load more' }}
+      {{ search.loading.value ? t('loading') : t('loadMore') }}
     </button>
   </div>
 </template>

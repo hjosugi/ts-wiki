@@ -1,25 +1,16 @@
 <script setup lang="ts">
 import { friendlyError } from '@/lib/friendlyErrors'
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { Api, type WebhookDeliveryView } from '@/lib/api'
 import Skeleton from '@/components/Skeleton.vue'
+import { useAsyncData } from '@/composables/useAsyncData'
 
 const deliveries = ref<WebhookDeliveryView[]>([])
-const loading = ref(false)
-const error = ref<string | null>(null)
 const status = ref<'all' | WebhookDeliveryView['status']>('all')
 
-async function load(): Promise<void> {
-  loading.value = true
-  error.value = null
-  try {
-    deliveries.value = await Api.adminWebhookDeliveries(status.value === 'all' ? undefined : status.value)
-  } catch (e) {
-    error.value = friendlyError(e)
-  } finally {
-    loading.value = false
-  }
-}
+const { loading, error, reload: load } = useAsyncData(async () => {
+  deliveries.value = await Api.adminWebhookDeliveries(status.value === 'all' ? undefined : status.value)
+})
 
 async function retryDelivery(delivery: WebhookDeliveryView): Promise<void> {
   error.value = null
@@ -31,7 +22,6 @@ async function retryDelivery(delivery: WebhookDeliveryView): Promise<void> {
   }
 }
 
-onMounted(load)
 </script>
 
 <template>

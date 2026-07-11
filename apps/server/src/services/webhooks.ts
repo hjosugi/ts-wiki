@@ -6,7 +6,12 @@ import { createWebhookDelivery, type WebhookDeliveryPolicy } from './webhooks/de
 import { defaultFetcher, defaultResolver } from './webhooks/shared.ts'
 import { createWebhookSubscriptions } from './webhooks/subscriptions.ts'
 
-export type WebhookFetcher = (url: string, init: RequestInit) => Promise<Response>
+export interface WebhookFetchTarget {
+  /** Validated address that the default transport pins for this request. */
+  readonly address?: string
+}
+
+export type WebhookFetcher = (url: string, init: RequestInit, target?: WebhookFetchTarget) => Promise<Response>
 export type WebhookHostnameResolver = (hostname: string) => Promise<readonly string[]>
 
 export type WebhookDeliveryStatus = WebhookDelivery['status']
@@ -221,6 +226,9 @@ export const createWebhookService = (db: DB, options: WebhookServiceOptions = {}
         }
         deliveries.push(...await delivery.publish(extraPayload, subscriptions.enabledForEvent(extraPayload.type)))
       }
+      // Delivery happens out of band: page writes wait only for durable enqueue.
+      // Kick the worker promptly; the periodic timer remains the retry safety net.
+      void delivery.processDueDeliveries().catch(() => undefined)
       return deliveries
     },
 

@@ -2,6 +2,7 @@ import { Buffer } from 'node:buffer'
 import { t } from 'elysia'
 import {
   type Principal,
+  unauthorized,
   validationError,
 } from '@kawaii-wiki/core'
 import type { Services } from '../../services/index.ts'
@@ -84,6 +85,8 @@ export interface AssetRoutesContext {
   readonly logger: StructuredLogger
   readonly assetStorage: AssetStorage
   readonly assetPolicy: () => { readonly maxBytes: number }
+  readonly privateWiki: () => boolean
+  readonly canReadPage: (principal: Principal | null, path?: string) => boolean
   readonly enforceAssetUploadLimit: (
     request: Request,
     server: RequestIpServer | null | undefined,
@@ -96,6 +99,8 @@ export const createAssetRoutes = ({
   logger,
   assetStorage,
   assetPolicy,
+  privateWiki,
+  canReadPage,
   enforceAssetUploadLimit,
   publishAutomation,
 }: AssetRoutesContext) => {
@@ -318,9 +323,14 @@ export const createAssetRoutes = ({
           }),
         },
       )
-      .get('/assets/*', async ({ params, query }) => {
+      .get('/assets/*', async ({ params, query, principal, services }) => {
+        if (privateWiki() && !principal) throw new HttpError(unauthorized())
         const storageName = safeAssetRequestPath(params['*'])
         if (!storageName) return new Response('Not found', { status: 404 })
+        const accessPaths = services.assets.accessPaths(storageName)
+        if (accessPaths.length > 0 && !accessPaths.some((path) => canReadPage(principal, path))) {
+          return new Response('Not found', { status: 404 })
+        }
         const thumbnail = query.size === 'thumb'
           ? await assetStorage.get(thumbnailStorageName(storageName))
           : null

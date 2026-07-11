@@ -17,8 +17,6 @@ import {
   type AppError,
   type Principal,
   type PageInput,
-  can,
-  forbidden,
   notFound,
   conflict,
   validationError,
@@ -40,6 +38,7 @@ import {
   contentWithTocFrontmatter,
 } from '@kawaii-wiki/core'
 import type { DB } from '../db/client.ts'
+import { isUniqueConstraintError } from '../db/errors.ts'
 import {
   pageAnalytics,
   pageComments,
@@ -201,13 +200,14 @@ export interface UpsertPageFileResult {
 
 export interface PageService {
   list(): PageSummary[]
+  allActive(): Page[]
   trash(): PageSummary[]
   spaces(): PageSpace[]
   graph(): PageGraph
   backlinks(path: string): PageBacklink[]
   labels(): LabelCount[]
   brokenLinks(): BrokenLink[]
-  recentChanges(limit?: number, before?: number | null): RecentChange[]
+  recentChanges(limit?: number, before?: number | null, canRead?: (path: string) => boolean): RecentChange[]
   redirects(principal: Principal | null): Result<PageRedirectView[], AppError>
   createRedirect(fromPath: string, toPath: string, principal: Principal | null): Result<PageRedirectView, AppError>
   deleteRedirect(fromPath: string, principal: Principal | null): Result<{ fromPath: string }, AppError>
@@ -314,7 +314,15 @@ export const createPageService = (
 ): PageService => {
   const renderPageMarkdown = options.renderMarkdown ?? renderMarkdown
   const defaultLocale = options.defaultLocale ?? (() => 'und')
-  const reindex = (id: string): void => searchIndexer.indexPageById(id)
+  let derivedVersion = 0
+  const reindex = (id: string): void => {
+    derivedVersion += 1
+    searchIndexer.indexPageById(id)
+  }
+  const removeFromIndex = (id: string): void => {
+    derivedVersion += 1
+    searchIndexer.removePage(id)
+  }
 
   interface DerivedPageData {
     readonly path: string
@@ -333,7 +341,7 @@ export const createPageService = (
       .from(pages)
       .where(eq(pages.lifecycle, 'active'))
       .get()
-    const signature = `${stamp?.count ?? 0}:${stamp?.latest ?? 0}:${stamp?.total ?? 0}`
+    const signature = `${derivedVersion}:${stamp?.count ?? 0}:${stamp?.latest ?? 0}:${stamp?.total ?? 0}`
     if (derivedCache?.signature === signature) return derivedCache.pages
     const indexed = db
       .select({ path: pages.path, title: pages.title, content: pages.content })
@@ -454,6 +462,10 @@ export const createPageService = (
   }
 
   return {
+    allActive() {
+      return db.select().from(pages).where(eq(pages.lifecycle, 'active')).orderBy(asc(pages.path)).all()
+    },
+
     list() {
       return db
         .select({
@@ -597,7 +609,7 @@ export const createPageService = (
       return out
     },
 
-    recentChanges(limit = 50, before = null) {
+    recentChanges(limit = 50, before = null, canRead) {
       const capped = Math.min(Math.max(limit, 1), 200)
       const selection = {
         id: pageRevisions.id,
@@ -608,32 +620,26 @@ export const createPageService = (
         authorName: users.name,
         createdAt: pageRevisions.createdAt,
       }
-      const base = db
-        .select(selection)
-        .from(pageRevisions)
-        .leftJoin(users, eq(users.id, pageRevisions.authorId))
-      const rows = before !== null && before !== undefined
-        ? base
-          .where(lt(pageRevisions.createdAt, before))
-          .orderBy(desc(pageRevisions.createdAt), sql`page_revisions.rowid desc`)
-          .limit(capped)
-          .all()
-        : db
-          .select({
-          id: pageRevisions.id,
-          path: pageRevisions.path,
-          title: pageRevisions.title,
-          action: pageRevisions.action,
-          authorId: pageRevisions.authorId,
-          authorName: users.name,
-          createdAt: pageRevisions.createdAt,
-          })
-          .from(pageRevisions)
-          .leftJoin(users, eq(users.id, pageRevisions.authorId))
-          .orderBy(desc(pageRevisions.createdAt), sql`page_revisions.rowid desc`)
-          .limit(capped)
-          .all()
-      return rows.map((row) => ({ ...row, authorName: row.authorName ?? null }))
+      const fetchBatch = (cursor: number | null, batchSize: number) => {
+        const query = db.select(selection).from(pageRevisions).leftJoin(users, eq(users.id, pageRevisions.authorId))
+        return cursor === null
+          ? query.orderBy(desc(pageRevisions.createdAt), sql`page_revisions.rowid desc`).limit(batchSize).all()
+          : query.where(lt(pageRevisions.createdAt, cursor)).orderBy(desc(pageRevisions.createdAt), sql`page_revisions.rowid desc`).limit(batchSize).all()
+      }
+      const readable: RecentChange[] = []
+      const batchSize = Math.min(Math.max(capped * 3, 50), 500)
+      let cursor = before ?? null
+      for (let batch = 0; batch < 20 && readable.length < capped; batch += 1) {
+        const rows = fetchBatch(cursor, batchSize)
+        if (!rows.length) break
+        for (const row of rows) {
+          if (!canRead || canRead(row.path)) readable.push({ ...row, authorName: row.authorName ?? null })
+          if (readable.length === capped) break
+        }
+        if (rows.length < batchSize) break
+        cursor = rows.at(-1)?.createdAt ?? null
+      }
+      return readable
     },
 
     redirects(principal) {
@@ -761,9 +767,11 @@ export const createPageService = (
       const now = Date.now()
       const id = crypto.randomUUID()
 
-      const page = db.transaction((tx) => {
-        tx.delete(pageRedirects).where(eq(pageRedirects.fromPath, v.path)).run()
-        tx.insert(pages)
+      let page: Page | undefined
+      try {
+        page = db.transaction((tx) => {
+          tx.delete(pageRedirects).where(eq(pageRedirects.fromPath, v.path)).run()
+          tx.insert(pages)
           .values({
             id,
             path: v.path,
@@ -795,8 +803,12 @@ export const createPageService = (
         snapshotRevision(tx, { id, path: v.path, title: v.title, description: v.description, content: v.content }, principal, 'created', now)
 
         reindex(id)
-        return findById(id)
-      })
+          return findById(id)
+        })
+      } catch (error) {
+        if (isUniqueConstraintError(error)) return err(conflict(`A page already exists at "${v.path}"`))
+        throw error
+      }
       return page ? ok(page) : err(notFound('Page disappeared while it was being created'))
     },
 
@@ -980,7 +992,7 @@ export const createPageService = (
           .set({ lifecycle: 'archived', updatedAt: now })
           .where(eq(pages.id, current.id))
           .run()
-        searchIndexer.removePage(current.id)
+        removeFromIndex(current.id)
         return findById(current.id)
       })
       return page ? ok(page) : err(notFound(`Page "${path}" disappeared while it was being archived`))
@@ -1093,7 +1105,7 @@ export const createPageService = (
           .run()
         tx.delete(pageRedirects).where(eq(pageRedirects.fromPath, current.path)).run()
         tx.delete(pageRedirects).where(eq(pageRedirects.toPath, current.path)).run()
-        searchIndexer.removePage(current.id)
+        removeFromIndex(current.id)
         return findById(current.id)
       })
       return deleted ? ok({ path: deleted.path }) : err(notFound(`Page "${path}" disappeared while it was being deleted`))
@@ -1121,7 +1133,7 @@ export const createPageService = (
         tx.delete(pageComments).where(eq(pageComments.pageId, current.id)).run()
         tx.delete(pageRevisions).where(eq(pageRevisions.pageId, current.id)).run()
         tx.delete(pages).where(eq(pages.id, current.id)).run()
-        searchIndexer.removePage(current.id)
+        removeFromIndex(current.id)
       })
       return ok({ path: current.path })
     },

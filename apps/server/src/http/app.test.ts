@@ -15,6 +15,7 @@ import type { WebhookFetcher, WebhookHostnameResolver, WebhookPayload } from '..
 import type { AssetStorage } from '../storage/assets.ts'
 import type { LogEvent, StructuredLogger } from '../observability/logging.ts'
 import { createApp, type App } from './app.ts'
+import { passkeys } from '../db/schema.ts'
 
 const fixtures: Array<{ db: DB; dataDir: string; app: App }> = []
 const HTTP_TEST_TIMEOUT_MS = 15_000
@@ -710,6 +711,34 @@ describe('http app auth', () => {
     }))).status).toBe(200)
   }, HTTP_TEST_TIMEOUT_MS)
 
+  test('required 2FA does not allow password-only login for passkey users', async () => {
+    const { app, db } = createFixture(undefined, {
+      env: (env) => ({ ...env, auth: { ...env.auth, requireTwoFactor: true } }),
+    })
+    const registered = await register(app, 'admin@example.com')
+    db.insert(passkeys).values({
+      id: 'test-passkey',
+      userId: registered.user.id,
+      name: 'Test device',
+      publicKey: Buffer.from('test-public-key').toString('base64url'),
+      counter: 0,
+      transports: '[]',
+      deviceType: 'singleDevice',
+      backedUp: false,
+      createdAt: Date.now(),
+      lastUsedAt: null,
+    }).run()
+
+    const login = await app.handle(jsonRequest('/api/auth/login', {
+      email: 'admin@example.com',
+      password: 'password',
+    }))
+    expect(login.status).toBe(401)
+    expect(await login.json()).toMatchObject({
+      error: { message: 'Passkey authentication is required for this account' },
+    })
+  }, HTTP_TEST_TIMEOUT_MS)
+
   test('passkey routes issue WebAuthn options and reject invalid assertions', async () => {
     const { app } = createFixture()
     const { token } = await register(app, 'admin@example.com')
@@ -1272,6 +1301,20 @@ describe('http app auth', () => {
 })
 
 describe('http app CORS', () => {
+  test('serves DB-aware versioned health and OpenAPI metadata', async () => {
+    const { app } = createFixture()
+    const health = await app.handle(new Request('http://localhost/api/health'))
+    expect(health.status).toBe(200)
+    expect(await health.json()).toEqual({ ok: true, name: 'kawaii-wiki.ts', version: '1.0.0' })
+
+    const specification = await app.handle(new Request('http://localhost/api/openapi.json'))
+    expect(specification.status).toBe(200)
+    expect(await specification.json()).toMatchObject({
+      info: { title: 'kawaii-wiki.ts API', version: '1.0.0' },
+      paths: { '/api/health': expect.any(Object) },
+    })
+  }, HTTP_TEST_TIMEOUT_MS)
+
   test('allows arbitrary origins in local/dev mode', async () => {
     const { app } = createFixture()
 
@@ -2232,7 +2275,7 @@ describe('http app automations and webhooks', () => {
     }
     expect(failedBody.deliveries[0]).toMatchObject({
       attempts: 1,
-      responseBody: 'abcde...',
+      responseBody: 'abcde',
       error: 'upstream...',
     })
     expect(failedBody.deliveries[0]!.nextAttemptAt).toBeNumber()
@@ -2249,7 +2292,7 @@ describe('http app automations and webhooks', () => {
         status: 'failed',
         attempts: 2,
         nextAttemptAt: null,
-        responseBody: 'abcde...',
+        responseBody: 'abcde',
         error: 'upstream...',
       }),
     })
@@ -2391,6 +2434,7 @@ describe('http app automations and webhooks', () => {
     expect(redirectLoopWebhook.status).toBe(200)
 
     await createPage(redirectLoopFixture.app, redirectLoopAdmin.token, 'docs/redirect-loop', 'loop redirect')
+    await Bun.sleep(10)
 
     expect(redirectLoopCalls).toHaveLength(6)
     const redirectLoopHistory = await redirectLoopFixture.app.handle(
@@ -2687,7 +2731,7 @@ describe('http app realtime', () => {
     const payload = JSON.parse(String(message.data)) as { type: string; path: string; viewers: Array<{ name: string }> }
     expect(payload.type).toBe('presence')
     expect(payload.path).toBe('docs/ws')
-    expect(payload.viewers.some((viewer) => viewer.name === 'Ada')).toBe(true)
+    expect(payload.viewers.some((viewer) => viewer.name === 'Guest')).toBe(true)
 
     await new Promise<void>((resolve) => {
       ws.onclose = () => resolve()
@@ -3479,6 +3523,28 @@ describe('http app assets', () => {
     const viewerUsageBody = await viewerUsage.json() as UsageBody
     expect(pagesFor(viewerUsageBody, used.id)).toEqual([{ path: 'docs/asset-usage', title: 'docs/asset-usage' }])
     expect(pagesFor(viewerUsageBody, hidden.id)).toEqual([])
+
+    const deniedBytes = await app.handle(new Request(`http://localhost${hidden.url}`, {
+      headers: { authorization: `Bearer ${viewer.token}` },
+    }))
+    expect(deniedBytes.status).toBe(404)
+    const allowedBytes = await app.handle(new Request(`http://localhost${hidden.url}`, {
+      headers: { authorization: `Bearer ${admin.token}` },
+    }))
+    expect(allowedBytes.status).toBe(200)
+  }, HTTP_TEST_TIMEOUT_MS)
+
+  test('private wiki requires authentication for asset bytes', async () => {
+    const { app } = createFixture(undefined, {
+      env: (env) => ({ ...env, auth: { ...env.auth, privateWiki: true } }),
+    })
+    const admin = await register(app, 'admin@example.com')
+    const asset = await uploadPngAsset(app, admin.token, 'private.png')
+
+    expect((await app.handle(new Request(`http://localhost${asset.url}`))).status).toBe(401)
+    expect((await app.handle(new Request(`http://localhost${asset.url}`, {
+      headers: { authorization: `Bearer ${admin.token}` },
+    }))).status).toBe(200)
   }, HTTP_TEST_TIMEOUT_MS)
 
   test('lists orphaned assets and bulk-deletes only assets that are still orphaned', async () => {

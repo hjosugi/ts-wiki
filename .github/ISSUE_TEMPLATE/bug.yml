@@ -1,0 +1,27 @@
+name: Bug report
+description: Report a reproducible defect
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: For vulnerabilities, use private security reporting instead of this form.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: v1.0.0 or image digest
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction
+      description: Include expected and actual behavior plus minimal steps.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: Browser, OS/architecture, database driver, deployment method

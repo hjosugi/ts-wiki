@@ -29,9 +29,9 @@ the seed command generates and prints a one-time random password.
 
 ## Production Configuration
 
-Set `JWT_SECRET` to a strong unique value before running with `NODE_ENV=production`
-or `BUN_ENV=production`; the server refuses to start with the development
-default in production mode.
+Set `JWT_SECRET` to a strong unique value for every deployment. Production
+refuses to start without it; local development generates an ephemeral random
+secret when omitted, so sessions intentionally reset on restart.
 
 JWTs expire by default after 30 days. `KAWAII_WIKI_JWT_TTL_SECONDS` seeds the
 initial session lifetime, and admins can later change it from Admin -> Site
@@ -110,7 +110,7 @@ PASSKEY_RP_ID=wiki.example.com
 OIDC can be enabled with `OIDC_ENABLED=true` plus issuer/client/redirect
 settings for a single provider. For multiple providers, use numbered prefixes
 (`OIDC_1_*`, `OIDC_2_*`) or a `KAWAII_WIKI_OIDC_PROVIDERS` JSON array. See
-`.env.example` for the full list.
+`../../docs/CONFIGURATION.md` for the full list.
 
 Site-level date defaults can be set from env with `KAWAII_WIKI_DEFAULT_LOCALE`,
 `KAWAII_WIKI_TIMEZONE`, and `KAWAII_WIKI_DATE_FORMAT`, then adjusted later from
@@ -166,10 +166,20 @@ sqlite3 data/ts-wiki.sqlite ".backup 'backups/kawaii-wiki.ts-$(date +%F).sqlite'
 rsync -a data/assets/ backups/assets/
 ```
 
+Run those commands on the host against a bind-mounted data directory: the slim
+runtime image does not contain `sqlite3`. SQLite uses WAL mode, so never `cp`
+only a live database file; `.backup` includes committed WAL data safely. For
+continuous backup, a Litestream sidecar can share `/data` and replicate
+`/data/ts-wiki.sqlite`; see the root README for a minimal config.
+
 To restore, stop the server, replace `DATABASE_PATH` with the backup file, copy
 the assets directory back under `DATA_DIR`, then start the server. Git mirroring
 is not a full backup because users, roles, assets, revisions, and search state
 live in SQLite.
+
+See `../../docs/UPGRADING.md` before changing image versions. Startup migrations
+are atomic and versioned; rollback restores the pre-upgrade backup with the
+previous image rather than running an old image against a newer schema.
 
 ## Observability
 

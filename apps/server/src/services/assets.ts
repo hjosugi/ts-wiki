@@ -2,7 +2,7 @@
  * Asset service — records uploaded-file metadata. The bytes live behind the
  * configured asset storage boundary; this just tracks them.
  */
-import { and, asc, desc, eq, isNotNull, isNull } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm'
 import { fileTypeFromBlob } from 'file-type'
 import {
   type Action,
@@ -17,8 +17,9 @@ import {
   validationError,
 } from '@kawaii-wiki/core'
 import type { DB } from '../db/client.ts'
-import { assets, pages, type Asset } from '../db/schema.ts'
+import { assets, pageAssetRefs, pages, type Asset } from '../db/schema.ts'
 import type { SearchIndexer } from './search.ts'
+import { assetStorageNamesFromContent } from './asset-references.ts'
 
 export const ASSET_MAX_SIZE = '25m' as const
 export const ASSET_MAX_BYTES = 25 * 1024 * 1024
@@ -139,7 +140,7 @@ export const safeAssetFilename = (file: File, mime: string = file.type): string 
   const stem =
     file.name
       .replace(/\.[^.]*$/, '')
-      .replace(/[^\w.\-]+/g, '_')
+      .replace(/[^\w.-]+/g, '_')
       .replace(/^_+|_+$/g, '')
       .slice(0, 80) || 'upload'
   const extension = assetExtensionForMime(mime) ?? '.bin'
@@ -204,6 +205,7 @@ export interface AssetService {
   orphans(principal: Principal | null): Result<AssetView[], AppError>
   findById(id: string, principal: Principal | null): Result<AssetView | null, AppError>
   findDeletedById(id: string, principal: Principal | null): Result<AssetView | null, AppError>
+  accessPaths(storageName: string): string[]
   update(id: string, input: UpdateAssetInput, principal: Principal | null): Result<AssetView | null, AppError>
   rename(id: string, filename: string, principal: Principal | null): Result<AssetView | null, AppError>
   remove(id: string, principal: Principal | null): Result<AssetView | null, AppError>
@@ -238,25 +240,6 @@ const toView = (asset: Asset, urlForStorageName: (storageName: string) => string
   thumbUrl: isImageAssetMime(asset.mime) ? `${defaultAssetUrl(asset.storageName)}?size=thumb` : null,
 })
 
-const assetReferenceAliases = (asset: AssetView): string[] => {
-  const aliases = new Set<string>([
-    asset.url,
-    defaultAssetUrl(asset.storageName),
-    `/assets/${asset.storageName}`,
-  ])
-  for (const value of [...aliases]) {
-    try {
-      aliases.add(decodeURI(value))
-    } catch {
-      /* keep the encoded value only */
-    }
-  }
-  return [...aliases].filter(Boolean)
-}
-
-const contentReferencesAsset = (content: string, asset: AssetView): boolean =>
-  assetReferenceAliases(asset).some((alias) => content.includes(alias))
-
 export const createAssetService = (db: DB, options: AssetServiceOptions = {}): AssetService => {
   const urlForStorageName = options.urlForStorageName ?? defaultAssetUrl
   const searchIndexer = options.searchIndexer
@@ -284,9 +267,9 @@ export const createAssetService = (db: DB, options: AssetServiceOptions = {}): A
     const targetPath = path ? normalizePath(path) : null
     const visiblePages = db
       .select({
+        id: pages.id,
         path: pages.path,
         title: pages.title,
-        content: pages.content,
       })
       .from(pages)
       .where(eq(pages.lifecycle, 'active'))
@@ -294,25 +277,38 @@ export const createAssetService = (db: DB, options: AssetServiceOptions = {}): A
       .all()
       .filter((page) => (!targetPath || page.path === targetPath) && can(principal, 'page:read', { path: page.path }))
 
+    const pageById = new Map(visiblePages.map((page) => [page.id, page]))
+    const references = visiblePages.length
+      ? db.select().from(pageAssetRefs).where(inArray(pageAssetRefs.pageId, visiblePages.map((page) => page.id))).all()
+      : []
+
     return activeRecords().map((asset) => {
       const view = toView(asset, urlForStorageName)
       return {
         asset: view,
-        pages: visiblePages
-          .filter((page) => contentReferencesAsset(page.content, view))
-          .map(({ path, title }) => ({ path, title })),
+        pages: references
+          .filter((reference) => reference.assetId === asset.id)
+          .flatMap((reference) => {
+            const page = pageById.get(reference.pageId)
+            return page ? [{ path: page.path, title: page.title }] : []
+          }),
       }
     })
   }
   const affectedPageIds = (asset: Asset): string[] => {
-    const view = toView(asset, urlForStorageName)
-    return db
-      .select({ id: pages.id, content: pages.content })
-      .from(pages)
-      .where(eq(pages.lifecycle, 'active'))
-      .all()
-      .filter((page) => contentReferencesAsset(page.content, view))
-      .map((page) => page.id)
+    return db.select({ id: pageAssetRefs.pageId }).from(pageAssetRefs)
+      .where(eq(pageAssetRefs.assetId, asset.id)).all().map((page) => page.id)
+  }
+  const attachExistingPages = (asset: Asset): void => {
+    const matchingPages = db.select({ id: pages.id, content: pages.content }).from(pages)
+      .where(eq(pages.lifecycle, 'active')).all()
+      .filter((page) => assetStorageNamesFromContent(page.content).includes(asset.storageName))
+    if (matchingPages.length) {
+      db.insert(pageAssetRefs)
+        .values(matchingPages.map((page) => ({ pageId: page.id, assetId: asset.id })))
+        .onConflictDoNothing()
+        .run()
+    }
   }
   const refreshPagesForAsset = (...records: Asset[]): void => {
     const ids = new Set(records.flatMap((asset) => affectedPageIds(asset)))
@@ -334,6 +330,7 @@ export const createAssetService = (db: DB, options: AssetServiceOptions = {}): A
         deletedAt: null,
       }
       db.insert(assets).values(asset).run()
+      attachExistingPages(asset)
       refreshPagesForAsset(asset)
       return ok(toView(asset, urlForStorageName))
     },
@@ -379,6 +376,16 @@ export const createAssetService = (db: DB, options: AssetServiceOptions = {}): A
       if (!allowed.ok) return allowed
       const asset = findDeleted(id)
       return ok(asset ? toView(asset, urlForStorageName) : null)
+    },
+    accessPaths(storageName) {
+      return db
+        .select({ path: pages.path })
+        .from(assets)
+        .innerJoin(pageAssetRefs, eq(pageAssetRefs.assetId, assets.id))
+        .innerJoin(pages, eq(pages.id, pageAssetRefs.pageId))
+        .where(and(eq(assets.storageName, storageName), eq(pages.lifecycle, 'active')))
+        .all()
+        .map((row) => row.path)
     },
     update(id, input, principal) {
       const allowed = requireAssetPermission(principal, 'asset:write')

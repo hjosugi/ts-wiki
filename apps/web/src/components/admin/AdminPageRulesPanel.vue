@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { friendlyError } from '@/lib/friendlyErrors'
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { Api, type PageRuleView } from '@/lib/api'
 import Skeleton from '@/components/Skeleton.vue'
+import { useAsyncData } from '@/composables/useAsyncData'
 
 const pageRules = ref<PageRuleView[]>([])
-const loading = ref(false)
-const error = ref<string | null>(null)
 const subjectType = ref<PageRuleView['subjectType']>('group')
 const subjectId = ref('viewers')
 const action = ref<PageRuleView['action']>('page:read')
@@ -14,17 +13,9 @@ const effect = ref<PageRuleView['effect']>('allow')
 const matcher = ref<PageRuleView['matcher']>('prefix')
 const pattern = ref('')
 
-async function load(): Promise<void> {
-  loading.value = true
-  error.value = null
-  try {
-    pageRules.value = await Api.adminPageRules()
-  } catch (e) {
-    error.value = friendlyError(e)
-  } finally {
-    loading.value = false
-  }
-}
+const { loading, error, reload: load } = useAsyncData(async () => {
+  pageRules.value = await Api.adminPageRules()
+})
 
 async function createPageRule(): Promise<void> {
   error.value = null
@@ -54,7 +45,6 @@ async function deletePageRule(rule: PageRuleView): Promise<void> {
   }
 }
 
-onMounted(load)
 </script>
 
 <template>

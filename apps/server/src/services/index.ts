@@ -191,7 +191,7 @@ export const createServices = (db: DB, options: ServiceOptions = {}): Services =
     preferences: createUserPreferenceService(db),
     linkPreviews: createLinkPreviewService(db, {
       fetcher: options.webhookFetcher,
-      resolver: options.webhookResolver ?? (options.webhookFetcher ? async () => ['93.184.216.34'] : undefined),
+      resolver: options.webhookResolver,
     }),
     mail,
     recovery: createAuthRecoveryService(db, auth, mail),

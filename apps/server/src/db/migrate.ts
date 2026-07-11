@@ -40,10 +40,12 @@ const hasColumn = (sqlite: MigratableDatabase, table: string, column: string): b
     .all()
     .some((row) => (row as { name?: string }).name === column)
 
-const addColumn = (sqlite: MigratableDatabase, table: string, column: string, definition: string): void => {
+const addColumn = (sqlite: MigratableDatabase, table: string, column: string, definition: string): boolean => {
   if (!hasColumn(sqlite, table, column)) {
     sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition};`)
+    return true
   }
+  return false
 }
 
 const assertSchemaMatchesDatabase = (sqlite: MigratableDatabase): void => {
@@ -170,10 +172,13 @@ const populateSearchTable = (sqlite: MigratableDatabase): void => {
 
 export const runMigrations = (sqlite: MigratableDatabase, options: MigrationOptions = {}): void => {
   const ftsTokenizer = FTS_TOKENIZER_SQL[options.ftsTokenizer ?? DEFAULT_FTS_TOKENIZER]
-  sqlite.exec('PRAGMA journal_mode = WAL;')
-  sqlite.exec('PRAGMA foreign_keys = ON;')
 
   sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      version    INTEGER PRIMARY KEY,
+      applied_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS users (
       id            TEXT PRIMARY KEY,
       email         TEXT NOT NULL UNIQUE,
@@ -361,6 +366,7 @@ export const runMigrations = (sqlite: MigratableDatabase, options: MigrationOpti
       created_at  INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS revisions_page_idx ON page_revisions(page_id);
+    CREATE INDEX IF NOT EXISTS revisions_created_idx ON page_revisions(created_at);
 
     CREATE TABLE IF NOT EXISTS page_comments (
       id          TEXT PRIMARY KEY,
@@ -476,6 +482,13 @@ export const runMigrations = (sqlite: MigratableDatabase, options: MigrationOpti
       created_at INTEGER NOT NULL,
       deleted_at INTEGER
     );
+
+    CREATE TABLE IF NOT EXISTS page_asset_refs (
+      page_id  TEXT NOT NULL,
+      asset_id TEXT NOT NULL,
+      PRIMARY KEY (page_id, asset_id)
+    );
+    CREATE INDEX IF NOT EXISTS page_asset_refs_asset_idx ON page_asset_refs(asset_id);
 
     CREATE TABLE IF NOT EXISTS wiki_events (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -593,7 +606,7 @@ export const runMigrations = (sqlite: MigratableDatabase, options: MigrationOpti
   addColumn(sqlite, 'users', 'totp_enabled', 'INTEGER NOT NULL DEFAULT 0')
   addColumn(sqlite, 'users', 'disabled_at', 'INTEGER')
   addColumn(sqlite, 'users', 'token_invalid_before', 'INTEGER NOT NULL DEFAULT 0')
-  addColumn(sqlite, 'users', 'email_verified_at', 'INTEGER')
+  const addedEmailVerifiedAt = addColumn(sqlite, 'users', 'email_verified_at', 'INTEGER')
   addColumn(sqlite, 'users', 'profile_bio', "TEXT NOT NULL DEFAULT ''")
   addColumn(sqlite, 'users', 'profile_cover_url', "TEXT NOT NULL DEFAULT ''")
   addColumn(sqlite, 'users', 'profile_links', "TEXT NOT NULL DEFAULT '[]'")
@@ -615,8 +628,29 @@ export const runMigrations = (sqlite: MigratableDatabase, options: MigrationOpti
   addColumn(sqlite, 'automation_rules', 'stop_on_match', 'INTEGER NOT NULL DEFAULT 0')
   sqlite.exec('CREATE INDEX IF NOT EXISTS automation_rules_order_idx ON automation_rules(enabled, priority, created_at);')
   migrateLegacyAutomationRules(sqlite)
-  sqlite.exec('UPDATE users SET email_verified_at = created_at WHERE email_verified_at IS NULL;')
+  // Existing accounts predate verification policy and are grandfathered once,
+  // only when this migration actually introduces the column. Pending accounts
+  // created after that must stay pending across restarts and search rebuilds.
+  if (addedEmailVerifiedAt) {
+    sqlite.exec('UPDATE users SET email_verified_at = created_at WHERE email_verified_at IS NULL;')
+  }
+  sqlite.exec(`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (1, ${Date.now()});`)
   assertSchemaMatchesDatabase(sqlite)
+}
+
+export const runMigrationsAtomically = (sqlite: MigratableDatabase, options: MigrationOptions = {}): void => {
+  sqlite.exec('BEGIN IMMEDIATE;')
+  try {
+    runMigrations(sqlite, options)
+    sqlite.exec('COMMIT;')
+  } catch (error) {
+    try {
+      sqlite.exec('ROLLBACK;')
+    } catch {
+      /* preserve the migration error */
+    }
+    throw error
+  }
 }
 
 /** Run migrations standalone: `bun src/db/migrate.ts`. */

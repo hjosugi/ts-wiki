@@ -9,6 +9,11 @@
  */
 import { sqliteTable, text, integer, index, primaryKey } from 'drizzle-orm/sqlite-core'
 
+export const schemaMigrations = sqliteTable('schema_migrations', {
+  version: integer('version').primaryKey(),
+  appliedAt: integer('applied_at').notNull(),
+})
+
 export const users = sqliteTable('users', {
   id: text('id').primaryKey(),
   email: text('email').notNull().unique(),
@@ -239,7 +244,7 @@ export const pageRevisions = sqliteTable(
     action: text('action', { enum: ['created', 'updated', 'moved', 'deleted', 'archived', 'restored', 'purged'] }).notNull(),
     createdAt: integer('created_at').notNull(),
   },
-  (t) => [index('revisions_page_idx').on(t.pageId)],
+  (t) => [index('revisions_page_idx').on(t.pageId), index('revisions_created_idx').on(t.createdAt)],
 )
 
 export const pageComments = sqliteTable(
@@ -379,6 +384,18 @@ export const assets = sqliteTable('assets', {
   createdAt: integer('created_at').notNull(),
   deletedAt: integer('deleted_at'),
 })
+
+export const pageAssetRefs = sqliteTable(
+  'page_asset_refs',
+  {
+    pageId: text('page_id').notNull(),
+    assetId: text('asset_id').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.pageId, t.assetId] }),
+    index('page_asset_refs_asset_idx').on(t.assetId),
+  ],
+)
 
 export const wikiEvents = sqliteTable(
   'wiki_events',

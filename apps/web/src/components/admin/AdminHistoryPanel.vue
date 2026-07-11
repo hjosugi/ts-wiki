@@ -1,32 +1,20 @@
 <script setup lang="ts">
 import { friendlyError } from '@/lib/friendlyErrors'
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { Api, type AdminHistoryStats, type PurgeHistoryResult } from '@/lib/api'
 import { useDialogs } from '@/composables/useDialogs'
+import { useAsyncData } from '@/composables/useAsyncData'
+import AdminAsyncState from './AdminAsyncState.vue'
 
-const stats = ref<AdminHistoryStats | null>(null)
+const { data: stats, loading, error, reload: load } = useAsyncData<AdminHistoryStats | null>(Api.adminHistoryStats, { initial: null })
 const lastPurge = ref<PurgeHistoryResult | null>(null)
 const olderThanDays = ref(90)
 const keepLatest = ref(5)
-const loading = ref(false)
 const purging = ref(false)
-const error = ref<string | null>(null)
 const dialogs = useDialogs()
 
 const formatBytes = (value: number): string =>
   value >= 1024 * 1024 ? `${(value / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.ceil(value / 1024))} KB`
-
-async function load(): Promise<void> {
-  loading.value = true
-  error.value = null
-  try {
-    stats.value = await Api.adminHistoryStats()
-  } catch (e) {
-    error.value = friendlyError(e)
-  } finally {
-    loading.value = false
-  }
-}
 
 async function purge(): Promise<void> {
   if (!await dialogs.confirm({ message: `Purge revisions older than ${olderThanDays.value} days while keeping ${keepLatest.value} per page?`, danger: true })) return
@@ -48,13 +36,12 @@ async function purge(): Promise<void> {
   }
 }
 
-onMounted(load)
 </script>
 
 <template>
   <section>
     <h2 class="text-lg font-semibold mb-3">History maintenance</h2>
-    <p v-if="error" class="text-sm text-red-600 mb-3">{{ error }}</p>
+    <AdminAsyncState :error="error" :loading="loading" @retry="load" />
     <div class="card p-4 max-w-2xl">
       <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div>

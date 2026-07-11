@@ -18,7 +18,7 @@ import { BetterSQLiteSession } from 'drizzle-orm/better-sqlite3/session'
 import { createTableRelationsHelpers, extractTablesRelationalConfig } from 'drizzle-orm/relations'
 import type { DatabaseConfig, DatabaseDriver, LibsqlDatabaseConfig } from './config.ts'
 import * as schema from './schema.ts'
-import { runMigrations, type FtsTokenizer } from './migrate.ts'
+import { runMigrationsAtomically, type FtsTokenizer } from './migrate.ts'
 
 export interface RawStatement {
   run(...params: unknown[]): { readonly changes?: number; readonly lastInsertRowid?: number | bigint }
@@ -51,7 +51,8 @@ export const createSqliteDb = (path: string, options: CreateDbOptions = {}): DB 
   const sqlite = new BunDatabase(path, { create: true })
   sqlite.exec('PRAGMA journal_mode = WAL;')
   sqlite.exec('PRAGMA foreign_keys = ON;')
-  if (options.migrate !== false) runMigrations(sqlite, { ftsTokenizer: options.ftsTokenizer })
+  sqlite.exec('PRAGMA busy_timeout = 5000;')
+  if (options.migrate !== false) runMigrationsAtomically(sqlite, { ftsTokenizer: options.ftsTokenizer })
   const db = drizzle(sqlite, { schema })
   // Drizzle exposes Bun's concrete Database type while the application keeps a
   // deliberately smaller cross-driver raw client surface.
@@ -124,7 +125,8 @@ export const createLibsqlDb = (config: LibsqlDatabaseConfig, options: CreateDbOp
   } as ConstructorParameters<typeof LibsqlDatabase>[1]) as RawDatabase
 
   client.exec('PRAGMA foreign_keys = ON;')
-  if (options.migrate !== false) runMigrations(client, { ftsTokenizer: options.ftsTokenizer })
+  client.exec('PRAGMA busy_timeout = 5000;')
+  if (options.migrate !== false) runMigrationsAtomically(client, { ftsTokenizer: options.ftsTokenizer })
   if (target.syncUrl) client.sync?.()
 
   return drizzleLibsqlSync(client)

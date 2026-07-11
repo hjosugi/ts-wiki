@@ -4,6 +4,7 @@
  */
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { openapi } from '@elysia/openapi'
 import { lte } from 'drizzle-orm'
 import {
   can,
@@ -28,7 +29,7 @@ import {
   type StructuredLogger,
 } from '../observability/logging.ts'
 import type { AutomationEvent, WebhookFetcher, WebhookHostnameResolver } from '../services/webhooks.ts'
-import { realtimeTickets, type Page } from '../db/schema.ts'
+import { realtimeTickets } from '../db/schema.ts'
 import { HttpError } from './errors.ts'
 import { requireHttpPermission } from './permissions.ts'
 import {
@@ -57,6 +58,7 @@ import { createSearchRoutes } from './routes/search.ts'
 import { createSetupRoutes } from './routes/setup.ts'
 import { createStaticRoutes } from './routes/static.ts'
 import { createSystemRoutes } from './routes/system.ts'
+import { APP_VERSION } from '../version.ts'
 import { createTemplateRoutes } from './routes/templates.ts'
 
 export interface AppDeps {
@@ -78,6 +80,7 @@ interface TokenPrincipal {
 const AUTH_RATE_LIMIT_ATTEMPTS = 10
 const CREDENTIAL_RATE_LIMIT_ATTEMPTS = 10
 const ASSET_UPLOAD_RATE_LIMIT_ATTEMPTS = 20
+const UNFURL_RATE_LIMIT_ATTEMPTS = 30
 const PRIVATE_ANON_READ_RATE_LIMIT_ATTEMPTS = 120
 const RATE_LIMIT_WINDOW_MS = 60_000
 const REALTIME_TICKET_TTL_MS = 30_000
@@ -146,6 +149,7 @@ export const createApp = ({
   const authLimiter = createAppRateLimiter(AUTH_RATE_LIMIT_ATTEMPTS)
   const credentialLimiter = createAppRateLimiter(CREDENTIAL_RATE_LIMIT_ATTEMPTS)
   const assetUploadLimiter = createAppRateLimiter(ASSET_UPLOAD_RATE_LIMIT_ATTEMPTS)
+  const unfurlLimiter = createAppRateLimiter(UNFURL_RATE_LIMIT_ATTEMPTS)
   const privateAnonReadLimiter = createAppRateLimiter(PRIVATE_ANON_READ_RATE_LIMIT_ATTEMPTS)
   const webIndex = join(env.webDistDir, 'index.html')
   const hasWebDist = existsSync(webIndex)
@@ -161,9 +165,10 @@ export const createApp = ({
   ): void => {
     const startedAt = requestStartedAt.get(request) ?? Date.now()
     const url = new URL(request.url)
+    const safePath = url.pathname.replace(/^\/api\/shared\/[^/]+/, '/api/shared/[redacted]')
     requestLog(logger, {
       method: request.method,
-      path: url.pathname,
+      path: safePath,
       status,
       durationMs: Date.now() - startedAt,
       ip: clientIp(request, server, env.trustProxyHeaders),
@@ -317,6 +322,21 @@ export const createApp = ({
       'asset:upload',
       principal,
       'Too many asset uploads; try again later',
+    )
+  }
+
+  const enforceUnfurlLimit = (
+    request: Request,
+    server: RequestIpServer | null | undefined,
+    principal: Principal | null,
+  ): void => {
+    enforceRateLimit(
+      unfurlLimiter,
+      request,
+      server,
+      'link:unfurl',
+      principal,
+      'Too many link preview requests; try again later',
     )
   }
 
@@ -505,13 +525,27 @@ export const createApp = ({
       requestStartedAt.set(request, Date.now())
     },
   })
+    .use(openapi({
+      path: '/api/docs',
+      specPath: '/api/openapi.json',
+      documentation: {
+        info: {
+          title: 'kawaii-wiki.ts API',
+          version: APP_VERSION,
+          description: 'The stable HTTP API for kawaii-wiki.ts v1.',
+        },
+      },
+      exclude: { paths: ['/assets/*', '/ui/*'] },
+    }))
     .use(createSystemRoutes({
+      db,
       env,
       services,
       publicSettings,
       feedCache,
       requirePageRead,
       canReadPage,
+      enforceUnfurlLimit,
     }))
     .use(createSetupRoutes({
       db,
@@ -520,7 +554,6 @@ export const createApp = ({
       publishAutomation,
     }))
     .use(createAuthRoutes({
-      env,
       authPolicy,
       logger,
       enforceAuthLimit,
@@ -543,7 +576,7 @@ export const createApp = ({
       pageWriteEffects,
       assetStorage,
     }))
-    .use(createSearchRoutes({ requireSearchRead }))
+    .use(createSearchRoutes({ requireSearchRead, canReadPage }))
     .use(createRealtimeRoutes({
       services,
       bus,
@@ -567,6 +600,8 @@ export const createApp = ({
       logger,
       assetStorage,
       assetPolicy,
+      privateWiki,
+      canReadPage,
       enforceAssetUploadLimit,
       publishAutomation,
     }))

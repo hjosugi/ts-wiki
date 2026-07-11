@@ -2,6 +2,9 @@
 import { Api, type LabelCount } from '@/lib/api'
 import Skeleton from '@/components/Skeleton.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
+import { useI18n } from '@/lib/i18n'
+
+const { t } = useI18n()
 
 const { data: labels, loading, error, reload: load } = useAsyncData<LabelCount[]>(Api.labels, { initial: [] })
 
@@ -15,14 +18,14 @@ const sizeRem = (count: number): string => (0.85 + (count / maxCount()) * 0.55).
   <div class="space-y-6">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h1 class="text-3xl font-bold tracking-tight">Tags</h1>
-        <p class="mt-1 text-sm text-[var(--c-text-muted)]">Browse pages by label</p>
+        <h1 class="text-3xl font-bold tracking-tight">{{ t('tags') }}</h1>
+        <p class="mt-1 text-sm text-[var(--c-text-muted)]">{{ t('browseByLabel') }}</p>
       </div>
-      <button class="btn-ghost" type="button" :disabled="loading" @click="load">Refresh</button>
+      <button class="btn-ghost" type="button" :disabled="loading" @click="load">{{ t('refresh') }}</button>
     </div>
 
     <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
-    <Skeleton v-if="loading" label="Loading tags" :lines="3" />
+    <Skeleton v-if="loading" :label="t('loadingTags')" :lines="3" />
 
     <div v-if="labels.length" class="flex flex-wrap items-center gap-x-3 gap-y-2">
       <RouterLink
@@ -37,6 +40,6 @@ const sizeRem = (count: number): string => (0.85 + (count / maxCount()) * 0.55).
       </RouterLink>
     </div>
 
-    <p v-if="!loading && !labels.length" class="text-gray-500">No tags yet.</p>
+    <p v-if="!loading && !labels.length" class="text-gray-500">{{ t('noTagsYet') }}</p>
   </div>
 </template>

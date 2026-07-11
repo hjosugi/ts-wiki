@@ -32,6 +32,15 @@ const mfaUrl = ref('')
 const mfaCode = ref('')
 const mfaRecoveryCodes = ref<string[]>([])
 
+const redirectTarget = (): string => {
+  const target = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+  return target.startsWith('/') && !target.startsWith('//') ? target : '/'
+}
+
+const finishLogin = (): void => {
+  void router.push(redirectTarget())
+}
+
 const heading = computed(() => {
   if (mode.value === 'register') return t('createAccount')
   if (mode.value === 'forgot') return t('forgotPassword')
@@ -101,7 +110,7 @@ async function submit(): Promise<void> {
     }
     if (mode.value === 'mfa-setup') {
       if (mfaRecoveryCodes.value.length) {
-        router.push('/')
+        finishLogin()
         return
       }
       const result = await Api.totpEnable(mfaCode.value, mfaSetupToken.value)
@@ -135,7 +144,7 @@ async function submit(): Promise<void> {
         return
       }
     }
-    router.push('/')
+    finishLogin()
   } catch (e) {
     error.value = friendlyError(e)
     busy.value = false
@@ -151,7 +160,7 @@ async function signInWithPasskey(): Promise<void> {
     const result = await Api.passkeyLoginVerify(response)
     setToken(result.token)
     auth.user = result.user
-    router.push('/')
+    finishLogin()
   } catch (e) {
     error.value = friendlyError(e)
     busy.value = false
@@ -178,9 +187,9 @@ onMounted(async () => {
   const token = hash.get('token')
   if (token) {
     setToken(token)
-    window.history.replaceState(null, '', '/')
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
     await auth.fetchMe()
-    router.push('/')
+    finishLogin()
     return
   }
   await Promise.all([loadProviders(), loadPublicSettings()])
@@ -303,9 +312,5 @@ onMounted(async () => {
       {{ t('haveAccount') }}
     </button>
 
-    <p v-if="mode !== 'reset'" class="text-xs text-[var(--c-text-muted)] mt-6">
-      {{ t('seededAdmin') }} <code class="font-mono">admin@example.com</code>; password comes from
-      <code class="font-mono">db:seed</code>.
-    </p>
   </div>
 </template>

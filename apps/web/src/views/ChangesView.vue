@@ -5,6 +5,9 @@ import { Api, type RecentChange } from '@/lib/api'
 import { API_BASE_URL } from '@/lib/url'
 import Skeleton from '@/components/Skeleton.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
+import { useI18n } from '@/lib/i18n'
+
+const { t } = useI18n()
 
 const PAGE_SIZE = 50
 const changes = ref<RecentChange[]>([])
@@ -65,17 +68,17 @@ async function loadMore(): Promise<void> {
   <div class="space-y-6">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h1 class="text-3xl font-bold tracking-tight">Recent changes</h1>
-        <p class="mt-1 text-sm text-[var(--c-text-muted)]">Latest edits across the wiki</p>
+        <h1 class="text-3xl font-bold tracking-tight">{{ t('recentChanges') }}</h1>
+        <p class="mt-1 text-sm text-[var(--c-text-muted)]">{{ t('latestEdits') }}</p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <a class="btn-ghost" :href="feedUrl" target="_blank" rel="noopener">Atom</a>
-        <button class="btn-ghost" type="button" :disabled="loading" @click="load">Refresh</button>
+        <button class="btn-ghost" type="button" :disabled="loading" @click="load">{{ t('refresh') }}</button>
       </div>
     </div>
 
     <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
-    <Skeleton v-if="loading" label="Loading changes" :lines="5" />
+    <Skeleton v-if="loading" :label="t('loadingChanges')" :lines="5" />
 
     <section v-for="[day, items] in grouped" :key="day" class="space-y-2">
       <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">{{ day }}</h2>
@@ -84,8 +87,8 @@ async function loadMore(): Promise<void> {
           <span class="w-16 shrink-0 text-xs text-[var(--c-text-muted)]">{{ formatTime(change.createdAt) }}</span>
           <span class="w-20 shrink-0 rounded px-2 py-0.5 text-center text-xs font-semibold capitalize" :class="actionClass(change.action)">{{ change.action }}</span>
           <RouterLink class="link-quiet min-w-0 truncate" :to="'/' + change.path">{{ change.title || change.path }}</RouterLink>
-          <span v-if="change.authorName" class="text-xs text-[var(--c-text-muted)]">by {{ change.authorName }}</span>
-          <RouterLink class="ml-auto text-xs link-quiet" :to="'/_history/' + change.path">History</RouterLink>
+          <span v-if="change.authorName" class="text-xs text-[var(--c-text-muted)]">{{ t('byAuthor', { name: change.authorName }) }}</span>
+          <RouterLink class="ml-auto text-xs link-quiet" :to="'/_history/' + change.path">{{ t('history') }}</RouterLink>
         </li>
       </ul>
     </section>
@@ -97,9 +100,9 @@ async function loadMore(): Promise<void> {
       :disabled="loadingMore"
       @click="loadMore"
     >
-      {{ loadingMore ? 'Loading...' : 'Load older changes' }}
+      {{ loadingMore ? t('loading') : t('loadOlderChanges') }}
     </button>
 
-    <p v-if="!loading && !changes.length" class="text-gray-500">No changes yet.</p>
+    <p v-if="!loading && !changes.length" class="text-gray-500">{{ t('noChangesYet') }}</p>
   </div>
 </template>

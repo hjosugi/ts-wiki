@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { friendlyError } from '@/lib/friendlyErrors'
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Api, type AutomationRuleView } from '@/lib/api'
 import Skeleton from '@/components/Skeleton.vue'
+import { useAsyncData } from '@/composables/useAsyncData'
 
-const rules = ref<AutomationRuleView[]>([])
-const loading = ref(false)
-const error = ref<string | null>(null)
+const { data: rules, loading, error, reload: load } = useAsyncData<AutomationRuleView[]>(Api.adminAutomationRules, { initial: [] })
 const name = ref('')
 const trigger = ref<AutomationRuleView['config']['trigger']>('page.updated')
 const pathPrefix = ref('')
@@ -32,18 +31,6 @@ const hasAction = computed(() => Boolean(
   moveToPath.value ||
   fireWebhookEvent.value,
 ))
-
-async function load(): Promise<void> {
-  loading.value = true
-  error.value = null
-  try {
-    rules.value = await Api.adminAutomationRules()
-  } catch (e) {
-    error.value = friendlyError(e)
-  } finally {
-    loading.value = false
-  }
-}
 
 function reviewAtAction(): number | null | undefined {
   if (clearReviewAt.value) return null
@@ -140,7 +127,6 @@ function describeActions(rule: AutomationRuleView): string {
   ].filter(Boolean).join(' · ')
 }
 
-onMounted(load)
 </script>
 
 <template>

@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { friendlyError } from '@/lib/friendlyErrors'
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Api, type AssetUsagePage, type AssetView } from '@/lib/api'
 import { displayAssetFolder } from '@/lib/assets'
 import Skeleton from '@/components/Skeleton.vue'
 import { useDialogs } from '@/composables/useDialogs'
+import { useAsyncData } from '@/composables/useAsyncData'
 
 const assets = ref<AssetView[]>([])
 const folders = ref<string[]>([])
@@ -13,18 +14,13 @@ const query = ref('')
 const usageByAssetId = ref<Record<string, AssetUsagePage[]>>({})
 const orphanAssetIds = ref<string[]>([])
 const selectedOrphanIds = ref<string[]>([])
-const loading = ref(false)
 const cleaning = ref(false)
-const error = ref<string | null>(null)
 const dialogs = useDialogs()
 
 const formatBytes = (value: number): string =>
   value >= 1024 * 1024 ? `${(value / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(value / 1024)} KB`
 
-async function load(): Promise<void> {
-  loading.value = true
-  error.value = null
-  try {
+const { loading, error, reload: load } = useAsyncData(async () => {
     const [nextAssets, nextUsage, nextOrphans, nextFolders] = await Promise.all([
       Api.listAssets(folderFilter.value || undefined, query.value || undefined),
       Api.assetUsage(),
@@ -36,12 +32,7 @@ async function load(): Promise<void> {
     usageByAssetId.value = Object.fromEntries(nextUsage.map((entry) => [entry.asset.id, entry.pages]))
     orphanAssetIds.value = nextOrphans.map((asset) => asset.id)
     selectedOrphanIds.value = selectedOrphanIds.value.filter((id) => orphanAssetIds.value.includes(id))
-  } catch (e) {
-    error.value = friendlyError(e)
-  } finally {
-    loading.value = false
-  }
-}
+})
 
 async function deleteAsset(asset: AssetView): Promise<void> {
   if (!await dialogs.confirm({ message: `Delete asset "${asset.filename}"?`, danger: true })) return
@@ -124,7 +115,6 @@ async function deleteSelectedOrphans(): Promise<void> {
   }
 }
 
-onMounted(load)
 </script>
 
 <template>

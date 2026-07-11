@@ -226,7 +226,7 @@ describe('PageEdit', () => {
     await saveButton(mounted.wrapper).trigger('click')
     await settle()
 
-    expect(confirm).toHaveBeenCalledWith('1 inbound link point to /docs/source. Move anyway?')
+    expect(confirm).toHaveBeenCalledWith('1 inbound link points to /docs/source. Move anyway?')
     expect(api.updatePage).not.toHaveBeenCalled()
     expect((pathInput(mounted.wrapper).element as HTMLInputElement).value).toBe('docs/source')
   })
