@@ -1,11 +1,12 @@
 import { defineConfig, presetUno, presetTypography } from 'unocss'
+import type { Theme } from '@unocss/preset-mini'
 
 const unoConfig = defineConfig({
   presets: [
     // `dark: 'class'` → dark mode is driven by a `.dark` class on <html>, which
     // useTheme() sets from the user's choice (or the OS in system mode).
     presetUno({ dark: 'class' }),
-    presetTypography(),
+    presetTypography<Theme>(),
   ],
   theme: {
     fontFamily: {
