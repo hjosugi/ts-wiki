@@ -3,6 +3,23 @@
 All notable changes are documented here. This project follows Semantic
 Versioning; API compatibility details are in `docs/API.md`.
 
+## [1.0.22] - 2026-07-12
+
+### Changed
+
+- Moved admin statistics, revision retention, page and audit listing, group
+  membership reads, and user mutations behind an asynchronous driver-neutral
+  repository.
+- Converted admin service and HTTP call chains to await remote-capable
+  persistence while retaining permission, validation, and last-admin policy in
+  the service layer.
+
+### Tests
+
+- Added shared SQLite and libSQL admin contract coverage for counts, history
+  byte totals, atomic revision deletion, filters, pagination, memberships, and
+  user mutations.
+
 ## [1.0.21] - 2026-07-12
 
 ### Changed

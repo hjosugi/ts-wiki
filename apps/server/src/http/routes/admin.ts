@@ -86,10 +86,10 @@ export const createAdminRoutes = ({
   publishAutomation,
 }: AdminRoutesContext) => (app: BaseApp) =>
   app
-    .get('/api/admin/stats', ({ services, principal }) => unwrap(services.admin.stats(principal)))
-    .get('/api/admin/history', ({ services, principal }) => unwrap(services.admin.historyStats(principal)))
-    .post('/api/admin/history/purge', ({ body, services, principal }) => {
-      const result = unwrap(services.admin.purgeHistory(principal, body))
+    .get('/api/admin/stats', async ({ services, principal }) => unwrap(await services.admin.stats(principal)))
+    .get('/api/admin/history', async ({ services, principal }) => unwrap(await services.admin.historyStats(principal)))
+    .post('/api/admin/history/purge', async ({ body, services, principal }) => {
+      const result = unwrap(await services.admin.purgeHistory(principal, body))
       audit(logger, 'admin.history.purge', {
         userId: principal?.id ?? null,
         deleted: result.deleted,
@@ -103,7 +103,7 @@ export const createAdminRoutes = ({
         keepLatest: t.Numeric(),
       }),
     })
-    .get('/api/admin/pages', ({ query, services, principal }) => unwrap(services.admin.listPages(principal, query)), {
+    .get('/api/admin/pages', async ({ query, services, principal }) => unwrap(await services.admin.listPages(principal, query)), {
       query: t.Object({
         limit: t.Optional(t.Numeric()),
         offset: t.Optional(t.Numeric()),
@@ -113,7 +113,7 @@ export const createAdminRoutes = ({
         authorId: t.Optional(t.String()),
       }),
     })
-    .get('/api/admin/audit', ({ query, services, principal }) => unwrap(services.admin.listAudit(principal, query)), {
+    .get('/api/admin/audit', async ({ query, services, principal }) => unwrap(await services.admin.listAudit(principal, query)), {
       query: t.Object({
         limit: t.Optional(t.Numeric()),
         offset: t.Optional(t.Numeric()),
@@ -194,8 +194,8 @@ export const createAdminRoutes = ({
         }),
       },
     )
-    .get('/api/admin/users', ({ query, services, principal }) => {
-      const all = unwrap(services.admin.listUsers(principal))
+    .get('/api/admin/users', async ({ query, services, principal }) => {
+      const all = unwrap(await services.admin.listUsers(principal))
       const limit = Math.min(Math.max(Math.trunc(query.limit ?? 100), 1), 1_000)
       const offset = Math.max(Math.trunc(query.offset ?? 0), 0)
       return { users: all.slice(offset, offset + limit), total: all.length, limit, offset }
@@ -212,8 +212,8 @@ export const createAdminRoutes = ({
     )
     .post(
       '/api/admin/users/deactivate',
-      ({ body, services, principal }) => {
-        const user = unwrap(services.admin.deactivateUser(principal, body.userId))
+      async ({ body, services, principal }) => {
+        const user = unwrap(await services.admin.deactivateUser(principal, body.userId))
         audit(logger, 'admin.user.deactivate', { userId: principal?.id ?? null, targetUserId: user.id })
         return { user }
       },

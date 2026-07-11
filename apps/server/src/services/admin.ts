@@ -3,7 +3,6 @@
  * `requirePermission(principal, 'admin:access')` (the same pure check from @kawaii-wiki/core), so the
  * HTTP layer stays a thin `unwrap(...)`.
  */
-import { and, eq, asc, desc, gte, like, lte, sql, type SQL } from 'drizzle-orm'
 import {
   type Result,
   ok,
@@ -18,8 +17,7 @@ import {
   validationError,
   isPageStatus,
 } from '@kawaii-wiki/core'
-import type { DB } from '../db/client.ts'
-import { auditLog, groupMemberships, groups, users, pages, pageRevisions } from '../db/schema.ts'
+import type { AdminRepository, AdminUserRecord } from '../repositories/admin.ts'
 import type { AuthzService } from './authz.ts'
 import { hashPassword } from './auth.ts'
 
@@ -111,35 +109,22 @@ export interface AdminAuditList {
 }
 
 export interface AdminService {
-  stats(principal: Principal | null): Result<AdminStats, AppError>
-  historyStats(principal: Principal | null): Result<AdminHistoryStats, AppError>
-  purgeHistory(principal: Principal | null, input: PurgeHistoryInput): Result<PurgeHistoryResult, AppError>
-  listPages(principal: Principal | null, input?: AdminPageListInput): Result<AdminPageList, AppError>
-  listAudit(principal: Principal | null, input?: AdminAuditListInput): Result<AdminAuditList, AppError>
-  listUsers(principal: Principal | null): Result<AdminUserView[], AppError>
+  stats(principal: Principal | null): Promise<Result<AdminStats, AppError>>
+  historyStats(principal: Principal | null): Promise<Result<AdminHistoryStats, AppError>>
+  purgeHistory(principal: Principal | null, input: PurgeHistoryInput): Promise<Result<PurgeHistoryResult, AppError>>
+  listPages(principal: Principal | null, input?: AdminPageListInput): Promise<Result<AdminPageList, AppError>>
+  listAudit(principal: Principal | null, input?: AdminAuditListInput): Promise<Result<AdminAuditList, AppError>>
+  listUsers(principal: Principal | null): Promise<Result<AdminUserView[], AppError>>
   setUserRole(principal: Principal | null, userId: string, role: Role): Promise<Result<AdminUserView, AppError>>
   setUserPassword(principal: Principal | null, userId: string, password: string): Promise<Result<AdminUserView, AppError>>
-  deactivateUser(principal: Principal | null, userId: string): Result<AdminUserView, AppError>
+  deactivateUser(principal: Principal | null, userId: string): Promise<Result<AdminUserView, AppError>>
 }
 
 const ROLES: readonly Role[] = ['admin', 'editor', 'viewer']
 const roleGroup = (role: Role): string => role === 'admin' ? 'admins' : role === 'editor' ? 'editors' : 'viewers'
 
-export const createAdminService = (db: DB, authz?: AuthzService): AdminService => {
-  const countOf = (table: typeof users | typeof pages | typeof pageRevisions): number =>
-    db.select({ c: sql<number>`count(*)` }).from(table).get()?.c ?? 0
-
-  const historyStats = (): AdminHistoryStats => ({
-    revisions: countOf(pageRevisions),
-    historyBytes: db
-      .select({
-        bytes: sql<number>`coalesce(sum(length(${pageRevisions.title}) + length(${pageRevisions.description}) + length(${pageRevisions.content})), 0)`,
-      })
-      .from(pageRevisions)
-      .get()?.bytes ?? 0,
-  })
-
-  const toView = (u: typeof users.$inferSelect, groupKeys?: readonly string[]): AdminUserView => ({
+export const createAdminService = (repository: AdminRepository, authz?: AuthzService): AdminService => {
+  const toView = (u: AdminUserRecord, groupKeys?: readonly string[]): AdminUserView => ({
     id: u.id,
     email: u.email,
     name: u.name,
@@ -159,42 +144,34 @@ export const createAdminService = (db: DB, authz?: AuthzService): AdminService =
     }
   }
 
-  const activeAdminCount = (): number =>
-    db
-      .select()
-      .from(users)
-      .where(eq(users.role, 'admin'))
-      .all()
-      .filter((user) => user.disabledAt === null).length
-
-  const protectLastActiveAdminDemotion = (target: typeof users.$inferSelect, nextRole: Role): Result<true, AppError> => {
-    if (target.role === 'admin' && nextRole !== 'admin' && target.disabledAt === null && activeAdminCount() <= 1) {
+  const protectLastActiveAdminDemotion = async (target: AdminUserRecord, nextRole: Role): Promise<Result<true, AppError>> => {
+    if (target.role === 'admin' && nextRole !== 'admin' && target.disabledAt === null && await repository.activeAdminCount() <= 1) {
       return err(conflict('Cannot demote the last active admin'))
     }
     return ok(true)
   }
 
-  const protectLastActiveAdminDeactivation = (target: typeof users.$inferSelect): Result<true, AppError> => {
-    if (target.role === 'admin' && target.disabledAt === null && activeAdminCount() <= 1) {
+  const protectLastActiveAdminDeactivation = async (target: AdminUserRecord): Promise<Result<true, AppError>> => {
+    if (target.role === 'admin' && target.disabledAt === null && await repository.activeAdminCount() <= 1) {
       return err(conflict('Cannot deactivate the last active admin'))
     }
     return ok(true)
   }
 
   return {
-    stats(principal) {
+    async stats(principal) {
       const allowed = requirePermission(principal, 'admin:access')
       if (!allowed.ok) return allowed
-      return ok({ users: countOf(users), pages: countOf(pages), revisions: countOf(pageRevisions) })
+      return ok(await repository.stats())
     },
 
-    historyStats(principal) {
+    async historyStats(principal) {
       const allowed = requirePermission(principal, 'admin:access')
       if (!allowed.ok) return allowed
-      return ok(historyStats())
+      return ok(await repository.historyStats())
     },
 
-    purgeHistory(principal, input) {
+    async purgeHistory(principal, input) {
       const allowed = requirePermission(principal, 'admin:access')
       if (!allowed.ok) return allowed
       const olderThanDays = Math.trunc(input.olderThanDays)
@@ -207,15 +184,7 @@ export const createAdminService = (db: DB, authz?: AuthzService): AdminService =
       }
 
       const olderThan = Date.now() - olderThanDays * 24 * 60 * 60 * 1000
-      const rows = db
-        .select({
-          id: pageRevisions.id,
-          pageId: pageRevisions.pageId,
-          createdAt: pageRevisions.createdAt,
-        })
-        .from(pageRevisions)
-        .orderBy(desc(pageRevisions.createdAt), sql`page_revisions.rowid desc`)
-        .all()
+      const rows = await repository.listRevisionCandidates()
       const keptByPage = new Map<string, number>()
       const deleteIds: string[] = []
       for (const row of rows) {
@@ -227,20 +196,16 @@ export const createAdminService = (db: DB, authz?: AuthzService): AdminService =
         if (row.createdAt < olderThan) deleteIds.push(row.id)
       }
 
-      db.transaction((tx) => {
-        for (const id of deleteIds) {
-          tx.delete(pageRevisions).where(eq(pageRevisions.id, id)).run()
-        }
-      })
+      await repository.deleteRevisions(deleteIds)
       return ok({
-        ...historyStats(),
+        ...await repository.historyStats(),
         deleted: deleteIds.length,
         olderThan,
         keepLatest,
       })
     },
 
-    listPages(principal, input = {}) {
+    async listPages(principal, input = {}) {
       const allowed = requirePermission(principal, 'admin:access')
       if (!allowed.ok) return allowed
       const limit = Math.min(Math.max(Math.trunc(input.limit ?? 25), 1), 100)
@@ -254,44 +219,23 @@ export const createAdminService = (db: DB, authz?: AuthzService): AdminService =
       const label = input.label?.trim()
       const spaceKey = input.spaceKey?.trim()
       const authorId = input.authorId?.trim()
-      const filters = [
-        eq(pages.lifecycle, 'active'),
-        ...(status ? [eq(pages.status, status)] : []),
-        ...(label ? [like(pages.labels, `%${label}%`)] : []),
-        ...(spaceKey ? [eq(pages.spaceKey, spaceKey)] : []),
-        ...(authorId ? [eq(pages.authorId, authorId)] : []),
-      ]
-      const where = and(...filters)
-      const total = db.select({ c: sql<number>`count(*)` }).from(pages).where(where).get()?.c ?? 0
-      const rows = db
-        .select({
-          path: pages.path,
-          title: pages.title,
-          status: pages.status,
-          labels: pages.labels,
-          ownerId: pages.ownerId,
-          authorId: pages.authorId,
-          authorName: users.name,
-          spaceKey: pages.spaceKey,
-          locale: pages.locale,
-          updatedAt: pages.updatedAt,
-        })
-        .from(pages)
-        .leftJoin(users, eq(users.id, pages.authorId))
-        .where(where)
-        .orderBy(desc(pages.updatedAt), asc(pages.path))
-        .limit(limit)
-        .offset(offset)
-        .all()
+      const { rows, total } = await repository.listPages({
+        limit,
+        offset,
+        ...(status ? { status } : {}),
+        ...(label ? { label } : {}),
+        ...(spaceKey ? { spaceKey } : {}),
+        ...(authorId ? { authorId } : {}),
+      })
       return ok({
-        pages: rows.map((page) => ({ ...page, authorName: page.authorName ?? null })),
+        pages: rows,
         total,
         limit,
         offset,
       })
     },
 
-    listAudit(principal, input = {}) {
+    async listAudit(principal, input = {}) {
       const allowed = requirePermission(principal, 'admin:access')
       if (!allowed.ok) return allowed
       const limit = Math.min(Math.max(Math.trunc(input.limit ?? 50), 1), 200)
@@ -300,21 +244,14 @@ export const createAdminService = (db: DB, authz?: AuthzService): AdminService =
       const userId = input.userId?.trim()
       const from = typeof input.from === 'number' && Number.isFinite(input.from) ? Math.trunc(input.from) : undefined
       const to = typeof input.to === 'number' && Number.isFinite(input.to) ? Math.trunc(input.to) : undefined
-      const filters: SQL[] = [
-        ...(action ? [like(auditLog.action, `%${action}%`)] : []),
-        ...(userId ? [eq(auditLog.userId, userId)] : []),
-        ...(from !== undefined ? [gte(auditLog.createdAt, from)] : []),
-        ...(to !== undefined ? [lte(auditLog.createdAt, to)] : []),
-      ]
-      const where = filters.length ? and(...filters) : undefined
-      const totalQuery = db.select({ c: sql<number>`count(*)` }).from(auditLog)
-      const total = (where ? totalQuery.where(where) : totalQuery).get()?.c ?? 0
-      const rowsQuery = db.select().from(auditLog)
-      const rows = (where ? rowsQuery.where(where) : rowsQuery)
-        .orderBy(desc(auditLog.createdAt), desc(auditLog.id))
-        .limit(limit)
-        .offset(offset)
-        .all()
+      const { rows, total } = await repository.listAudit({
+        limit,
+        offset,
+        ...(action ? { action } : {}),
+        ...(userId ? { userId } : {}),
+        ...(from !== undefined ? { from } : {}),
+        ...(to !== undefined ? { to } : {}),
+      })
       return ok({
         events: rows.map((row) => ({
           id: row.id,
@@ -330,16 +267,12 @@ export const createAdminService = (db: DB, authz?: AuthzService): AdminService =
       })
     },
 
-    listUsers(principal) {
+    async listUsers(principal) {
       const allowed = requirePermission(principal, 'admin:access')
       if (!allowed.ok) return allowed
-      const rows = db.select().from(users).orderBy(asc(users.createdAt)).all()
+      const rows = await repository.listUsers()
       if (!authz) return ok(rows.map((user) => toView(user, [])))
-      const memberships = db
-        .select({ userId: groupMemberships.userId, key: groups.key })
-        .from(groupMemberships)
-        .innerJoin(groups, eq(groups.id, groupMemberships.groupId))
-        .all()
+      const memberships = await repository.listGroupMemberships()
       const keysByUser = new Map<string, string[]>()
       for (const membership of memberships) {
         const list = keysByUser.get(membership.userId) ?? []
@@ -354,13 +287,13 @@ export const createAdminService = (db: DB, authz?: AuthzService): AdminService =
       if (!allowed.ok) return allowed
       if (!ROLES.includes(role)) return err(validationError('Unknown role', 'role'))
 
-      const target = db.select().from(users).where(eq(users.id, userId)).get()
+      const target = await repository.findUser(userId)
       if (!target) return err(notFound('User not found'))
 
-      const guarded = protectLastActiveAdminDemotion(target, role)
+      const guarded = await protectLastActiveAdminDemotion(target, role)
       if (!guarded.ok) return guarded
 
-      db.update(users).set({ role }).where(eq(users.id, userId)).run()
+      await repository.updateUserRole(userId, role)
       if (authz) await authz.syncRoleGroup(userId, role)
       return ok(toView({ ...target, role }))
     },
@@ -369,24 +302,24 @@ export const createAdminService = (db: DB, authz?: AuthzService): AdminService =
       const allowed = requirePermission(principal, 'admin:access')
       if (!allowed.ok) return allowed
       if (password.length < 6) return err(validationError('Password must be at least 6 characters', 'password'))
-      const target = db.select().from(users).where(eq(users.id, userId)).get()
+      const target = await repository.findUser(userId)
       if (!target) return err(notFound('User not found'))
       const passwordHash = await hashPassword(password)
       const tokenInvalidBefore = Date.now()
-      db.update(users).set({ passwordHash, tokenInvalidBefore }).where(eq(users.id, userId)).run()
+      await repository.updateUserPassword(userId, passwordHash, tokenInvalidBefore)
       return ok({ ...toView(target), tokenInvalidBefore })
     },
 
-    deactivateUser(principal, userId) {
+    async deactivateUser(principal, userId) {
       const allowed = requirePermission(principal, 'admin:access')
       if (!allowed.ok) return allowed
-      const target = db.select().from(users).where(eq(users.id, userId)).get()
+      const target = await repository.findUser(userId)
       if (!target) return err(notFound('User not found'))
       if (target.disabledAt !== null) return ok(toView(target))
-      const guarded = protectLastActiveAdminDeactivation(target)
+      const guarded = await protectLastActiveAdminDeactivation(target)
       if (!guarded.ok) return guarded
       const disabledAt = Date.now()
-      db.update(users).set({ disabledAt, tokenInvalidBefore: disabledAt }).where(eq(users.id, userId)).run()
+      await repository.deactivateUser(userId, disabledAt)
       return ok({ ...toView(target), disabledAt, tokenInvalidBefore: disabledAt })
     },
   }

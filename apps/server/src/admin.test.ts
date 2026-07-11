@@ -9,9 +9,9 @@ const viewer: Principal = { id: 'viewer-1', role: 'viewer' }
 describe('admin service (in-memory db)', () => {
   test('non-admins are forbidden', async () => {
     const { admin: a } = createServices(createDb(':memory:'))
-    expect(a.stats(viewer).ok).toBe(false)
-    expect(a.listPages(viewer).ok).toBe(false)
-    expect(a.listUsers(null).ok).toBe(false)
+    expect((await a.stats(viewer)).ok).toBe(false)
+    expect((await a.listPages(viewer)).ok).toBe(false)
+    expect((await a.listUsers(null)).ok).toBe(false)
     expect((await a.setUserRole(viewer, 'x', 'admin')).ok).toBe(false)
   })
 
@@ -19,7 +19,7 @@ describe('admin service (in-memory db)', () => {
     const s = createServices(createDb(':memory:'))
     await s.users.create({ email: 'a@x.com', name: 'A', password: 'password', role: 'admin' })
     s.pages.create({ path: 'p', title: 'P', content: 'x' }, admin)
-    const r = s.admin.stats(admin)
+    const r = await s.admin.stats(admin)
     expect(r.ok).toBe(true)
     if (r.ok) {
       expect(r.value.users).toBe(1)
@@ -28,7 +28,7 @@ describe('admin service (in-memory db)', () => {
     }
   })
 
-  test('purgeHistory removes old revisions while keeping the latest per page', () => {
+  test('purgeHistory removes old revisions while keeping the latest per page', async () => {
     const db = createDb(':memory:')
     const s = createServices(db)
     s.pages.create({ path: 'docs/a', title: 'A', content: 'one' }, admin)
@@ -38,12 +38,12 @@ describe('admin service (in-memory db)', () => {
     s.pages.update('docs/b', { content: 'two' }, admin)
     db.$client.prepare('UPDATE page_revisions SET created_at = ?').run(Date.now() - 10 * 24 * 60 * 60 * 1000)
 
-    const before = s.admin.historyStats(admin)
+    const before = await s.admin.historyStats(admin)
     expect(before.ok).toBe(true)
     if (!before.ok) throw new Error('stats failed')
     expect(before.value.revisions).toBe(5)
 
-    const purged = s.admin.purgeHistory(admin, { olderThanDays: 1, keepLatest: 1 })
+    const purged = await s.admin.purgeHistory(admin, { olderThanDays: 1, keepLatest: 1 })
     expect(purged.ok).toBe(true)
     if (!purged.ok) throw new Error('purge failed')
     expect(purged.value.deleted).toBe(3)
@@ -59,7 +59,7 @@ describe('admin service (in-memory db)', () => {
     if (r.ok) expect(r.value.role).toBe('viewer')
   })
 
-  test('listPages filters and paginates active pages', () => {
+  test('listPages filters and paginates active pages', async () => {
     const s = createServices(createDb(':memory:'))
     s.pages.create({
       path: 'docs/a',
@@ -83,7 +83,7 @@ describe('admin service (in-memory db)', () => {
       status: 'verified',
     }, admin)
 
-    const verified = s.admin.listPages(admin, { status: 'verified', limit: 1 })
+    const verified = await s.admin.listPages(admin, { status: 'verified', limit: 1 })
     expect(verified.ok).toBe(true)
     if (verified.ok) {
       expect(verified.value.total).toBe(2)
@@ -91,7 +91,7 @@ describe('admin service (in-memory db)', () => {
       expect(verified.value.limit).toBe(1)
     }
 
-    const guide = s.admin.listPages(admin, { label: 'guide', spaceKey: 'docs' })
+    const guide = await s.admin.listPages(admin, { label: 'guide', spaceKey: 'docs' })
     expect(guide.ok).toBe(true)
     if (guide.ok) {
       expect(guide.value.total).toBe(2)

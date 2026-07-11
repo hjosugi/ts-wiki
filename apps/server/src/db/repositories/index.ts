@@ -29,6 +29,8 @@ import type { NotificationRepository } from '../../repositories/notifications.ts
 import { createSqliteNotificationRepository } from './notifications.ts'
 import type { CommentRepository } from '../../repositories/comments.ts'
 import { createSqliteCommentRepository } from './comments.ts'
+import type { AdminRepository } from '../../repositories/admin.ts'
+import { createSqliteAdminRepository } from './admin.ts'
 
 /**
  * Repository composition boundary for the active database driver.
@@ -52,6 +54,7 @@ export interface DatabaseRepositories {
   readonly linkPreviews: LinkPreviewRepository
   readonly notifications: NotificationRepository
   readonly comments: CommentRepository
+  readonly admin: AdminRepository
 }
 
 export const createDatabaseRepositories = (db: DB): DatabaseRepositories => ({
@@ -70,4 +73,5 @@ export const createDatabaseRepositories = (db: DB): DatabaseRepositories => ({
   linkPreviews: createSqliteLinkPreviewRepository(db),
   notifications: createSqliteNotificationRepository(db),
   comments: createSqliteCommentRepository(db),
+  admin: createSqliteAdminRepository(db),
 })
