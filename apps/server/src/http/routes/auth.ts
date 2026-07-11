@@ -240,7 +240,7 @@ export const createAuthRoutes = ({
 	          }
 	          if (policy.requireTwoFactor && !user.totpEnabled) {
 	            audit(logger, 'auth.2fa.enforce', { userId: user.id })
-                if (services.passkeys.hasForUser(user.id)) {
+                if (await services.passkeys.hasForUser(user.id)) {
                   throw new HttpError(unauthorized('Passkey authentication is required for this account'))
                 }
 	            set.status = 202
@@ -385,8 +385,8 @@ export const createAuthRoutes = ({
         },
         { body: t.Object({ code: t.Optional(t.String()) }) },
       )
-      .get('/api/auth/passkeys', ({ principal, services }) => ({
-        passkeys: unwrap(services.passkeys.list(principal)),
+      .get('/api/auth/passkeys', async ({ principal, services }) => ({
+        passkeys: unwrap(await services.passkeys.list(principal)),
       }))
       .post('/api/auth/passkeys/register/options', async ({ principal, services, request, server }) => {
         enforceCredentialLimit(request, server, 'passkey-register-options', principal)
@@ -412,9 +412,9 @@ export const createAuthRoutes = ({
       )
       .delete(
         '/api/auth/passkeys/:id',
-        ({ params, principal, services, request, server }) => {
+        async ({ params, principal, services, request, server }) => {
           enforceCredentialLimit(request, server, 'passkey-delete', principal)
-          return unwrap(services.passkeys.delete(principal, params.id))
+          return unwrap(await services.passkeys.delete(principal, params.id))
         },
         { params: t.Object({ id: t.String() }) },
       )
