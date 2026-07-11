@@ -190,7 +190,7 @@ async function uploadBrandAsset(kind: 'logo' | 'favicon' | 'background', files: 
     <form v-if="settings" class="card p-4 space-y-4 max-w-3xl" @submit.prevent="saveSettings">
       <input v-model="settings.siteTitle" class="input" :placeholder="t('siteTitle')" :aria-label="t('siteTitle')" />
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <input v-model="settings.accentColor" class="input" placeholder="#7c3aed" :aria-label="t('accentColor')" />
+        <input v-model="settings.accentColor" class="input" placeholder="#c2185b" :aria-label="t('accentColor')" />
         <select v-model="settings.theme" class="input" :aria-label="t('theme')"><option value="system">{{ t('themeSystem') }}</option><option value="light">{{ t('themeLight') }}</option><option value="dark">{{ t('themeDark') }}</option></select>
       </div>
       <fieldset class="space-y-2 rounded-[var(--radius)] border border-[var(--c-border)] p-3 text-sm">

@@ -227,7 +227,7 @@ async function deleteSelectedOrphans(): Promise<void> {
                   v-for="page in usedOn(asset).slice(0, 3)"
                   :key="page.path"
                   :to="'/' + page.path"
-                  class="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-700 hover:border-violet-400 dark:border-gray-800 dark:text-gray-300"
+                  class="accent-border-hover rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-700 dark:border-gray-800 dark:text-gray-300"
                 >
                   {{ page.title }}
                 </RouterLink>

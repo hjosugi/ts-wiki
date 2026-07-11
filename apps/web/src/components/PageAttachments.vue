@@ -30,7 +30,7 @@ const fileKind = (asset: AssetView): string =>
         :href="asset.url"
         target="_blank"
         rel="noopener noreferrer"
-        class="group flex min-w-0 items-center gap-3 rounded-md border border-gray-200 p-2 hover:border-violet-400 dark:border-gray-800"
+        class="accent-border-hover group flex min-w-0 items-center gap-3 rounded-md border border-gray-200 p-2 dark:border-gray-800"
       >
         <img
           v-if="asset.mime.startsWith('image/')"
@@ -45,7 +45,7 @@ const fileKind = (asset: AssetView): string =>
           {{ fileKind(asset) }}
         </span>
         <span class="min-w-0">
-          <span class="block truncate text-sm font-medium group-hover:text-violet-600">{{ asset.filename }}</span>
+          <span class="block truncate text-sm font-medium group-hover:text-[var(--c-accent-text)]">{{ asset.filename }}</span>
           <span class="block truncate text-xs text-gray-500">{{ asset.mime }} / {{ formatBytes(asset.size) }}</span>
         </span>
       </a>

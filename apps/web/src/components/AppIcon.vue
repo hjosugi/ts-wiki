@@ -21,6 +21,7 @@ export type AppIconName =
   | 'plus'
   | 'search'
   | 'sliders'
+  | 'sparkles'
   | 'star'
   | 'sun'
 
@@ -74,6 +75,10 @@ withDefaults(defineProps<{ name: AppIconName; size?: number }>(), { size: 20 })
       <circle cx="18" cy="8" r="2.5" />
       <circle cx="10" cy="18" r="2.5" />
       <path d="m8.3 7 7.3.8M7.3 8.2l2 7.4M16.5 10l-5 6" />
+    </template>
+    <template v-else-if="name === 'sparkles'">
+      <path d="M12 2.8c.7 4.7 2.9 6.9 7.2 7.7-4.3.8-6.5 3.1-7.2 7.7-.7-4.6-2.9-6.9-7.2-7.7 4.3-.8 6.5-3 7.2-7.7Z" fill="currentColor" stroke="none" />
+      <path d="M19 3.5c.2 1.3.9 2 2.2 2.2-1.3.2-2 1-2.2 2.2-.2-1.2-.9-2-2.2-2.2 1.3-.2 2-.9 2.2-2.2Z" fill="currentColor" stroke="none" />
     </template>
     <template v-else-if="name === 'book'">
       <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v17H6.5A2.5 2.5 0 0 0 4 22V5.5ZM20 5.5A2.5 2.5 0 0 0 17.5 3H13v17h4.5A2.5 2.5 0 0 1 20 22V5.5Z" />

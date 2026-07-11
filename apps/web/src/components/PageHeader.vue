@@ -220,7 +220,7 @@ watch(() => [props.page.path, props.canEdit] as const, () => {
             v-for="label in labels"
             :key="label"
             :to="{ name: 'search', query: { q: label, label } }"
-            class="rounded bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 hover:bg-violet-100 dark:bg-violet-950 dark:text-violet-200"
+            class="accent-chip rounded px-2 py-0.5 text-xs font-medium"
           >
             #{{ label }}
           </RouterLink>

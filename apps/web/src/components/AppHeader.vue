@@ -22,7 +22,6 @@ const themeLabel = computed(() => `${t('theme')}: ${t(theme.mode.value === 'ligh
 const q = ref('')
 const settings = ref<PublicSettings>(defaultPublicSettings())
 const headerEl = ref<HTMLElement | null>(null)
-const accentStyle = computed(() => ({ color: settings.value.accentColor }))
 const homeTo = computed(() => `/${settings.value.homePath || 'home'}`)
 const commandShortcut = shortcutLabel('K')
 const realtimeLabel = computed(() => ({
@@ -121,7 +120,9 @@ onMounted(async () => {
 
       <RouterLink :to="homeTo" class="flex min-w-0 shrink-0 items-center gap-1.5 text-lg font-bold">
         <img v-if="settings.logoUrl" :src="settings.logoUrl" alt="" class="h-7 w-7 rounded object-cover" />
-        <span v-else :style="accentStyle">▲</span>
+        <span v-else class="brand-mark" aria-hidden="true">
+          <AppIcon name="sparkles" :size="18" />
+        </span>
         <span class="hidden max-w-[15rem] truncate sm:inline">{{ settings.siteTitle }}</span>
       </RouterLink>
 

@@ -139,7 +139,7 @@ function nextPage(): void {
                 <span
                   v-for="item in labelsFor(page)"
                   :key="item"
-                  class="rounded bg-violet-50 px-2 py-0.5 text-xs text-violet-700 dark:bg-violet-950 dark:text-violet-200"
+                  class="accent-chip rounded px-2 py-0.5 text-xs"
                 >
                   #{{ item }}
                 </span>

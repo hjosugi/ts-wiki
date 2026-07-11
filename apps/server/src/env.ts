@@ -190,7 +190,7 @@ const parseAccentColor = (value: string | undefined): string | null => {
   const color = value?.trim()
   if (!color) return null
   if (!/^#[0-9a-f]{6}$/i.test(color)) {
-    throw new Error('TS_WIKI_ACCENT_COLOR must be a hex color like #7c3aed.')
+    throw new Error('TS_WIKI_ACCENT_COLOR must be a hex color like #c2185b.')
   }
   return color
 }

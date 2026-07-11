@@ -1724,7 +1724,7 @@ describe('http app settings', () => {
     expect(defaults.status).toBe(200)
     expect(await defaults.json()).toMatchObject({
       siteTitle: 'kawaii-wiki.ts',
-      accentColor: '#7c3aed',
+      accentColor: '#c2185b',
       homePath: 'home',
       dailyNotesPath: 'journal',
       defaultLocale: 'und',

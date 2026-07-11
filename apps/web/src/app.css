@@ -9,8 +9,9 @@
   --c-border: #e5e7eb;
   --c-code-bg: #f6f8fa;
   --c-shadow: rgb(0 0 0 / 0.04);
-  --accent: #7c3aed;
+  --accent: #c2185b;
   --c-accent: var(--accent);
+  --c-accent-text: var(--c-accent);
   --accent-hover: color-mix(in srgb, var(--accent) 82%, #000);
   --radius: 0.5rem;
   --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -28,6 +29,7 @@
   --c-border: #1f2937;
   --c-code-bg: #0d1117;
   --c-shadow: rgb(0 0 0 / 0.28);
+  --c-accent-text: color-mix(in srgb, var(--c-accent) 68%, #ffffff);
 }
 
 html[data-font-family='rounded'] {
@@ -138,6 +140,52 @@ body {
   color: var(--c-text);
   font-family: var(--font-ui);
   isolation: isolate;
+}
+
+.brand-mark {
+  display: inline-grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: 0 0 1.75rem;
+  place-items: center;
+  border-radius: 0.55rem;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--c-accent) 78%, #ffffff), var(--c-accent));
+  color: #ffffff;
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.28),
+    0 2px 8px color-mix(in srgb, var(--c-accent) 24%, transparent);
+  transform: rotate(-3deg);
+}
+
+.brand-mark svg {
+  transform: rotate(3deg);
+}
+
+.accent-text {
+  color: var(--c-accent-text);
+}
+
+.accent-chip {
+  background: color-mix(in srgb, var(--c-accent) 10%, var(--c-surface));
+  color: var(--c-accent-text);
+}
+
+.accent-chip:hover {
+  background: color-mix(in srgb, var(--c-accent) 16%, var(--c-surface));
+}
+
+.accent-border-hover:hover {
+  border-color: color-mix(in srgb, var(--c-accent) 64%, var(--c-border));
+}
+
+.accent-control-active {
+  border-color: color-mix(in srgb, var(--c-accent) 64%, var(--c-border));
+  color: var(--c-accent-text);
+}
+
+.accent-selection {
+  border-color: color-mix(in srgb, var(--c-accent) 55%, var(--c-border));
+  background: color-mix(in srgb, var(--c-accent) 7%, var(--c-surface));
 }
 
 #app {
@@ -606,10 +654,15 @@ main:focus {
 /* Rendered markdown: make code blocks (highlight.js) sit nicely inside prose. */
 .prose pre {
   background: var(--c-code-bg);
+  color: var(--c-text);
   border: 1px solid var(--c-border);
   border-radius: var(--radius);
   padding: 0.9rem 1.1rem;
   overflow-x: auto;
+}
+
+.prose pre > code {
+  color: inherit;
 }
 
 .prose pre code.hljs {
@@ -1641,12 +1694,12 @@ main:focus {
 html.dark {
   .wiki-event-card {
     border-color: rgb(31 41 55);
-    border-left-color: rgb(167 139 250);
+    border-left-color: var(--c-accent);
     background: rgb(17 24 39);
   }
 
   .wiki-event-kicker {
-    color: rgb(167 139 250);
+    color: var(--c-accent-text);
   }
 
   .wiki-event-time,
@@ -1661,13 +1714,13 @@ html.dark {
   }
 
   .wiki-event-actions a:hover {
-    background: rgb(46 16 101);
-    color: rgb(237 233 254);
+    background: color-mix(in srgb, var(--c-accent) 18%, var(--c-surface));
+    color: var(--c-accent-text);
   }
 
   .wiki-event-platform {
-    background: rgb(46 16 101);
-    color: rgb(237 233 254);
+    background: color-mix(in srgb, var(--c-accent) 18%, var(--c-surface));
+    color: var(--c-accent-text);
   }
 
   .wiki-media-card {
@@ -1684,8 +1737,8 @@ html.dark {
 
   .wiki-media-actions button:hover,
   .wiki-media-actions a:hover {
-    background: rgb(46 16 101);
-    color: rgb(237 233 254);
+    background: color-mix(in srgb, var(--c-accent) 18%, var(--c-surface));
+    color: var(--c-accent-text);
   }
 
   .wiki-callout {
@@ -1730,7 +1783,7 @@ html.dark {
   }
 
   .wiki-links-item:hover {
-    border-color: rgb(167 139 250);
+    border-color: var(--c-accent);
   }
 
   .wiki-embed {
@@ -1739,7 +1792,7 @@ html.dark {
   }
 
   .wiki-embed-title {
-    color: rgb(196 181 253);
+    color: var(--c-accent-text);
   }
 
   .wiki-embed-description,
@@ -1998,13 +2051,17 @@ html.dark {
 
 .page-tree-row:hover,
 .page-tree-row-active {
-  background: rgb(243 244 246);
-  color: rgb(17 24 39);
+  background: color-mix(in srgb, var(--c-accent) 7%, var(--c-surface-muted));
+  color: var(--c-text);
 }
 
 .page-tree-row-active {
-  box-shadow: inset 3px 0 0 var(--c-accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-accent) 18%, var(--c-border));
   font-weight: 600;
+}
+
+.page-tree-row-active svg {
+  color: var(--c-accent);
 }
 
 .page-tree-folder {
@@ -2059,8 +2116,8 @@ html.dark {
 
   .page-tree-row:hover,
   .page-tree-row-active {
-    background: rgb(31 41 55);
-    color: rgb(249 250 251);
+    background: color-mix(in srgb, var(--c-accent) 13%, var(--c-surface-muted));
+    color: var(--c-text);
   }
 
   .page-tree-folder {
@@ -2153,7 +2210,7 @@ html.dark {
 
 .graph-range {
   width: 7rem;
-  accent-color: rgb(124 58 237);
+  accent-color: var(--c-accent);
 }
 
 .interactive-graph-canvas {
@@ -2182,7 +2239,7 @@ html.dark {
 }
 
 .interactive-graph-edge-active {
-  stroke: rgb(124 58 237);
+  stroke: var(--c-accent);
   stroke-width: 2.2;
 }
 
@@ -2210,12 +2267,12 @@ html.dark {
 .interactive-graph-node-active circle,
 .interactive-graph-node:hover circle,
 .interactive-graph-node:focus-visible circle {
-  fill: rgb(124 58 237);
-  stroke: rgb(221 214 254);
+  fill: var(--c-accent);
+  stroke: color-mix(in srgb, var(--c-accent) 25%, white);
 }
 
 .interactive-graph-node-focus circle {
-  fill: rgb(124 58 237);
+  fill: var(--c-accent);
 }
 
 .interactive-graph-node-missing circle {
@@ -2279,7 +2336,7 @@ html.dark {
   }
 
   .interactive-graph-edge-active {
-    stroke: rgb(167 139 250);
+    stroke: var(--c-accent);
   }
 
   .interactive-graph-node circle {
@@ -2296,8 +2353,8 @@ html.dark {
   .interactive-graph-node:hover circle,
   .interactive-graph-node:focus-visible circle,
   .interactive-graph-node-focus circle {
-    fill: rgb(167 139 250);
-    stroke: rgb(46 16 101);
+    fill: var(--c-accent);
+    stroke: color-mix(in srgb, var(--c-accent) 40%, black);
   }
 
   .interactive-graph-node-missing circle {

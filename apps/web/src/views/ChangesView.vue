@@ -38,7 +38,7 @@ const actionClass = (action: string): string =>
       ? 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-200'
       : action === 'archived'
         ? 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-200'
-        : 'bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-200'
+        : 'accent-chip'
 
 const { loading, error, reload: load } = useAsyncData(async () => {
   const next = await Api.recentChanges(PAGE_SIZE)

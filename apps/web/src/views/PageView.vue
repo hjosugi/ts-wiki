@@ -169,7 +169,7 @@ onUnmounted(stopRealtime)
             :key="i"
             :title="v.mode === 'editing' ? `${v.name} (editing)` : v.name"
             class="w-6 h-6 rounded-full text-white text-[11px] font-medium flex items-center justify-center ring-2 ring-white dark:ring-gray-950"
-            :class="v.mode === 'editing' ? 'bg-amber-500' : 'bg-violet-500'"
+            :class="v.mode === 'editing' ? 'bg-amber-500' : 'bg-[var(--c-accent)]'"
           >
             {{ (v.name[0] ?? '?').toUpperCase() }}
           </span>

@@ -44,7 +44,7 @@ watch(token, load, { immediate: true })
 
       <div v-else-if="page">
         <div class="mb-6 border-b border-gray-200 pb-5 dark:border-gray-800">
-          <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-300">
+          <p class="accent-text mb-2 text-xs font-semibold uppercase tracking-wide">
             {{ t('sharedPage') }}
           </p>
           <h1 class="text-3xl font-bold tracking-tight text-gray-950 dark:text-gray-50">{{ page.title }}</h1>

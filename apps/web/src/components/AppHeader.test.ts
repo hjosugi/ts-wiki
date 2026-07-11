@@ -55,4 +55,11 @@ describe('AppHeader', () => {
       window.removeEventListener('open-command-palette', commandPalette)
     }
   })
+
+  test('uses the branded sparkle mark when no custom logo is configured', async () => {
+    const wrapper = await mountHeader()
+
+    expect(wrapper.find('.brand-mark').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('▲')
+  })
 })

@@ -3,6 +3,22 @@
 All notable changes are documented here. This project follows Semantic
 Versioning; API compatibility details are in `docs/API.md`.
 
+## [1.0.5] - 2026-07-11
+
+### Changed
+
+- Replaced the legacy purple triangle with a compact rose sparkle mark and a
+  matching favicon, and changed the default accent to an accessible rose.
+- Unified tags, search states, page-tree selection, graph highlights, and other
+  branded UI states around the configurable accent instead of hardcoded violet.
+- Reworked the active page treatment from a heavy left stripe to a subtle
+  outlined surface.
+
+### Fixed
+
+- Restored readable foreground colors for plain text inside highlighted code
+  blocks on light themes.
+
 ## [1.0.4] - 2026-07-11
 
 ### Added

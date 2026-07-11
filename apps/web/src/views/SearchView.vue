@@ -177,7 +177,7 @@ onMounted(async () => {
           <button
             class="btn-ghost"
             type="button"
-            :class="search.scope.value === 'title' ? 'border-violet-400 text-violet-600' : ''"
+            :class="search.scope.value === 'title' ? 'accent-control-active' : ''"
             @click="search.scope.value = search.scope.value === 'title' ? 'all' : 'title'; runNow()"
           >
             {{ t('titleOnly') }}
@@ -185,7 +185,7 @@ onMounted(async () => {
           <button
             class="btn-ghost"
             type="button"
-            :class="search.sort.value === 'recent' ? 'border-violet-400 text-violet-600' : ''"
+            :class="search.sort.value === 'recent' ? 'accent-control-active' : ''"
             @click="search.sort.value = search.sort.value === 'recent' ? 'relevance' : 'recent'; runNow()"
           >
             {{ t('recent') }}
@@ -199,7 +199,7 @@ onMounted(async () => {
         <button
           v-for="recent in search.recentSearches.value"
           :key="recent"
-          class="rounded-full border border-gray-200 px-3 py-1 text-gray-700 hover:border-violet-400 dark:border-gray-800 dark:text-gray-200"
+          class="accent-border-hover rounded-full border border-gray-200 px-3 py-1 text-gray-700 dark:border-gray-800 dark:text-gray-200"
           type="button"
           @click="chooseRecent(recent)"
         >
@@ -228,7 +228,7 @@ onMounted(async () => {
             v-for="item in labels.slice(0, 24)"
             :key="item.label"
             class="rounded-full border px-3 py-1 text-sm"
-            :class="label === item.label ? 'border-violet-500 bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-100' : 'border-gray-200 text-gray-600 hover:border-violet-400 dark:border-gray-800 dark:text-gray-300'"
+            :class="label === item.label ? 'accent-chip border-[var(--c-accent)]' : 'accent-border-hover border-gray-200 text-gray-600 dark:border-gray-800 dark:text-gray-300'"
             type="button"
             @click="chooseLabel(item.label)"
           >
@@ -266,7 +266,7 @@ onMounted(async () => {
         role="option"
         :aria-selected="index === navigation.selected.value"
         class="rounded-md border p-4 transition"
-        :class="index === navigation.selected.value ? 'border-violet-400 bg-violet-50/60 dark:bg-violet-950/30' : 'border-gray-200 hover:border-violet-400 dark:border-gray-800'"
+        :class="index === navigation.selected.value ? 'accent-selection' : 'accent-border-hover border-gray-200 dark:border-gray-800'"
       >
         <RouterLink :to="{ path: '/' + h.path, hash: h.anchor ? '#' + h.anchor : '' }" class="grid gap-3 sm:grid-cols-[4.5rem_minmax(0,1fr)]">
           <div
@@ -279,7 +279,7 @@ onMounted(async () => {
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
               <span v-if="h.icon && h.coverUrl" aria-hidden="true">{{ h.icon }}</span>
-              <span class="font-semibold text-violet-600">{{ h.title }}</span>
+              <span class="accent-text font-semibold">{{ h.title }}</span>
               <span v-if="h.kind !== 'page'" class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">
                 {{ h.kind === 'comment' ? t('inComments') : t('inAssets') }}
               </span>

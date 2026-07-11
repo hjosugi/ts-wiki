@@ -261,7 +261,7 @@ onBeforeUnmount(() => {
         <button
           v-for="recent in search.recentSearches.value"
           :key="recent"
-          class="rounded-full border border-gray-200 px-3 py-1 text-sm hover:border-violet-400 dark:border-gray-800"
+          class="accent-border-hover rounded-full border border-gray-200 px-3 py-1 text-sm dark:border-gray-800"
           type="button"
           @click="chooseRecent(recent)"
         >

@@ -35,7 +35,7 @@ const sizeRem = (count: number): string => (0.85 + (count / maxCount()) * 0.55).
         :style="{ fontSize: sizeRem(entry.count) }"
         :to="{ name: 'search', query: { label: entry.label } }"
       >
-        <span class="text-violet-600 dark:text-violet-400">#</span>{{ entry.label }}
+        <span class="accent-text">#</span>{{ entry.label }}
         <span class="text-xs text-[var(--c-text-muted)]">{{ entry.count }}</span>
       </RouterLink>
     </div>

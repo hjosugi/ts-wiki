@@ -186,7 +186,7 @@ const validatePatch = (
 
   const accentColor = patch.accentColor ?? current.accentColor
   if (!/^#[0-9a-f]{6}$/i.test(accentColor)) {
-    return err(validationError('Accent color must be a hex color like #7c3aed', 'accentColor'))
+    return err(validationError('Accent color must be a hex color like #c2185b', 'accentColor'))
   }
 
   const theme = patch.theme ?? current.theme
