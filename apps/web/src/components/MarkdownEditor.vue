@@ -58,7 +58,7 @@ interface EditorAction {
   group: 'text' | 'insert' | 'media'
   label: MessageKey
   icon: string
-  detail: string
+  detail: MessageKey
   keywords: string[]
   run: () => void
 }
@@ -69,7 +69,7 @@ const editorActions = computed<EditorAction[]>(() => [
     group: 'text',
     label: 'toolbarHeading',
     icon: 'H2',
-    detail: 'Add a section heading',
+    detail: 'toolbarHeadingDetail',
     keywords: ['heading', 'title', '見出し'],
     run: () => insertLinePrefix('## ', 'Heading'),
   },
@@ -78,7 +78,7 @@ const editorActions = computed<EditorAction[]>(() => [
     group: 'text',
     label: 'toolbarBold',
     icon: 'B',
-    detail: 'Make selected text bold',
+    detail: 'toolbarBoldDetail',
     keywords: ['bold', '太字'],
     run: () => surround('**', '**', 'bold'),
   },
@@ -87,7 +87,7 @@ const editorActions = computed<EditorAction[]>(() => [
     group: 'text',
     label: 'toolbarLink',
     icon: '[]',
-    detail: 'Insert a Markdown link',
+    detail: 'toolbarLinkDetail',
     keywords: ['link', 'url', 'リンク'],
     run: () => surround('[', '](https://)', 'link'),
   },
@@ -96,7 +96,7 @@ const editorActions = computed<EditorAction[]>(() => [
     group: 'text',
     label: 'toolbarCode',
     icon: '</>',
-    detail: 'Format selected text as code',
+    detail: 'toolbarCodeDetail',
     keywords: ['code', 'コード'],
     run: () => surround('`', '`', 'code'),
   },
@@ -105,7 +105,7 @@ const editorActions = computed<EditorAction[]>(() => [
     group: 'insert',
     label: 'toolbarTable',
     icon: '| |',
-    detail: 'Insert a two-column table',
+    detail: 'toolbarTableDetail',
     keywords: ['table', '表'],
     run: () => insertSnippet('| Column | Value |\\n| --- | --- |\\n|  |  |\\n'),
   },
@@ -114,7 +114,7 @@ const editorActions = computed<EditorAction[]>(() => [
     group: 'insert',
     label: 'toolbarEvent',
     icon: 'Cal',
-    detail: 'Insert an event card block',
+    detail: 'toolbarEventDetail',
     keywords: ['event', 'calendar', '予定', 'イベント'],
     run: () => insertSnippet(eventSnippet()),
   },
@@ -123,7 +123,7 @@ const editorActions = computed<EditorAction[]>(() => [
     group: 'insert',
     label: 'toolbarStream',
     icon: 'Live',
-    detail: 'Insert a stream schedule block',
+    detail: 'toolbarStreamDetail',
     keywords: ['stream', 'live', '配信'],
     run: () => insertSnippet(streamSnippet()),
   },
@@ -132,7 +132,7 @@ const editorActions = computed<EditorAction[]>(() => [
     group: 'insert',
     label: 'toolbarYouTube',
     icon: 'YT',
-    detail: 'Insert a click-to-load YouTube embed',
+    detail: 'toolbarYouTubeDetail',
     keywords: ['youtube', 'video', '動画'],
     run: () => insertSnippet(youtubeSnippet()),
   },
@@ -141,7 +141,7 @@ const editorActions = computed<EditorAction[]>(() => [
     group: 'insert',
     label: 'toolbarTwitch',
     icon: 'Tw',
-    detail: 'Insert a click-to-load Twitch embed',
+    detail: 'toolbarTwitchDetail',
     keywords: ['twitch', 'stream', 'clip'],
     run: () => insertSnippet(twitchSnippet()),
   },
@@ -150,7 +150,7 @@ const editorActions = computed<EditorAction[]>(() => [
     group: 'insert',
     label: 'toolbarCallout',
     icon: '!',
-    detail: 'Insert a highlighted note block',
+    detail: 'toolbarCalloutDetail',
     keywords: ['callout', 'note', '注意', 'メモ'],
     run: () => insertSnippet('```callout\\ntype: info\\ntitle: Note\\n\\nCallout text\\n```\\n'),
   },
@@ -159,7 +159,7 @@ const editorActions = computed<EditorAction[]>(() => [
     group: 'insert',
     label: 'toolbarInfobox',
     icon: 'ID',
-    detail: 'Insert a profile or info card',
+    detail: 'toolbarInfoboxDetail',
     keywords: ['infobox', 'profile', 'プロフィール'],
     run: () => insertSnippet(infoboxSnippet()),
   },
@@ -168,7 +168,7 @@ const editorActions = computed<EditorAction[]>(() => [
     group: 'insert',
     label: 'toolbarEmbed',
     icon: '<>',
-    detail: 'Insert a rich link card',
+    detail: 'toolbarEmbedDetail',
     keywords: ['embed', 'bookmark', 'card', '埋め込み'],
     run: () => insertSnippet(embedSnippet()),
   },
@@ -177,7 +177,7 @@ const editorActions = computed<EditorAction[]>(() => [
     group: 'insert',
     label: 'toolbarLinks',
     icon: '@',
-    detail: 'Insert social/link buttons',
+    detail: 'toolbarLinksDetail',
     keywords: ['links', 'social', 'sns', 'リンク集'],
     run: () => insertSnippet(linksSnippet()),
   },
@@ -186,7 +186,7 @@ const editorActions = computed<EditorAction[]>(() => [
     group: 'media',
     label: 'toolbarImage',
     icon: 'Img',
-    detail: 'Upload and insert an image',
+    detail: 'toolbarImageDetail',
     keywords: ['image', 'upload', '画像'],
     run: chooseImage,
   },
@@ -195,7 +195,7 @@ const editorActions = computed<EditorAction[]>(() => [
     group: 'media',
     label: 'toolbarAssets',
     icon: 'Lib',
-    detail: 'Browse uploaded assets',
+    detail: 'toolbarAssetsDetail',
     keywords: ['asset', 'file', '添付'],
     run: () => {
       showAssets.value = true
@@ -206,7 +206,7 @@ const editorActions = computed<EditorAction[]>(() => [
     group: 'media',
     label: 'toolbarIcs',
     icon: '.ics',
-    detail: 'Import calendar events',
+    detail: 'toolbarIcsDetail',
     keywords: ['ics', 'calendar', '予定'],
     run: chooseIcs,
   },
@@ -226,7 +226,7 @@ const slashCompletions = (context: CompletionContext) => {
     })
     .map((action) => ({
       label: t(action.label),
-      detail: action.detail,
+      detail: t(action.detail),
       type: action.group === 'media' ? 'file' : 'keyword',
       apply(completionView) {
         completionView.dispatch({
@@ -307,9 +307,9 @@ onBeforeUnmount(() => view?.destroy())
 
 <template>
   <div class="space-y-3">
-    <EditorToolbar :actions="editorActions" :busy-id="uploading ? 'image' : undefined" :disabled-ids="pendingImageFiles.length ? ['image'] : []">
-      <input ref="uploadInput" class="hidden" type="file" accept="image/*" multiple aria-label="Upload image files" @change="onImageInput" />
-      <input ref="icsInput" class="hidden" type="file" accept=".ics,text/calendar" aria-label="Import .ics file" @change="onIcsInput" />
+    <EditorToolbar :actions="editorActions.map((action) => ({ ...action, detail: t(action.detail) }))" :busy-id="uploading ? 'image' : undefined" :disabled-ids="pendingImageFiles.length ? ['image'] : []">
+      <input ref="uploadInput" class="hidden" type="file" accept="image/*" multiple :aria-label="t('uploadImageFiles')" @change="onImageInput" />
+      <input ref="icsInput" class="hidden" type="file" accept=".ics,text/calendar" :aria-label="t('importIcs')" @change="onIcsInput" />
     </EditorToolbar>
     <p class="text-xs text-[var(--c-text-muted)]">{{ t('insertMenuHint') }}</p>
     <p v-if="uploadError" class="text-sm text-red-600">{{ uploadError }}</p>
@@ -321,7 +321,7 @@ onBeforeUnmount(() => view?.destroy())
         :aria-pressed="mode === 'write'"
         @click="mode = 'write'"
       >
-        Write
+        {{ t('write') }}
       </button>
       <button
         class="rounded px-3 py-1.5"
@@ -330,7 +330,7 @@ onBeforeUnmount(() => view?.destroy())
         :aria-pressed="mode === 'preview'"
         @click="mode = 'preview'"
       >
-        Preview
+        {{ t('preview') }}
       </button>
     </div>
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:h-[65vh]">
@@ -349,15 +349,15 @@ onBeforeUnmount(() => view?.destroy())
 
     <ModalDialog
       :open="showIcs"
-      title="Import .ics"
+      :title="t('importIcs')"
       panel-class="card w-full max-w-2xl p-4 space-y-4"
       @close="showIcs = false"
     >
         <div class="flex items-center justify-between gap-3">
-          <h2 class="text-lg font-semibold">Import .ics</h2>
-          <button class="btn-ghost" type="button" @click="showIcs = false">Close</button>
+          <h2 class="text-lg font-semibold">{{ t('importIcs') }}</h2>
+          <button class="btn-ghost" type="button" @click="showIcs = false">{{ t('close') }}</button>
         </div>
-        <textarea v-model="icsText" class="input min-h-38 font-mono text-sm" spellcheck="false" aria-label="ICS content"></textarea>
+        <textarea v-model="icsText" class="input min-h-38 font-mono text-sm" spellcheck="false" :aria-label="t('importIcsContent')"></textarea>
         <div v-if="icsEvents.length" class="space-y-2 max-h-64 overflow-auto">
           <div
             v-for="(event, index) in icsEvents"
@@ -369,10 +369,10 @@ onBeforeUnmount(() => view?.destroy())
               <div class="text-sm text-gray-500">{{ event.start }}<template v-if="event.end"> - {{ event.end }}</template></div>
               <div v-if="event.location" class="text-sm text-gray-500 truncate">{{ event.location }}</div>
             </div>
-            <button class="btn-primary shrink-0" type="button" @click="insertIcsEvent(event)">Insert</button>
+            <button class="btn-primary shrink-0" type="button" @click="insertIcsEvent(event)">{{ t('insert') }}</button>
           </div>
         </div>
-        <p v-else class="text-sm text-gray-500">No events found.</p>
+        <p v-else class="text-sm text-gray-500">{{ t('noEventsFound') }}</p>
     </ModalDialog>
     <AssetPicker :open="showAssets" :folder="props.assetFolder" @close="showAssets = false" @insert="insertAsset" />
     <ImageUploadDialog

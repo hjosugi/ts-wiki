@@ -99,7 +99,7 @@ const cleanHttpUrl = (value: string, field = 'url'): Result<string, AppError> =>
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
       return err(validationError('URL must use http or https', field))
     }
-    for (const key of [...url.searchParams.keys()]) {
+    for (const key of url.searchParams.keys()) {
       if (key.toLowerCase().startsWith('utm_') || TRACKING_PARAMS.has(key.toLowerCase())) {
         url.searchParams.delete(key)
       }
@@ -276,16 +276,16 @@ export const createLinkPreviewService = (db: DB, options: LinkPreviewOptions = {
   const resolver = options.resolver ?? defaultResolver
   const now = options.now ?? (() => Date.now())
 
-  const assertPublicTarget = async (url: URL): Promise<Result<true, AppError>> => {
+  const assertPublicTarget = async (url: URL): Promise<Result<string, AppError>> => {
     const publicLiteral = ensurePublicLiteralTarget(url)
     if (!publicLiteral.ok) return publicLiteral
     const hostname = hostnameForValidation(url)
-    if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname) || hostname.includes(':')) return ok(true)
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname) || hostname.includes(':')) return ok(hostname)
     const addresses = await resolver(hostname)
     if (!addresses.length) return err(validationError(`Hostname ${hostname} did not resolve`, 'url'))
     const blocked = addresses.find(isPrivateOrReservedAddress)
     if (blocked) return err(validationError(`Hostname ${hostname} resolved to blocked address`, 'url'))
-    return ok(true)
+    return ok(addresses[0]!)
   }
 
   const fetchText = async (urlValue: string, maxBytes: number): Promise<Result<FetchedText, AppError>> => {
@@ -305,7 +305,7 @@ export const createLinkPreviewService = (db: DB, options: LinkPreviewOptions = {
             accept: 'text/html,application/xhtml+xml,application/xml,text/xml,application/json;q=0.9,*/*;q=0.1',
             'user-agent': 'kawaii-wiki.ts-link-preview/1',
           },
-        })
+        }, { address: publicTarget.value })
       } catch (error) {
         return err(validationError(error instanceof Error ? error.message : 'Could not fetch URL', 'url'))
       } finally {

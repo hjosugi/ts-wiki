@@ -14,6 +14,7 @@ import {
   ensurePublicLiteralTarget,
   hostnameForValidation,
   isPrivateOrReservedAddress,
+  readLimitedResponseText,
   truncate,
 } from './shared.ts'
 
@@ -61,13 +62,13 @@ const assertPublicDeliveryTarget = async (
   url: URL,
   resolver: WebhookHostnameResolver,
   allowPrivateTargets: boolean,
-): Promise<void> => {
-  if (allowPrivateTargets) return
+): Promise<string | undefined> => {
+  if (allowPrivateTargets) return undefined
   const publicLiteral = ensurePublicLiteralTarget(url)
   if (!publicLiteral.ok) throw new Error(publicLiteral.error.message)
 
   const hostname = hostnameForValidation(url)
-  if (isIP(hostname)) return
+  if (isIP(hostname)) return hostname
 
   const addresses = await resolver(hostname)
   if (addresses.length === 0) {
@@ -77,6 +78,7 @@ const assertPublicDeliveryTarget = async (
   if (blockedAddress) {
     throw new Error(`Webhook target hostname ${hostname} resolved to blocked address ${blockedAddress}`)
   }
+  return addresses[0]
 }
 
 const redirectUrl = (url: URL, response: Response): URL | null => {
@@ -96,8 +98,8 @@ const fetchWebhook = async (
   let currentInit = cloneRequestInit(init)
 
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
-    await assertPublicDeliveryTarget(url, resolver, allowPrivateTargets)
-    const response = await fetcher(url.toString(), { ...currentInit, redirect: 'manual' })
+    const address = await assertPublicDeliveryTarget(url, resolver, allowPrivateTargets)
+    const response = await fetcher(url.toString(), { ...currentInit, redirect: 'manual' }, { address })
     const next = redirectUrl(url, response)
     if (!next) return response
 
@@ -186,8 +188,9 @@ export const createWebhookDelivery = (
           'x-kawaii-wiki-timestamp': timestamp,
         },
         body: delivery.payload,
+        signal: AbortSignal.timeout(8_000),
       }, fetcher, resolver, allowPrivateTargets)
-      const responseBody = truncate(await response.text().catch(() => ''), policy.maxResponseBytes)
+      const responseBody = await readLimitedResponseText(response, policy.maxResponseBytes).catch(() => '')
       const updatedAt = now()
       db.update(webhookDeliveries)
         .set({
@@ -248,12 +251,7 @@ export const createWebhookDelivery = (
 
   return {
     async publish(payload, subscriptions) {
-      const deliveries: WebhookDeliveryView[] = []
-      for (const subscription of subscriptions) {
-        const delivery = enqueue(subscription, payload)
-        deliveries.push(await deliver(delivery, subscription))
-      }
-      return deliveries
+      return subscriptions.map((subscription) => toDeliveryView(enqueue(subscription, payload)))
     },
 
     listDeliveries(principal, filters = {}) {
@@ -317,13 +315,11 @@ export const createWebhookDelivery = (
         .all()
         .filter((delivery) => delivery.status !== 'succeeded' && delivery.attempts < policy.maxAttempts)
 
-      const delivered: WebhookDeliveryView[] = []
-      for (const delivery of rows) {
+      const tasks = rows.flatMap((delivery) => {
         const subscription = findSubscription(delivery.subscriptionId)
-        if (!subscription?.enabled) continue
-        delivered.push(await deliver(delivery, subscription))
-      }
-      return delivered
+        return subscription?.enabled ? [deliver(delivery, subscription)] : []
+      })
+      return Promise.all(tasks)
     },
   }
 }

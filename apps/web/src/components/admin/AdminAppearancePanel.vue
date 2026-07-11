@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { friendlyError } from '@/lib/friendlyErrors'
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { Api, type PublicSettings } from '@/lib/api'
 import { applyBranding } from '@/lib/branding'
 import { setMarkdownFeatureSettings } from '@/lib/markdownEnhance'
 import { setDateFormatSettings } from '@/lib/i18n'
 import Skeleton from '@/components/Skeleton.vue'
+import { useAsyncData } from '@/composables/useAsyncData'
 
 type EditablePublicSettings = { -readonly [K in keyof PublicSettings]: PublicSettings[K] }
 type ThemePreset = PublicSettings['themePreset']
@@ -42,9 +43,7 @@ const navLinksText = ref('')
 const navItemsText = ref('')
 const footerLinksText = ref('')
 const saving = ref(false)
-const loading = ref(false)
 const uploading = ref<'logo' | 'favicon' | 'background' | null>(null)
-const error = ref<string | null>(null)
 
 function setBackgroundType(type: BackgroundType): void {
   if (!settings.value) return
@@ -107,20 +106,13 @@ function formatNavItems(items: PublicSettings['navItems']): string {
   return items.map((item) => `${item.key}|${item.visible ? 'true' : 'false'}`).join('\n')
 }
 
-async function load(): Promise<void> {
-  loading.value = true
-  error.value = null
-  try {
+const { loading, error, reload: load } = useAsyncData(async () => {
     settings.value = await Api.publicSettings()
     navLinksText.value = formatLinks(settings.value.navLinks)
     navItemsText.value = formatNavItems(settings.value.navItems)
     footerLinksText.value = formatLinks(settings.value.footerLinks)
-  } catch (e) {
-    error.value = friendlyError(e)
-  } finally {
-    loading.value = false
-  }
-}
+    return settings.value
+})
 
 async function saveSettings(): Promise<void> {
   if (!settings.value) return
@@ -187,7 +179,6 @@ async function uploadBrandAsset(kind: 'logo' | 'favicon' | 'background', files: 
   }
 }
 
-onMounted(load)
 </script>
 
 <template>

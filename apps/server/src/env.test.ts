@@ -53,13 +53,13 @@ describe('loadEnv', () => {
   })
 
   test('refuses production with the default JWT secret', () => {
-    expect(() => loadEnv({ NODE_ENV: 'production' })).toThrow(/default JWT secret/)
+    expect(() => loadEnv({ NODE_ENV: 'production' })).toThrow(/JWT_SECRET/)
     expect(() =>
       loadEnv({ BUN_ENV: 'production', JWT_SECRET: DEFAULT_JWT_SECRET }),
-    ).toThrow(/default JWT secret/)
+    ).toThrow(/JWT secret/)
     expect(() =>
       loadEnv({ NODE_ENV: 'production', JWT_SECRET: ` ${DEFAULT_JWT_SECRET} ` }),
-    ).toThrow(/default JWT secret/)
+    ).toThrow(/JWT secret/)
   })
 
   test('accepts production with a custom JWT secret and parsed CORS origins', () => {

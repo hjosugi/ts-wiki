@@ -26,5 +26,5 @@ void useAuth().fetchMe()
 // Realtime: keep the page list live as pages are created/renamed/deleted.
 connectRealtime()
 onWikiEvent(() => {
-  void usePages().refresh()
+  usePages().scheduleRefresh()
 })

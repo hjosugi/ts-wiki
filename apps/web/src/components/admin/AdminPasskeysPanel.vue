@@ -1,28 +1,15 @@
 <script setup lang="ts">
 import { friendlyError } from '@/lib/friendlyErrors'
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { startRegistration, type PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/browser'
 import { Api, type PasskeyView } from '@/lib/api'
 import Skeleton from '@/components/Skeleton.vue'
 import { useDialogs } from '@/composables/useDialogs'
+import { useAsyncData } from '@/composables/useAsyncData'
 
-const passkeys = ref<PasskeyView[]>([])
-const loading = ref(false)
-const error = ref<string | null>(null)
+const { data: passkeys, loading, error, reload: load } = useAsyncData<PasskeyView[]>(Api.passkeys, { initial: [] })
 const busy = ref(false)
 const dialogs = useDialogs()
-
-async function load(): Promise<void> {
-  loading.value = true
-  error.value = null
-  try {
-    passkeys.value = await Api.passkeys()
-  } catch (e) {
-    error.value = friendlyError(e)
-  } finally {
-    loading.value = false
-  }
-}
 
 async function registerPasskey(): Promise<void> {
   busy.value = true
@@ -53,7 +40,6 @@ async function deletePasskey(passkey: PasskeyView): Promise<void> {
   }
 }
 
-onMounted(load)
 </script>
 
 <template>

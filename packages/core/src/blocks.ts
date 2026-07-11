@@ -71,7 +71,7 @@ interface InfoboxField {
 
 // `Label: value` where the label is a short word/phrase (letters first). The
 // required whitespace after the colon keeps bare URLs (`https://…`) out.
-const INFOBOX_FIELD = /^([A-Za-z][\w \-]{0,39}):(?:[ \t]+(.*))?$/
+const INFOBOX_FIELD = /^([A-Za-z][\w -]{0,39}):(?:[ \t]+(.*))?$/
 
 interface InfoboxData {
   readonly title?: string

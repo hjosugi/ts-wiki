@@ -257,9 +257,9 @@ async function setEditorMode(mode: 'markdown' | 'visual'): Promise<void> {
   if (mode === 'visual') {
     const unsupported = unsupportedVisualMarkdownFeatures(content.value)
     if (unsupported.length && !await dialogs.confirm({
-      title: 'Switch to visual editor?',
-      message: `The visual editor keeps these constructs as raw Markdown: ${unsupported.join(', ')}. Avoid editing those raw blocks if exact formatting matters.`,
-      confirmLabel: 'Switch editor',
+      title: t('switchVisualEditorTitle'),
+      message: t('switchVisualEditorMessage', { features: unsupported.join(', ') }),
+      confirmLabel: t('switchEditor'),
     })) return
   }
   if (mode === 'visual' && isEdit.value) collabDisabledForSession.value = true
@@ -305,7 +305,7 @@ usePresence(originalPath, 'editing')
 
 onMounted(async () => {
   if (!auth.canEdit) {
-    router.replace({ name: 'login' })
+    router.replace({ name: 'login', query: { redirect: route.fullPath } })
     return
   }
   await pagesStore.refresh()
@@ -395,8 +395,8 @@ async function save(): Promise<void> {
       if (path.value !== originalPath.value) {
         const inbound = await Api.backlinks(originalPath.value).catch(() => [])
         if (inbound.length > 0 && !await dialogs.confirm({
-          title: 'Move page',
-          message: `${inbound.length} inbound link${inbound.length === 1 ? '' : 's'} point to /${originalPath.value}. Move anyway?`,
+          title: t('movePage'),
+          message: t(inbound.length === 1 ? 'inboundLinkMoveConfirm' : 'inboundLinksMoveConfirm', { count: inbound.length, path: originalPath.value }),
         })) {
           path.value = originalPath.value
           return
@@ -464,9 +464,10 @@ function discardConflictDraft(): void {
 }
 
 async function remove(): Promise<void> {
-  if (!await dialogs.confirm({ message: `Move "${title.value}" to trash? It can be restored by an admin/editor.`, danger: true })) return
+  const targetPath = originalPath.value
+  if (!await dialogs.confirm({ message: t('deletePageConfirm', { title: title.value, path: targetPath }), danger: true })) return
   try {
-    await Api.deletePage(path.value)
+    await Api.deletePage(targetPath)
     await pagesStore.refresh()
     router.push('/')
   } catch (e) {
@@ -475,9 +476,10 @@ async function remove(): Promise<void> {
 }
 
 async function archive(): Promise<void> {
-  if (!await dialogs.confirm({ message: `Archive "${title.value}"? It will be hidden from search and navigation.` })) return
+  const targetPath = originalPath.value
+  if (!await dialogs.confirm({ message: t('archivePageConfirm', { title: title.value, path: targetPath }) })) return
   try {
-    await Api.archivePage(path.value)
+    await Api.archivePage(targetPath)
     await pagesStore.refresh()
     router.push('/')
   } catch (e) {
@@ -513,7 +515,7 @@ async function archive(): Promise<void> {
 
     <section v-if="!isEdit" class="mb-4 space-y-3">
       <div class="rounded-md border border-[var(--c-border)] bg-[var(--c-surface-muted)] px-3 py-2 text-sm">
-        <span class="text-[var(--c-text-muted)]">Page path:</span>
+        <span class="text-[var(--c-text-muted)]">{{ t('pagePathLabel') }}</span>
         <span class="font-mono">/{{ createPathPreview }}</span>
       </div>
       <details
@@ -521,7 +523,7 @@ async function archive(): Promise<void> {
         :open="advancedPathOpen"
         @toggle="advancedPathOpen = ($event.target as HTMLDetailsElement).open"
       >
-        <summary class="cursor-pointer text-sm font-medium">Advanced path</summary>
+        <summary class="cursor-pointer text-sm font-medium">{{ t('advancedPath') }}</summary>
         <div class="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
           <input
             class="input font-mono text-sm"
@@ -535,15 +537,15 @@ async function archive(): Promise<void> {
             type="button"
             @click="pathManuallyEdited = false; applyAutoPath(); advancedPathOpen = false"
           >
-            Auto
+            {{ t('auto') }}
           </button>
         </div>
       </details>
 
       <section class="space-y-2">
         <div class="flex items-center justify-between gap-3">
-          <h2 class="text-sm font-semibold">Choose a template</h2>
-          <Skeleton v-if="templatesLoading" class="w-40" label="Loading templates" :lines="1" />
+          <h2 class="text-sm font-semibold">{{ t('chooseTemplate') }}</h2>
+          <Skeleton v-if="templatesLoading" class="w-40" :label="t('loadingTemplates')" :lines="1" />
         </div>
         <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <button
@@ -557,9 +559,9 @@ async function archive(): Promise<void> {
             <span class="mb-2 flex items-start justify-between gap-3">
               <span>
                 <span class="block text-sm font-semibold">{{ template.icon ? `${template.icon} ` : '' }}{{ template.label }}</span>
-                <span class="block text-xs text-[var(--c-text-muted)]">{{ template.description || (template.builtIn ? 'Built-in starter' : 'Custom template') }}</span>
+                <span class="block text-xs text-[var(--c-text-muted)]">{{ template.description || (template.builtIn ? t('builtInStarter') : t('customTemplate')) }}</span>
               </span>
-              <span v-if="selectedTemplate === template.key" class="text-xs font-semibold text-[var(--c-accent)]">Selected</span>
+              <span v-if="selectedTemplate === template.key" class="text-xs font-semibold text-[var(--c-accent)]">{{ t('selected') }}</span>
             </span>
             <span
               class="prose dark:prose-invert block h-36 max-w-none overflow-hidden rounded border border-[var(--c-border)] bg-[var(--c-bg)] p-3 text-xs"
@@ -572,22 +574,22 @@ async function archive(): Promise<void> {
     </section>
 
     <details v-else class="mb-3 rounded-md border border-[var(--c-border)] bg-[var(--c-surface)] p-3" open>
-      <summary class="cursor-pointer text-sm font-medium">Path</summary>
+      <summary class="cursor-pointer text-sm font-medium">{{ t('path') }}</summary>
       <input v-model="path" class="input mt-3 font-mono text-sm max-w-xs" :placeholder="t('pathPlaceholder')" :aria-label="t('pathPlaceholder')" />
     </details>
     <section v-if="showTemplateSave" class="mb-4 rounded-md border border-[var(--c-border)] bg-[var(--c-surface)] p-3">
       <form class="grid gap-2 sm:grid-cols-[4rem_minmax(0,1fr)_minmax(0,1fr)_auto_auto]" @submit.prevent="saveCurrentAsTemplate">
-        <input v-model="templateIcon" class="input" maxlength="24" placeholder="Icon" aria-label="Template icon" />
-        <input v-model="templateName" class="input" required placeholder="Template name" aria-label="Template name" />
-        <input v-model="templateDescription" class="input" placeholder="Description" aria-label="Template description" />
+        <input v-model="templateIcon" class="input" maxlength="24" :placeholder="t('templateIcon')" :aria-label="t('templateIcon')" />
+        <input v-model="templateName" class="input" required :placeholder="t('templateName')" :aria-label="t('templateName')" />
+        <input v-model="templateDescription" class="input" :placeholder="t('description')" :aria-label="t('templateDescription')" />
         <button class="btn-primary" type="submit" :disabled="savingTemplate || !templateName">
-          {{ savingTemplate ? 'Saving...' : 'Save template' }}
+          {{ savingTemplate ? t('saving') : t('saveTemplate') }}
         </button>
-        <button class="btn-ghost" type="button" @click="showTemplateSave = false">Cancel</button>
+        <button class="btn-ghost" type="button" @click="showTemplateSave = false">{{ t('cancel') }}</button>
       </form>
     </section>
-    <FormField class="mb-3" label="Labels" for-id="page-labels" hint="Separate labels with commas.">
-      <input id="page-labels" v-model="labelsText" class="input" placeholder="labels, comma separated" />
+    <FormField class="mb-3" :label="t('labels')" for-id="page-labels" :hint="t('labelsHint')">
+      <input id="page-labels" v-model="labelsText" class="input" :placeholder="t('labelsPlaceholder')" />
     </FormField>
     <div class="mb-3 flex flex-wrap items-center gap-3 text-sm">
       <span
@@ -599,8 +601,8 @@ async function archive(): Promise<void> {
       <RouterLink v-if="isEdit && originalPath" class="link-quiet" :to="'/_history/' + originalPath">
         {{ t('history') }}
       </RouterLink>
-      <Skeleton v-if="templatesLoading" class="w-40" label="Loading templates" :lines="1" />
-      <SegmentedControl :model-value="editorMode" :options="editorModeOptions" label="Editor mode" @update:model-value="onEditorModeInput" />
+      <Skeleton v-if="templatesLoading" class="w-40" :label="t('loadingTemplates')" :lines="1" />
+      <SegmentedControl :model-value="editorMode" :options="editorModeOptions" :label="t('editorMode')" @update:model-value="onEditorModeInput" />
     </div>
     <p v-if="error" class="text-sm text-red-600 mb-3">{{ error }}</p>
     <section v-if="conflictDraft" class="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">

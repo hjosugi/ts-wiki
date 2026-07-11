@@ -365,7 +365,7 @@ const rows = computed<TreeRow[]>(() => {
     <section class="flex flex-col gap-0.5">
     <template v-for="row in rows" :key="row.key">
       <div
-        class="page-tree-line"
+        class="page-tree-line group"
         :class="draggingPath && draggingPath !== row.path ? 'outline outline-1 outline-[var(--c-accent)]/40' : ''"
         :style="{ paddingLeft: 0.25 + row.depth * 0.75 + 'rem' }"
         :draggable="auth.canEdit && row.isPage"
@@ -382,7 +382,7 @@ const rows = computed<TreeRow[]>(() => {
           :aria-label="`${row.collapsed ? 'Expand' : 'Collapse'} ${row.label}`"
           @click="toggleCollapse(row.path)"
         >
-          {{ row.collapsed ? '+' : '-' }}
+          {{ row.collapsed ? '▸' : '▾' }}
         </button>
         <span v-else class="page-tree-spacer"></span>
         <RouterLink
@@ -397,29 +397,29 @@ const rows = computed<TreeRow[]>(() => {
         <span v-else class="page-tree-folder">
           {{ row.label }}
         </span>
-        <template v-if="row.isPage">
+        <span v-if="row.isPage" class="flex items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
           <button
             class="page-tree-icon"
             type="button"
-            title="Star page"
-            :aria-label="`${isStarred(row.path) ? 'Unstar' : 'Star'} ${row.label}`"
+            :title="t('starPage')"
+            :aria-label="t('starPage')"
             @click="toggleStar(row.path)"
           >
             {{ isStarred(row.path) ? '★' : '☆' }}
           </button>
-          <button class="page-tree-icon" type="button" title="Move up in my order" :aria-label="`Move ${row.label} up in my order`" @click="movePersonalOrder(row.path, -1)">^</button>
-          <button class="page-tree-icon" type="button" title="Move down in my order" :aria-label="`Move ${row.label} down in my order`" @click="movePersonalOrder(row.path, 1)">v</button>
+          <button class="page-tree-icon" type="button" :title="t('moveUpPersonal', { page: row.label })" :aria-label="t('moveUpPersonal', { page: row.label })" @click="movePersonalOrder(row.path, -1)">↑</button>
+          <button class="page-tree-icon" type="button" :title="t('moveDownPersonal', { page: row.label })" :aria-label="t('moveDownPersonal', { page: row.label })" @click="movePersonalOrder(row.path, 1)">↓</button>
           <button
             v-if="auth.canEdit"
             class="page-tree-move"
             type="button"
-            title="Move page to another folder"
-            :aria-label="`Move page ${row.label}`"
+            :title="t('movePageFolder')"
+            :aria-label="t('movePageFolder')"
             @click="openMoveDialog(row.path)"
           >
-            Move
+            ↳
           </button>
-        </template>
+        </span>
       </div>
     </template>
     </section>
@@ -436,7 +436,7 @@ const rows = computed<TreeRow[]>(() => {
       <p v-if="moveError" class="mt-2 text-xs text-red-600">{{ moveError }}</p>
       <div class="mt-3 flex flex-wrap gap-2">
         <button class="btn-primary py-1 text-xs" type="button" :disabled="moving" @click="moveWikiPage(moveSourcePath, moveDestinationFolder)">
-          {{ moving ? 'Moving...' : 'Move URL' }}
+          {{ moving ? 'Moving...' : 'Move page' }}
         </button>
         <button class="btn-ghost py-1 text-xs" type="button" :disabled="moving" @click="closeMoveDialog">{{ t('cancel') }}</button>
       </div>

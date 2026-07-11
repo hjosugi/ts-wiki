@@ -1,9 +1,12 @@
 import { t } from 'elysia'
 import type { Principal, PublicSettings } from '@kawaii-wiki/core'
 import type { Env } from '../../env.ts'
+import type { DB } from '../../db/client.ts'
 import type { Services } from '../../services/index.ts'
+import { APP_VERSION } from '../../version.ts'
 import type { PageSummary, RecentChange } from '../../services/pages.ts'
 import type { BaseApp } from '../base.ts'
+import type { RequestIpServer } from '../rate-limit.ts'
 import { unwrap } from '../errors.ts'
 
 const FEED_CACHE_TTL_MS = 60_000
@@ -85,21 +88,29 @@ const robotsTxt = (origin: string, privateWiki: boolean): string =>
     : `User-agent: *\nAllow: /\nSitemap: ${origin.replace(/\/+$/, '')}/sitemap.xml\n`
 
 export interface SystemRoutesContext {
+  readonly db: DB
   readonly env: Env
   readonly services: Services
   readonly publicSettings: () => PublicSettings
   readonly feedCache: Map<string, { createdAt: number; xml: string }>
   readonly requirePageRead: (principal: Principal | null, path?: string) => void
   readonly canReadPage: (principal: Principal | null, path?: string) => boolean
+  readonly enforceUnfurlLimit: (
+    request: Request,
+    server: RequestIpServer | null | undefined,
+    principal: Principal | null,
+  ) => void
 }
 
 export const createSystemRoutes = ({
+  db,
   env,
   services,
   publicSettings,
   feedCache,
   requirePageRead,
   canReadPage,
+  enforceUnfurlLimit,
 }: SystemRoutesContext) => (app: BaseApp) => {
   const feedResponse = (principal: Principal | null): Response => {
     requirePageRead(principal)
@@ -154,13 +165,17 @@ export const createSystemRoutes = ({
     })
 
   return app
-    .get('/api/health', () => ({ ok: true as const, name: 'kawaii-wiki.ts', version: '0.5.0' }))
+    .get('/api/health', () => {
+      db.$client.prepare('SELECT 1 AS ready').get()
+      return { ok: true as const, name: 'kawaii-wiki.ts', version: APP_VERSION }
+    })
     .get('/api/settings/public', () => publicSettings())
     .get(
       '/api/unfurl',
-      async ({ query, services, principal }) => ({
-        preview: unwrap(await services.linkPreviews.unfurl(principal, query.url)),
-      }),
+      async ({ query, services, principal, request, server }) => {
+        enforceUnfurlLimit(request, server, principal)
+        return { preview: unwrap(await services.linkPreviews.unfurl(principal, query.url)) }
+      },
       { query: t.Object({ url: t.String() }) },
     )
     .get(

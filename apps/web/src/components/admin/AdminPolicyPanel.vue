@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { friendlyError } from '@/lib/friendlyErrors'
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Api, type PublicSettings } from '@/lib/api'
 import Skeleton from '@/components/Skeleton.vue'
+import { useAsyncData } from '@/composables/useAsyncData'
 
 type PolicySettings = Pick<
   PublicSettings,
@@ -19,9 +20,7 @@ type PolicySettings = Pick<
 const settings = ref<PolicySettings | null>(null)
 const sessionHours = ref(24 * 30)
 const uploadMegabytes = ref(25)
-const loading = ref(false)
 const saving = ref(false)
-const error = ref<string | null>(null)
 const notice = ref<string | null>(null)
 
 const canSave = computed(() =>
@@ -40,10 +39,7 @@ const syncInputs = (next: PolicySettings): void => {
   uploadMegabytes.value = Math.max(1, Math.round(next.assetMaxBytes / (1024 * 1024)))
 }
 
-async function load(): Promise<void> {
-  loading.value = true
-  error.value = null
-  try {
+const { loading, error, reload: load } = useAsyncData(async () => {
     const next = await Api.publicSettings()
     syncInputs({
       registration: next.registration,
@@ -55,12 +51,8 @@ async function load(): Promise<void> {
       defaultEditorMode: next.defaultEditorMode,
       mailConfigured: next.mailConfigured,
     })
-  } catch (e) {
-    error.value = friendlyError(e)
-  } finally {
-    loading.value = false
-  }
-}
+    return next
+})
 
 async function save(): Promise<void> {
   if (!settings.value || !canSave.value) return
@@ -95,7 +87,6 @@ async function save(): Promise<void> {
   }
 }
 
-onMounted(load)
 </script>
 
 <template>

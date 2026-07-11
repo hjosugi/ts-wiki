@@ -2,7 +2,7 @@
  * Search service — SQLite FTS5 with BM25 ranking, highlighted snippets, paging,
  * and a narrow indexer seam for future engine swaps.
  */
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import {
   type AppError,
   type Principal,
@@ -12,8 +12,9 @@ import {
   toPlainText,
 } from '@kawaii-wiki/core'
 import type { DB } from '../db/client.ts'
-import { assets, pageComments, pages } from '../db/schema.ts'
-import { runMigrations, type FtsTokenizer } from '../db/migrate.ts'
+import { assets, pageAssetRefs, pageComments, pages } from '../db/schema.ts'
+import { FTS_TOKENIZER_SQL, type FtsTokenizer } from '../db/migrate.ts'
+import { syncPageAssetReferences } from './asset-references.ts'
 
 export type SearchHitKind = 'page' | 'comment' | 'asset'
 export type SearchScope = 'all' | 'title'
@@ -407,30 +408,18 @@ const filterSql = `
   AND (? IS NULL OR p.updated_at <= ?)
 `
 
-const assetTextForPage = (db: DB, content: string): string => {
-  const haystack = content.toLowerCase()
-  return db
+const assetTextForPage = (db: DB, pageId: string): string =>
+  db
     .select({
       filename: assets.filename,
       folder: assets.folder,
-      storageName: assets.storageName,
-      deletedAt: assets.deletedAt,
     })
-    .from(assets)
+    .from(pageAssetRefs)
+    .innerJoin(assets, eq(assets.id, pageAssetRefs.assetId))
+    .where(eq(pageAssetRefs.pageId, pageId))
     .all()
-    .filter((asset) => {
-      if (asset.deletedAt !== null) return false
-      if (!asset.storageName) return false
-      const aliases = [
-        asset.storageName,
-        `/assets/${asset.storageName}`,
-        asset.filename,
-      ].map((value) => value.toLowerCase())
-      return aliases.some((alias) => alias && haystack.includes(alias))
-    })
     .map((asset) => `${asset.filename} ${asset.folder}`.trim())
     .join('\n')
-}
 
 const commentTextForPage = (db: DB, pageId: string): string =>
   db
@@ -441,13 +430,38 @@ const commentTextForPage = (db: DB, pageId: string): string =>
     .map((comment) => toPlainText(comment.body))
     .join('\n')
 
-export const rebuildSearchIndex = (db: DB, tokenizer: FtsTokenizer): void => {
-  db.$client.prepare('DROP TABLE IF EXISTS pages_fts').run()
-  runMigrations(db.$client, { ftsTokenizer: tokenizer })
-  const indexer = createFtsSearchIndexer(db, { configuredTokenizer: tokenizer })
-  for (const page of db.select({ id: pages.id }).from(pages).where(eq(pages.lifecycle, 'active')).all()) {
-    indexer.indexPageById(page.id)
+const supplementalTextForPages = (db: DB, pageIds: readonly string[]) => {
+  const comments = new Map<string, string[]>()
+  const assetText = new Map<string, string[]>()
+  if (!pageIds.length) return { comments, assetText }
+  for (const row of db.select({ pageId: pageComments.pageId, body: pageComments.body })
+    .from(pageComments).where(inArray(pageComments.pageId, [...pageIds])).all()) {
+    const values = comments.get(row.pageId) ?? []
+    values.push(toPlainText(row.body))
+    comments.set(row.pageId, values)
   }
+  for (const row of db.select({ pageId: pageAssetRefs.pageId, filename: assets.filename, folder: assets.folder })
+    .from(pageAssetRefs).innerJoin(assets, eq(assets.id, pageAssetRefs.assetId))
+    .where(inArray(pageAssetRefs.pageId, [...pageIds])).all()) {
+    const values = assetText.get(row.pageId) ?? []
+    values.push(`${row.filename} ${row.folder}`.trim())
+    assetText.set(row.pageId, values)
+  }
+  return { comments, assetText }
+}
+
+export const rebuildSearchIndex = (db: DB, tokenizer: FtsTokenizer): void => {
+  db.transaction(() => {
+    db.$client.prepare('DROP TABLE IF EXISTS pages_fts').run()
+    db.$client.exec(`CREATE VIRTUAL TABLE pages_fts USING fts5(
+      page_id UNINDEXED, title, description, content, comments, assets,
+      tokenize = '${FTS_TOKENIZER_SQL[tokenizer]}'
+    );`)
+    const indexer = createFtsSearchIndexer(db, { configuredTokenizer: tokenizer })
+    for (const page of db.select({ id: pages.id }).from(pages).where(eq(pages.lifecycle, 'active')).all()) {
+      indexer.indexPageById(page.id)
+    }
+  })
 }
 
 export const createFtsSearchIndexer = (
@@ -482,6 +496,7 @@ export const createFtsSearchIndexer = (
       AND p.lifecycle = 'active'
       ${filterSql}
     ORDER BY rank
+    LIMIT ?
   `)
   let stmt = prepareSearchStatement()
 
@@ -507,6 +522,7 @@ export const createFtsSearchIndexer = (
       ))
       ${filterSql}
     ORDER BY p.updated_at DESC, p.path
+    LIMIT ?
   `)
   let likeStmt = prepareLikeStatement()
 
@@ -516,7 +532,7 @@ export const createFtsSearchIndexer = (
     let indexedCharacters = 0
     let cjkCharacters = 0
     for (const page of activePages) {
-      const text = indexedText(page, `${commentTextForPage(db, page.id)}\n${assetTextForPage(db, page.content)}`)
+      const text = indexedText(page, `${commentTextForPage(db, page.id)}\n${assetTextForPage(db, page.id)}`)
       if (containsCjk(text)) cjkPages += 1
       const counts = countSearchCharacters(text)
       indexedCharacters += counts.total
@@ -595,13 +611,15 @@ export const createFtsSearchIndexer = (
   const likeSnippet = (
     row: { id: string; title: string; description: string; content: string },
     terms: readonly string[],
+    comments: string,
+    assetText: string,
   ): SnippetChoice => {
     const sources: Array<{ value: string; kind: SearchHitKind; anchor?: string }> = [
       { value: row.title, kind: 'page' },
       { value: row.description, kind: 'page' },
       { value: toPlainText(row.content), kind: 'page' },
-      { value: commentTextForPage(db, row.id), kind: 'comment', anchor: 'comments' },
-      { value: assetTextForPage(db, row.content), kind: 'asset', anchor: 'attachments' },
+      { value: comments, kind: 'comment', anchor: 'comments' },
+      { value: assetText, kind: 'asset', anchor: 'attachments' },
     ]
     const populatedSources = sources.filter((source) => source.value)
     const source = populatedSources.find((candidate) => terms.some((term) => candidate.value.toLowerCase().includes(term))) ?? populatedSources[0]
@@ -623,14 +641,18 @@ export const createFtsSearchIndexer = (
     indexPageById(pageId: string) {
       const page = db.select().from(pages).where(eq(pages.id, pageId)).get()
       ftsDelete.run(pageId)
-      if (!page || page.lifecycle !== 'active') return
+      if (!page || page.lifecycle !== 'active') {
+        db.delete(pageAssetRefs).where(eq(pageAssetRefs.pageId, pageId)).run()
+        return
+      }
+      syncPageAssetReferences(db, page.id, page.content)
       ftsInsert.run(
         page.id,
         page.title,
         page.description,
         toPlainText(page.content),
         commentTextForPage(db, page.id),
-        assetTextForPage(db, page.content),
+        assetTextForPage(db, page.id),
       )
     },
 
@@ -648,6 +670,7 @@ export const createFtsSearchIndexer = (
         const terms = parsed.terms
         const firstTerm = terms[0]
         const like = firstTerm ? `%${escapeLike(firstTerm.toLowerCase())}%` : null
+        const candidateLimit = Math.min(Math.max((request.offset + request.limit) * 4, 100), 2_000)
         const rows = likeStmt.all(
           like,
           like,
@@ -655,6 +678,7 @@ export const createFtsSearchIndexer = (
           like,
           like,
           ...filterArgs(request.filters),
+          candidateLimit,
         ) as Array<{
           id: string
           path: string
@@ -666,15 +690,23 @@ export const createFtsSearchIndexer = (
           content: string
           updatedAt: number
         }>
+        const supplemental = supplementalTextForPages(db, rows.map((row) => row.id))
         const hits = sortHits(
           rows
             .filter((row) => !canRead || canRead(row.path))
             .filter((row) => {
-              const searchable = `${row.title}\n${row.description}\n${row.content}\n${commentTextForPage(db, row.id)}\n${assetTextForPage(db, row.content)}`.toLowerCase()
+              const commentText = (supplemental.comments.get(row.id) ?? []).join('\n')
+              const assetText = (supplemental.assetText.get(row.id) ?? []).join('\n')
+              const searchable = `${row.title}\n${row.description}\n${row.content}\n${commentText}\n${assetText}`.toLowerCase()
               return terms.every((term) => searchable.includes(term.toLowerCase()))
             })
             .map((row) => {
-              const chosen = likeSnippet(row, terms)
+              const chosen = likeSnippet(
+                row,
+                terms,
+                (supplemental.comments.get(row.id) ?? []).join('\n'),
+                (supplemental.assetText.get(row.id) ?? []).join('\n'),
+              )
               return {
                 path: row.path,
                 title: row.title,
@@ -708,7 +740,8 @@ export const createFtsSearchIndexer = (
       const match = buildMatchQuery(query, request.scope)
       if (!match) return emptyResponse(query, request, hint)
       try {
-        const rows = stmt.all(match, ...filterArgs(request.filters)) as Array<{
+        const candidateLimit = Math.min(Math.max((request.offset + request.limit) * 4, 100), 2_000)
+        const rows = stmt.all(match, ...filterArgs(request.filters), candidateLimit) as Array<{
           path: string
           title: string
           icon: string
@@ -779,7 +812,7 @@ export const createSearchService = (db: DB, options: SearchServiceOptions = {}):
     rebuildIndex(principal, input = {}) {
       const allowed = requirePermission(principal, 'admin:access')
       if (!allowed.ok) return allowed
-      indexer.rebuild(input.tokenizer ?? 'trigram')
+      indexer.rebuild(input.tokenizer ?? indexer.status().tokenizer)
       return ok(indexer.status())
     },
   }

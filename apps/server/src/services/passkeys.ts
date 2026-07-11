@@ -16,12 +16,10 @@ import {
   type Principal,
   type Result,
   err,
-  forbidden,
   notFound,
   ok,
   requirePermission,
   unauthorized,
-  validationError,
 } from '@kawaii-wiki/core'
 import type { DB } from '../db/client.ts'
 import type { AuthEnv } from '../env.ts'

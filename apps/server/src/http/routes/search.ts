@@ -4,9 +4,10 @@ import type { BaseApp } from '../base.ts'
 
 export interface SearchRoutesContext {
   readonly requireSearchRead: (principal: Principal | null) => void
+  readonly canReadPage: (principal: Principal | null, path?: string) => boolean
 }
 
-export const createSearchRoutes = ({ requireSearchRead }: SearchRoutesContext) => (app: BaseApp) =>
+export const createSearchRoutes = ({ requireSearchRead, canReadPage }: SearchRoutesContext) => (app: BaseApp) =>
   app.get('/api/search', ({ query, services, principal }) => {
     requireSearchRead(principal)
     const publicationByPath = new Map(services.pages.list().map((page) => [page.path, page]))
@@ -31,7 +32,7 @@ export const createSearchRoutes = ({ requireSearchRead }: SearchRoutesContext) =
       (path) => {
         const page = publicationByPath.get(path)
         const published = page && page.status !== 'draft' && (page.publishAt === null || page.publishAt <= Date.now())
-        return can(principal, 'page:read', { path }) && Boolean(published || can(principal, 'page:update', { path }))
+        return canReadPage(principal, path) && Boolean(published || can(principal, 'page:update', { path }))
       },
     )
   }, {

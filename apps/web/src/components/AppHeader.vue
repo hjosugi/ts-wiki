@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { defaultPublicSettings } from '@kawaii-wiki/core'
 import { Api, type PublicSettings } from '@/lib/api'
@@ -19,14 +19,15 @@ const theme = useTheme()
 const themeIcon = computed(() => (theme.mode.value === 'light' ? '☀' : theme.mode.value === 'dark' ? '🌙' : '🖥'))
 const q = ref('')
 const settings = ref<PublicSettings>(defaultPublicSettings())
+const headerEl = ref<HTMLElement | null>(null)
 const accentStyle = computed(() => ({ color: settings.value.accentColor }))
 const homeTo = computed(() => `/${settings.value.homePath || 'home'}`)
 const commandShortcut = shortcutLabel('K')
 const realtimeLabel = computed(() => ({
-  connected: 'Live updates connected',
-  connecting: 'Connecting live updates',
-  reconnecting: 'Reconnecting live updates',
-  offline: 'Offline',
+  connected: t('liveConnected'),
+  connecting: t('liveConnecting'),
+  reconnecting: t('liveReconnecting'),
+  offline: t('liveOffline'),
 }[realtimeStatus.value]))
 const builtInNav = computed(() => {
   const definitions = {
@@ -34,7 +35,7 @@ const builtInNav = computed(() => {
     events: { to: '/_events', label: t('events'), show: true },
     graph: { to: '/_graph', label: t('graph'), show: true },
     redirects: { to: '/_redirects', label: t('redirects'), show: auth.canEdit },
-    templates: { to: '/_templates', label: 'Templates', show: auth.canEdit },
+    templates: { to: '/_templates', label: t('templates'), show: auth.canEdit },
     new: { to: '/_new', label: t('newPage'), show: auth.canEdit },
   }
   return settings.value.navItems
@@ -56,6 +57,35 @@ function openMobileNavigation(): void {
   window.dispatchEvent(new Event('open-mobile-navigation'))
 }
 
+const closeMenus = (): void => {
+  headerEl.value?.querySelectorAll('details[open]').forEach((menu) => menu.removeAttribute('open'))
+}
+
+const closeMenusOutside = (event: PointerEvent): void => {
+  const target = event.target as Node | null
+  headerEl.value?.querySelectorAll('details[open]').forEach((menu) => {
+    if (!target || !menu.contains(target)) menu.removeAttribute('open')
+  })
+}
+
+const closeMenusOnEscape = (event: KeyboardEvent): void => {
+  if (event.key === 'Escape') closeMenus()
+}
+
+let removeRouteHook: (() => void) | null = null
+
+onMounted(() => {
+  document.addEventListener('pointerdown', closeMenusOutside)
+  document.addEventListener('keydown', closeMenusOnEscape)
+  removeRouteHook = router.afterEach(closeMenus)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', closeMenusOutside)
+  document.removeEventListener('keydown', closeMenusOnEscape)
+  removeRouteHook?.()
+})
+
 onMounted(async () => {
   try {
     settings.value = await Api.publicSettings()
@@ -71,14 +101,15 @@ onMounted(async () => {
 
 <template>
   <header
+    ref="headerEl"
     class="app-shell-header sticky top-0 z-10 border-b border-[var(--c-border)] bg-[var(--c-surface)]/90 backdrop-blur"
   >
     <div class="mx-auto flex h-14 max-w-7xl items-center gap-2 px-3 sm:gap-3 sm:px-4">
       <button
         class="btn-ghost h-9 w-9 shrink-0 px-0 md:hidden"
         type="button"
-        aria-label="Open navigation"
-        title="Open navigation"
+        :aria-label="t('openNavigation')"
+        :title="t('openNavigation')"
         @click="openMobileNavigation"
       >
         ☰
@@ -170,13 +201,33 @@ onMounted(async () => {
         <details class="relative lg:hidden">
           <summary
             class="btn-ghost flex h-9 w-9 cursor-pointer list-none items-center justify-center px-0 md:w-auto md:px-3"
-            aria-label="Open menu"
-            title="Open menu"
+            :aria-label="t('openMenu')"
+            :title="t('openMenu')"
           >
             <span class="md:hidden" aria-hidden="true">⋯</span>
-            <span class="hidden md:inline">Menu</span>
+            <span class="hidden md:inline">{{ t('menu') }}</span>
           </summary>
           <div class="absolute right-0 mt-2 flex min-w-52 flex-col rounded-md border border-[var(--c-border)] bg-[var(--c-surface)] p-1 shadow-lg">
+            <div class="flex items-center gap-2 border-b border-[var(--c-border)] px-3 py-2 sm:hidden">
+              <select
+                class="input min-w-0 flex-1 py-1 text-xs"
+                :value="locale"
+                :aria-label="t('locale')"
+                @change="setLocale(($event.target as HTMLSelectElement).value === 'ja' ? 'ja' : 'en')"
+              >
+                <option value="en">EN</option>
+                <option value="ja">日本語</option>
+              </select>
+              <button
+                class="btn-ghost h-8 px-2"
+                type="button"
+                :title="`Theme: ${theme.mode.value}`"
+                :aria-label="`Theme: ${theme.mode.value}. Click to change.`"
+                @click="theme.cycle()"
+              >
+                {{ themeIcon }}
+              </button>
+            </div>
             <template v-for="link in settings.navLinks" :key="'mobile:' + link.url + link.label">
               <a v-if="!link.children.length" class="rounded px-3 py-2 text-sm hover:bg-[var(--c-surface-muted)]" :href="link.url">
                 <span v-if="link.icon">{{ link.icon }} </span>{{ link.label }}

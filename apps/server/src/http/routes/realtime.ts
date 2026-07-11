@@ -84,7 +84,7 @@ export const createRealtimeRoutes = ({
       }),
       open(ws) {
         void (async () => {
-          const { path, ticket, name, userId, mode } = ws.data.query
+          const { path, ticket, mode } = ws.data.query
           const principal = consumeRealtimeTicket(ticket)
           if (privateWiki() && !principal) {
             ws.close(1008, 'Authentication required')
@@ -94,7 +94,12 @@ export const createRealtimeRoutes = ({
             ws.close(1008, 'Read access required')
             return
           }
-          presenceRuntime.open(ws.id, ws, path, { name, userId: userId ?? principal?.id, mode })
+          const user = principal ? services.users.findById(principal.id) : null
+          presenceRuntime.open(ws.id, ws, path, {
+            name: user?.name ?? 'Guest',
+            userId: principal?.id,
+            mode,
+          })
         })().catch(() => ws.close(1011, 'Presence authentication failed'))
       },
       close(ws) {

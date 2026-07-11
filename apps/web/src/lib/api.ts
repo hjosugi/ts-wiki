@@ -25,10 +25,7 @@ import type {
 } from '@kawaii-wiki/server/contracts'
 import type {
   Action,
-  BuiltInNavItem,
-  BuiltInNavKey,
   ExtractedCalendarEvent,
-  NavLink,
   PublicAuthProvider,
   PublicSettings,
   Role,
@@ -1083,7 +1080,7 @@ export const Api = {
           ...(options.offset ? { offset: options.offset } : {}),
           ...(options.scope ? { scope: options.scope } : {}),
           ...(options.sort ? { sort: options.sort } : {}),
-          ...(options.filters ?? {}),
+          ...options.filters,
         },
       }),
       isSearchResponse,

@@ -19,6 +19,7 @@ import {
   validationError,
 } from '@kawaii-wiki/core'
 import type { DB } from '../db/client.ts'
+import { isUniqueConstraintError } from '../db/errors.ts'
 import {
   groupMemberships,
   groups,
@@ -308,7 +309,12 @@ export const createAuthzService = (db: DB): AuthzService => {
         description: input.description?.trim() ?? '',
         createdAt: Date.now(),
       }
-      db.insert(groups).values(group).run()
+      try {
+        db.insert(groups).values(group).run()
+      } catch (error) {
+        if (isUniqueConstraintError(error)) return err(conflict('Group already exists'))
+        throw error
+      }
       return ok(toGroupView(group))
     },
 

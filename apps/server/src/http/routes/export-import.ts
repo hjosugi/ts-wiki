@@ -72,9 +72,7 @@ export const createExportImportRoutes = ({
     .get('/api/export/site', async ({ query, services, principal }) => {
       requireHttpPermission(principal, 'admin:access')
       const exportedAt = new Date().toISOString()
-      const exportedPages = services.pages.list().map((summary) => {
-        const page = unwrap(services.pages.getByPath(summary.path))
-        return {
+      const exportedPages = services.pages.allActive().map((page) => ({
           path: page.path,
           title: page.title,
           description: page.description,
@@ -93,8 +91,7 @@ export const createExportImportRoutes = ({
           locale: page.locale,
           createdAt: page.createdAt,
           updatedAt: page.updatedAt,
-        }
-      })
+      }))
       const exportedAssets = unwrap(services.assets.list(principal)).map((asset) => ({
         ...asset,
         archivePath: `assets/${asset.storageName}`,

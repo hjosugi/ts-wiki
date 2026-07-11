@@ -78,4 +78,28 @@ describe('notification service', () => {
     expect(!draft.ok && draft.error.kind).toBe('not_found')
     expect(!future.ok && future.error.kind).toBe('not_found')
   })
+
+  test('merges conflicting watches on move and removes watches on delete', async () => {
+    const services = createServices(createDb(':memory:'))
+    const watcherUser = await services.users.create({
+      email: 'watcher@example.com',
+      name: 'Watcher',
+      password: 'password',
+      role: 'editor',
+    })
+    if (!watcherUser.ok) throw new Error('watcher seed failed')
+    const watcher: Principal = { id: watcherUser.value.id, role: watcherUser.value.role }
+
+    expect(services.pages.create({ path: 'docs/old', title: 'Old', content: 'Old', status: 'verified' }, watcher).ok).toBe(true)
+    expect(services.pages.create({ path: 'docs/new', title: 'New', content: 'New', status: 'verified' }, watcher).ok).toBe(true)
+
+    expect(services.notifications.watch(watcher, 'docs/old', true).ok).toBe(true)
+    expect(services.notifications.watch(watcher, 'docs/new', true).ok).toBe(true)
+    expect(() => services.notifications.pageChanged('moved', 'docs/new', 'docs/old', 'actor')).not.toThrow()
+    expect(services.notifications.watching(watcher, 'docs/old')).toEqual({ ok: true, value: { path: 'docs/old', watching: false } })
+    expect(services.notifications.watching(watcher, 'docs/new')).toEqual({ ok: true, value: { path: 'docs/new', watching: true } })
+
+    services.notifications.pageChanged('deleted', 'docs/new', undefined, 'actor')
+    expect(services.notifications.watching(watcher, 'docs/new')).toEqual({ ok: true, value: { path: 'docs/new', watching: false } })
+  })
 })

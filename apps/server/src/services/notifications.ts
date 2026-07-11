@@ -143,7 +143,11 @@ export const createNotificationService = (db: DB): NotificationService => {
 
     pageChanged(action, path, from, actorId) {
       if (from && from !== path) {
-        db.update(pageWatchers).set({ path }).where(eq(pageWatchers.path, from)).run()
+        const movedWatchers = db.select().from(pageWatchers).where(eq(pageWatchers.path, from)).all()
+        for (const watcher of movedWatchers) {
+          db.insert(pageWatchers).values({ ...watcher, path }).onConflictDoNothing().run()
+        }
+        db.delete(pageWatchers).where(eq(pageWatchers.path, from)).run()
       }
       const page = db.select({ title: pages.title }).from(pages).where(eq(pages.path, path)).get()
       const title = page?.title ?? path
@@ -152,6 +156,7 @@ export const createNotificationService = (db: DB): NotificationService => {
         if (watcher.userId === actorId) continue
         insert(watcher.userId, 'page', path, `${title} was ${action}`, { action, from: from ?? null })
       }
+      if (action === 'deleted') db.delete(pageWatchers).where(eq(pageWatchers.path, path)).run()
     },
   }
 }

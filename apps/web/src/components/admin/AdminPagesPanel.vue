@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { friendlyError } from '@/lib/friendlyErrors'
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Api, type AdminPageView, type Page } from '@/lib/api'
 import { usePages } from '@/stores/pages'
 import { useI18n } from '@/lib/i18n'
 import Skeleton from '@/components/Skeleton.vue'
 import { useDialogs } from '@/composables/useDialogs'
+import { useAsyncData } from '@/composables/useAsyncData'
+import AdminAsyncState from './AdminAsyncState.vue'
 
 const PAGE_SIZE = 25
 const STATUS_OPTIONS: Array<Page['status']> = ['draft', 'in-review', 'verified', 'outdated']
@@ -17,8 +19,6 @@ const status = ref('')
 const label = ref('')
 const spaceKey = ref('')
 const authorId = ref('')
-const loading = ref(false)
-const error = ref<string | null>(null)
 const pagesStore = usePages()
 const { formatDateTime } = useI18n()
 const dialogs = useDialogs()
@@ -29,11 +29,7 @@ const canNext = computed(() => offset.value + PAGE_SIZE < total.value)
 
 const labelsFor = (page: AdminPageView): string[] => page.labels
 
-async function load(reset = false): Promise<void> {
-  if (reset) offset.value = 0
-  loading.value = true
-  error.value = null
-  try {
+const { loading, error, reload } = useAsyncData(async () => {
     const result = await Api.adminPages({
       limit: PAGE_SIZE,
       offset: offset.value,
@@ -45,11 +41,12 @@ async function load(reset = false): Promise<void> {
     pages.value = result.pages
     total.value = result.total
     offset.value = result.offset
-  } catch (e) {
-    error.value = friendlyError(e)
-  } finally {
-    loading.value = false
-  }
+    return result
+})
+
+async function load(reset = false): Promise<void> {
+  if (reset) offset.value = 0
+  await reload()
 }
 
 async function archivePage(page: AdminPageView): Promise<void> {
@@ -86,7 +83,6 @@ function nextPage(): void {
   void load()
 }
 
-onMounted(() => load(true))
 </script>
 
 <template>
@@ -107,7 +103,7 @@ onMounted(() => load(true))
       <input v-model.trim="authorId" class="input h-9 w-56 text-sm" placeholder="Author user id" aria-label="Author user ID" />
       <button class="btn-primary" type="submit" :disabled="loading">Apply</button>
     </form>
-    <p v-if="error" class="text-sm text-red-600 mb-3">{{ error }}</p>
+    <AdminAsyncState :error="error" :loading="loading" @retry="load()" />
     <div class="card overflow-hidden">
       <table class="w-full text-sm">
         <thead class="text-left text-[var(--c-text-muted)] border-b border-gray-200 dark:border-gray-800">

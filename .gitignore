@@ -44,4 +44,6 @@ apps/web/dist/
 Thumbs.db
 *.swp
 coverage/
+playwright-report/
+test-results/
 .cache/

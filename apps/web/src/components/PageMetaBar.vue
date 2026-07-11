@@ -47,14 +47,14 @@ const coverPreviewStyle = computed(() => coverUrl.value
     <RouterLink class="btn-ghost" to="/_templates">{{ t('templates') }}</RouterLink>
     <button class="btn-ghost" type="button" :disabled="props.savingTemplate" @click="emit('saveTemplate')">{{ t('saveAsTemplate') }}</button>
     <select v-model="status" class="input max-w-40" :aria-label="t('pageStatus')">
-      <option value="draft">draft</option>
-      <option value="in-review">in-review</option>
-      <option value="verified">verified</option>
-      <option value="outdated">outdated</option>
+      <option value="draft">{{ t('draft') }}</option>
+      <option value="in-review">{{ t('inReview') }}</option>
+      <option value="verified">{{ t('verified') }}</option>
+      <option value="outdated">{{ t('outdated') }}</option>
     </select>
     <input v-model="reviewAtDate" class="input max-w-42" type="date" :title="t('reviewDate')" :aria-label="t('reviewDate')" />
     <input v-model="publishAtDateTime" class="input max-w-56" type="datetime-local" :title="t('publishAt')" :aria-label="t('publishAt')" />
-    <input v-model="locale" class="input max-w-28" placeholder="locale" :title="t('locale')" :aria-label="t('locale')" />
+    <input v-model="locale" class="input max-w-28" :placeholder="t('locale')" :title="t('locale')" :aria-label="t('locale')" />
     <label class="inline-flex items-center gap-2 rounded-md border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-2 text-sm">
       <input v-model="pinned" type="checkbox" />
       <span>{{ t('pinned') }}</span>

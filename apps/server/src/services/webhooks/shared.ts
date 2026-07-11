@@ -1,5 +1,8 @@
 import { lookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
+import { request as httpRequest } from 'node:http'
+import { request as httpsRequest } from 'node:https'
+import { Readable } from 'node:stream'
 import {
   type AppError,
   type PageStatus,
@@ -24,12 +27,66 @@ import type {
 } from '../webhooks.ts'
 export { pageSnapshot } from '../page-view.ts'
 
-export const defaultFetcher: WebhookFetcher = (url, init) => fetch(url, init)
+const pinnedFetch = async (urlValue: string, init: RequestInit, address: string): Promise<Response> => {
+  const url = new URL(urlValue)
+  const body = init.body == null ? null : new Uint8Array(await new Response(init.body).arrayBuffer())
+  const request = url.protocol === 'https:' ? httpsRequest : httpRequest
+  const requestHeaders: Record<string, string> = {}
+  new Headers(init.headers).forEach((value, name) => { requestHeaders[name] = value })
+  return new Promise<Response>((resolve, reject) => {
+    const req = request(url, {
+      method: init.method,
+      headers: requestHeaders,
+      signal: init.signal ?? undefined,
+      servername: url.hostname,
+      lookup: (_hostname, _options, callback) => callback(null, address, isIP(address)),
+    }, (res) => {
+      const headers = new Headers()
+      for (const [name, value] of Object.entries(res.headers)) {
+        if (Array.isArray(value)) value.forEach((item) => headers.append(name, item))
+        else if (value !== undefined) headers.set(name, value)
+      }
+      resolve(new Response(Readable.toWeb(res) as unknown as ReadableStream, {
+        status: res.statusCode ?? 500,
+        statusText: res.statusMessage,
+        headers,
+      }))
+    })
+    req.on('error', reject)
+    req.end(body)
+  })
+}
+
+export const defaultFetcher: WebhookFetcher = (url, init, target) =>
+  target?.address ? pinnedFetch(url, init, target.address) : fetch(url, init)
 export const defaultResolver: WebhookHostnameResolver = async (hostname) =>
   (await lookup(hostname, { all: true, verbatim: true })).map((address) => address.address)
 
 export const truncate = (value: string, limit: number): string =>
   value.length > limit ? `${value.slice(0, limit)}...` : value
+
+export const readLimitedResponseText = async (response: Response, maxBytes: number): Promise<string> => {
+  if (!response.body) return ''
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let bytes = 0
+  let output = ''
+  try {
+    while (bytes < maxBytes) {
+      const { done, value } = await reader.read()
+      if (done) break
+      const remaining = maxBytes - bytes
+      const chunk = value.byteLength > remaining ? value.subarray(0, remaining) : value
+      bytes += chunk.byteLength
+      output += decoder.decode(chunk, { stream: bytes < maxBytes })
+      if (chunk.byteLength < value.byteLength) break
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined)
+  }
+  output += decoder.decode()
+  return output
+}
 
 export const cleanName = (name: string | undefined, fallback: string): string => {
   const clean = name?.trim()

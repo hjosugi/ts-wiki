@@ -2,6 +2,7 @@
  * Typed runtime configuration. Read once, passed explicitly into the app
  * factory — no `process.env` reads scattered through the codebase, no globals.
  */
+import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -13,7 +14,9 @@ import {
 import type { FtsTokenizer } from './db/migrate.ts'
 import type { AssetStorageConfig } from './storage/assets.ts'
 
-export const DEFAULT_JWT_SECRET = 'dev-insecure-secret-change-me'
+const LEGACY_INSECURE_JWT_SECRET = 'dev-insecure-secret-change-me'
+/** Unpredictable local fallback; local sessions intentionally reset on restart. */
+export const DEFAULT_JWT_SECRET = randomBytes(32).toString('hex')
 
 type EnvSource = Record<string, string | undefined>
 
@@ -230,12 +233,15 @@ const parseRegistration = (value: string | undefined): AuthEnv['registration'] =
 }
 
 const loadJwtSecret = (source: EnvSource): string => {
-  const jwtSecret =
-    source.JWT_SECRET && source.JWT_SECRET.trim().length > 0 ? source.JWT_SECRET : DEFAULT_JWT_SECRET
+  const configured = source.JWT_SECRET?.trim()
+  if (configured === LEGACY_INSECURE_JWT_SECRET || configured === DEFAULT_JWT_SECRET) {
+    throw new Error('Refusing to start with the legacy insecure JWT secret. Set JWT_SECRET to a strong unique value.')
+  }
+  const jwtSecret = configured || DEFAULT_JWT_SECRET
 
-  if (isProduction(source) && jwtSecret.trim() === DEFAULT_JWT_SECRET) {
+  if (isProduction(source) && !configured) {
     throw new Error(
-      'Refusing to start in production with the default JWT secret. Set JWT_SECRET to a strong unique value.',
+      'Refusing to start in production without JWT_SECRET. Set it to a strong unique value.',
     )
   }
 

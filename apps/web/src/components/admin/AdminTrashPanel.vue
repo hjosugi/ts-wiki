@@ -1,34 +1,24 @@
 <script setup lang="ts">
 import { friendlyError } from '@/lib/friendlyErrors'
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { Api, type AssetView, type PageSummary } from '@/lib/api'
 import { usePages } from '@/stores/pages'
 import Skeleton from '@/components/Skeleton.vue'
 import { useDialogs } from '@/composables/useDialogs'
+import { useAsyncData } from '@/composables/useAsyncData'
 
 const pagesStore = usePages()
 const dialogs = useDialogs()
 const pageTrash = ref<PageSummary[]>([])
 const assetTrash = ref<AssetView[]>([])
-const loading = ref(false)
-const error = ref<string | null>(null)
+const { loading, error, reload: load } = useAsyncData(async () => {
+  const [pageRows, assetRows] = await Promise.all([Api.trashPages(), Api.trashAssets()])
+  pageTrash.value = pageRows
+  assetTrash.value = assetRows
+})
 
 const formatBytes = (value: number): string =>
   value >= 1024 * 1024 ? `${(value / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.ceil(value / 1024))} KB`
-
-async function load(): Promise<void> {
-  loading.value = true
-  error.value = null
-  try {
-    const [pages, assets] = await Promise.all([Api.trashPages(), Api.trashAssets()])
-    pageTrash.value = pages
-    assetTrash.value = assets
-  } catch (e) {
-    error.value = friendlyError(e)
-  } finally {
-    loading.value = false
-  }
-}
 
 async function restorePage(path: string): Promise<void> {
   error.value = null
@@ -72,7 +62,6 @@ async function purgeAsset(asset: AssetView): Promise<void> {
   }
 }
 
-onMounted(load)
 </script>
 
 <template>

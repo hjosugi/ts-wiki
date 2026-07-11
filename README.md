@@ -3,7 +3,7 @@
 A **modern, lean, FP-leaning** open-source wiki — a deliberate, *finishable* reaction to Wiki.js.
 Bun + Elysia + Drizzle (SQLite/FTS5) server, Vue 3 front end, end-to-end type safety with **zero codegen**.
 
-> **Status: v0.5.0** — a small, complete, runnable wiki: first-run `/setup`,
+> **Status: v1.0.0** — a small, complete, runnable wiki: first-run `/setup`,
 > Markdown pages with visual editing,
 > FTS search, local/OIDC/TOTP/passkey auth with recovery codes,
 > private-wiki mode, groups/page rules,
@@ -21,7 +21,7 @@ Bun + Elysia + Drizzle (SQLite/FTS5) server, Vue 3 front end, end-to-end type sa
 
 ## Quick start
 
-Requires [Bun](https://bun.sh) >= 1.3.
+Requires [Bun](https://bun.sh) >= 1.3.14.
 
 ```bash
 bun install
@@ -105,6 +105,9 @@ docker run --rm -p 4000:4000 -v kawaii-wiki.ts-data:/data \
 
 The container serves the built web app from `/ui`, stores SQLite data plus
 uploads under `/data`, and opens `/setup` until the first admin exists.
+It runs as the unprivileged `bun` user (uid 1000). Docker named volumes inherit
+the prepared `/data` ownership; for a host bind mount, make the directory
+writable by uid 1000 before starting the container.
 
 ## Cheap public deploy
 
@@ -115,14 +118,14 @@ persistent volume, or Render Free backed by Turso/libSQL and R2. SQLite under
 Tagged releases publish a Docker image to GHCR:
 
 ```bash
-docker pull ghcr.io/hjosugi/kawaii-wiki.ts:v0.5.0
+docker pull ghcr.io/hjosugi/kawaii-wiki.ts:1.0.0
 docker volume create kawaii-wiki.ts-data
 export JWT_SECRET="$(openssl rand -hex 32)"
 docker run -d --name kawaii-wiki.ts --restart unless-stopped \
   -p 4000:4000 -v kawaii-wiki.ts-data:/data \
   -e NODE_ENV=production \
   -e JWT_SECRET="$JWT_SECRET" \
-  ghcr.io/hjosugi/kawaii-wiki.ts:v0.5.0
+  ghcr.io/hjosugi/kawaii-wiki.ts:1.0.0
 ```
 
 Put Caddy, nginx, or a free Cloudflare Tunnel in front of port `4000` for TLS
@@ -131,13 +134,27 @@ and a public domain.
 ## Backup
 
 kawaii-wiki.ts stores the canonical wiki state in SQLite and uploaded files under
-`DATA_DIR` (`./data` locally, `/data` in Docker). Use SQLite's online backup
-command and copy uploads in the same maintenance window:
+`DATA_DIR` (`./data` locally, `/data` in Docker). The runtime image intentionally
+does not include the `sqlite3` CLI, so run the online backup command on the host
+against a bind-mounted data directory (or from a temporary SQLite container),
+then copy uploads in the same maintenance window:
 
 ```bash
 mkdir -p backups
 sqlite3 data/ts-wiki.sqlite ".backup 'backups/kawaii-wiki.ts-$(date +%F).sqlite'"
 rsync -a data/assets/ backups/assets/
+```
+
+The database runs in WAL mode. Never copy only a live `.sqlite` file: committed
+data may still be in `-wal`. Use `.backup`/`VACUUM INTO`, or stop the server and
+copy the database plus sidecars together. For continuous backup, run Litestream
+as a sidecar sharing `/data` with this minimal configuration:
+
+```yaml
+dbs:
+  - path: /data/ts-wiki.sqlite
+    replica:
+      url: s3://your-backup-bucket/kawaii-wiki
 ```
 
 If Git mirroring is enabled, the Git repo is a useful content mirror, but SQLite
@@ -159,10 +176,16 @@ metadata.
 | **[docs/DESIGN.md](docs/DESIGN.md)** | Architecture, the Wiki.js comparison, FP choices, how save/search/types work, multi-instance mode, scripts |
 | **[docs/HANDOFF.md](docs/HANDOFF.md)** | Implementation status, design decisions, gotchas solved, roadmap, extension recipes |
 | **[docs/DEPLOY_FREE.md](docs/DEPLOY_FREE.md)** | Render Free + Turso + R2 deployment guide |
+| **[docs/API.md](docs/API.md)** | 1.x API stability policy and OpenAPI endpoints |
+| **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** | Complete environment-variable reference |
+| **[docs/UPGRADING.md](docs/UPGRADING.md)** | Backup-first upgrade and restore-based rollback |
 | **[docs/ISSUE_RESOLUTION.md](docs/ISSUE_RESOLUTION.md)** | 2026-07-05 issue triage decisions: completed surfaces, explicit non-goals, content-type scope |
 | Per-package guides | [`packages/core`](packages/core/README.md) · [`apps/server`](apps/server/README.md) · [`apps/web`](apps/web/README.md) |
 
 Run any task with `bun run <name>` (`dev`, `db:seed`, `db:reset`, `test`, `typecheck`, …) — full list in [docs/DESIGN.md](docs/DESIGN.md#scripts).
+
+Interactive API documentation is available at `/api/docs`, with the raw OpenAPI
+document at `/api/openapi.json`.
 
 ## Security knobs
 

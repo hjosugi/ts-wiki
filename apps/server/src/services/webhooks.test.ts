@@ -42,6 +42,16 @@ describe('webhook service', () => {
     })
     expect(published).toHaveLength(1)
     expect(published[0]).toMatchObject({
+      status: 'pending',
+      attempts: 0,
+      responseStatus: null,
+      nextAttemptAt: 1_000,
+    })
+    await Bun.sleep(0)
+    const firstAttempt = webhooks.listDeliveries(admin)
+    expect(firstAttempt.ok).toBe(true)
+    if (!firstAttempt.ok) throw new Error('delivery list failed')
+    expect(firstAttempt.value[0]).toMatchObject({
       status: 'failed',
       attempts: 1,
       responseStatus: 500,

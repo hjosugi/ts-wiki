@@ -1,7 +1,9 @@
 import { t } from 'elysia'
+import { createHash } from 'node:crypto'
 import {
   can,
   notFound,
+  parseJsonStringArray,
   type Principal,
 } from '@kawaii-wiki/core'
 import { isUserActive } from '../../services/users.ts'
@@ -32,6 +34,9 @@ const isPublished = (page: { status: string; publishAt: number | null }): boolea
 const canSeePage = (principal: Principal | null, page: { path: string; status: string; publishAt: number | null }): boolean =>
   isPublished(page) || can(principal, 'page:update', { path: page.path })
 
+const shareTokenAuditId = (token: string): string =>
+  createHash('sha256').update(token).digest('hex').slice(0, 12)
+
 export interface PageRoutesContext {
   readonly logger: StructuredLogger
   readonly requirePageRead: (principal: Principal | null, path?: string) => void
@@ -52,7 +57,7 @@ export const createPageRoutes = ({
   app
     .get('/api/pages', ({ query, services, principal }) => {
       requirePageRead(principal)
-      const result = pageOf(services.pages.list().filter((page) => canSeePage(principal, page)), query.limit, query.offset)
+      const result = pageOf(services.pages.list().filter((page) => canReadPage(principal, page.path) && canSeePage(principal, page)), query.limit, query.offset)
       return { pages: result.items, total: result.total, limit: result.limit, offset: result.offset }
     }, { query: t.Object({ limit: t.Optional(t.Numeric()), offset: t.Optional(t.Numeric()) }) })
     .get('/api/pages/popular', ({ query, services, principal }) => {
@@ -100,7 +105,7 @@ export const createPageRoutes = ({
     })
     .get('/api/spaces', ({ query, services, principal }) => {
       requirePageRead(principal)
-      const visiblePages = services.pages.list().filter((page) => canSeePage(principal, page))
+      const visiblePages = services.pages.list().filter((page) => canReadPage(principal, page.path) && canSeePage(principal, page))
       const spaces = [...visiblePages.reduce((map, page) => {
         const current = map.get(page.spaceKey)
         map.set(page.spaceKey, { key: page.spaceKey, pages: (current?.pages ?? 0) + 1, updatedAt: Math.max(current?.updatedAt ?? 0, page.updatedAt) })
@@ -116,32 +121,37 @@ export const createPageRoutes = ({
     }, { query: t.Object({ limit: t.Optional(t.Numeric()), offset: t.Optional(t.Numeric()) }) })
     .get('/api/graph', ({ services, principal }) => {
       requirePageRead(principal)
-      const visible = new Set(services.pages.list().filter((page) => canSeePage(principal, page)).map((page) => page.path))
+      const visible = new Set(services.pages.list().filter((page) => canReadPage(principal, page.path) && canSeePage(principal, page)).map((page) => page.path))
       const graph = services.pages.graph()
+      const kindByPath = new Map(graph.nodes.map((node) => [node.path, node.kind]))
       return {
-        nodes: graph.nodes.filter((node) => node.kind === 'missing' || visible.has(node.path)),
-        edges: graph.edges.filter((edge) => visible.has(edge.source)),
+        nodes: graph.nodes.filter((node) => visible.has(node.path) || (node.kind === 'missing' && graph.edges.some((edge) => edge.target === node.path && visible.has(edge.source)))),
+        edges: graph.edges.filter((edge) => visible.has(edge.source) && (kindByPath.get(edge.target) === 'missing' || visible.has(edge.target))),
       }
     })
     .get('/api/events/index', ({ services, principal }) => {
       requirePageRead(principal)
-      const visible = new Set(services.pages.list().filter((page) => canSeePage(principal, page)).map((page) => page.path))
+      const visible = new Set(services.pages.list().filter((page) => canReadPage(principal, page.path) && canSeePage(principal, page)).map((page) => page.path))
       return { events: services.pages.events().filter((event) => visible.has(event.sourcePath)) }
     })
     .get('/api/labels', ({ services, principal }) => {
       requirePageRead(principal)
-      return { labels: services.pages.labels() }
+      const counts = new Map<string, number>()
+      for (const page of services.pages.list().filter((item) => canReadPage(principal, item.path) && canSeePage(principal, item))) {
+        for (const label of parseJsonStringArray(page.labels)) counts.set(label, (counts.get(label) ?? 0) + 1)
+      }
+      return { labels: [...counts].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)) }
     })
     .get('/api/links/broken', ({ services, principal }) => {
       requirePageRead(principal)
-      return { links: services.pages.brokenLinks() }
+      const readable = new Set(services.pages.list().filter((page) => canReadPage(principal, page.path) && canSeePage(principal, page)).map((page) => page.path))
+      return { links: services.pages.brokenLinks().filter((link) => readable.has(link.path)) }
     })
     .get('/api/changes', ({ query, services, principal }) => {
       requirePageRead(principal)
       return {
         changes: services.pages
-          .recentChanges(query.limit, query.before)
-          .filter((change) => canReadPage(principal, change.path)),
+          .recentChanges(query.limit, query.before, (path) => canReadPage(principal, path)),
       }
     }, {
       query: t.Object({
@@ -262,7 +272,7 @@ export const createPageRoutes = ({
       '/api/page/share',
       ({ body, services, principal }) => {
         const share = unwrap(services.shares.create(body, principal))
-        audit(logger, 'page.share.create', { userId: principal?.id ?? null, path: share.path, token: share.token })
+        audit(logger, 'page.share.create', { userId: principal?.id ?? null, path: share.path, shareId: shareTokenAuditId(share.token) })
         return { share }
       },
       {
@@ -276,7 +286,7 @@ export const createPageRoutes = ({
       '/api/page/share/:token',
       ({ params, services, principal }) => {
         const share = unwrap(services.shares.revoke(params.token, principal))
-        audit(logger, 'page.share.revoke', { userId: principal?.id ?? null, path: share.path, token: share.token })
+        audit(logger, 'page.share.revoke', { userId: principal?.id ?? null, path: share.path, shareId: shareTokenAuditId(share.token) })
         return { share }
       },
       { params: t.Object({ token: t.String({ minLength: 16 }) }) },
@@ -290,7 +300,7 @@ export const createPageRoutes = ({
       '/api/page/backlinks',
       ({ query, services, principal }) => {
         requirePageRead(principal, query.path)
-        const visible = new Set(services.pages.list().filter((page) => canSeePage(principal, page)).map((page) => page.path))
+        const visible = new Set(services.pages.list().filter((page) => canReadPage(principal, page.path) && canSeePage(principal, page)).map((page) => page.path))
         return { backlinks: services.pages.backlinks(query.path).filter((link) => visible.has(link.path)) }
       },
       { query: t.Object({ path: t.String() }) },

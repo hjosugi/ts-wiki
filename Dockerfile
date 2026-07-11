@@ -1,4 +1,4 @@
-FROM docker.io/oven/bun:1.3 AS deps
+FROM docker.io/oven/bun:1.3.14 AS deps
 
 WORKDIR /app
 
@@ -20,7 +20,7 @@ COPY . .
 RUN cd apps/web && node ../../node_modules/vite/bin/vite.js build
 RUN bun --filter '@kawaii-wiki/server' typecheck
 
-FROM docker.io/oven/bun:1.3-slim AS runtime
+FROM docker.io/oven/bun:1.3.14-slim AS runtime
 
 WORKDIR /app
 
@@ -40,7 +40,14 @@ COPY --from=build /app/packages/core ./packages/core
 COPY --from=build /app/apps/server ./apps/server
 COPY --from=build /app/apps/web/dist ./apps/web/dist
 
+RUN mkdir -p /data && chown -R bun:bun /data /app
+
 EXPOSE 4000
 VOLUME ["/data"]
+
+USER bun
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["bun", "-e", "const r=await fetch('http://127.0.0.1:4000/api/health');if(!r.ok)process.exit(1)"]
 
 CMD ["bun", "apps/server/src/index.ts"]

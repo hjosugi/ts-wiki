@@ -1,33 +1,24 @@
 <script setup lang="ts">
 import { friendlyError } from '@/lib/friendlyErrors'
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { Api, type AdminStats, type AdminUserView } from '@/lib/api'
 import { useAuth } from '@/stores/auth'
 import Skeleton from '@/components/Skeleton.vue'
 import { useDialogs } from '@/composables/useDialogs'
+import { useAsyncData } from '@/composables/useAsyncData'
 
 const auth = useAuth()
 const dialogs = useDialogs()
 const users = ref<AdminUserView[]>([])
 const stats = ref<AdminStats | null>(null)
-const loading = ref(false)
-const error = ref<string | null>(null)
 const ROLES = ['admin', 'editor', 'viewer'] as const
 type RoleName = (typeof ROLES)[number]
 
-async function load(): Promise<void> {
-  loading.value = true
-  error.value = null
-  try {
-    const [nextUsers, nextStats] = await Promise.all([Api.adminUsers(), Api.adminStats()])
-    users.value = nextUsers
-    stats.value = nextStats
-  } catch (e) {
-    error.value = friendlyError(e)
-  } finally {
-    loading.value = false
-  }
-}
+const { loading, error, reload: load } = useAsyncData(async () => {
+  const [nextUsers, nextStats] = await Promise.all([Api.adminUsers(), Api.adminStats()])
+  users.value = nextUsers
+  stats.value = nextStats
+})
 
 async function changeRole(user: AdminUserView, role: RoleName): Promise<void> {
   if (role === user.role) return
@@ -82,7 +73,6 @@ async function deactivateUser(user: AdminUserView): Promise<void> {
   }
 }
 
-onMounted(load)
 </script>
 
 <template>

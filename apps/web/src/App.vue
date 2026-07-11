@@ -38,8 +38,10 @@ onBeforeUnmount(() => {
   window.removeEventListener('open-mobile-navigation', openMobileNavigation)
 })
 watch(shelllessLayout, refreshPagesForWikiLayout)
-watch(() => route.fullPath, async () => {
+watch(() => route.fullPath, () => {
   mobileNavOpen.value = false
+})
+watch(() => route.path, async () => {
   await nextTick()
   mainEl.value?.focus({ preventScroll: true })
 })

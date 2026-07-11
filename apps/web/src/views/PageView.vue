@@ -2,7 +2,7 @@
 import { friendlyError } from '@/lib/friendlyErrors'
 import { ref, watch, computed, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Api, type AssetView, type Page, type PageBacklink } from '@/lib/api'
+import { Api, ApiClientError, type AssetView, type Page, type PageBacklink } from '@/lib/api'
 import { paramToPath } from '@/router'
 import { useAuth } from '@/stores/auth'
 import { onWikiEvent } from '@/lib/realtime'
@@ -35,6 +35,7 @@ const graph = ref<PageGraph>({ nodes: [], edges: [] })
 const backlinks = ref<PageBacklink[]>([])
 const attachments = ref<AssetView[]>([])
 const error = ref<string | null>(null)
+const missing = ref(false)
 const loading = ref(false)
 const redirectedFrom = ref<string[]>([])
 const homePath = ref('home')
@@ -60,6 +61,7 @@ async function refreshPage(options: { showLoading: boolean; clearBefore?: boolea
   if (options.showLoading) loading.value = true
   if (options.clearBefore) {
     error.value = null
+    missing.value = false
     page.value = null
     graph.value = { nodes: [], edges: [] }
     backlinks.value = []
@@ -68,26 +70,32 @@ async function refreshPage(options: { showLoading: boolean; clearBefore?: boolea
   }
   try {
     const result = await Api.getPageResult(path.value)
-    const [nextGraph, nextBacklinks, nextUsage] = await Promise.all([
-      Api.graph().catch((): PageGraph => ({ nodes: [], edges: [] })),
-      Api.backlinks(result.page.path).catch(() => []),
-      Api.assetUsage(result.page.path).catch(() => []),
-    ])
+    const loadGraph = options.showLoading && typeof window !== 'undefined' && Boolean(window.matchMedia?.('(min-width: 1280px)').matches)
+    const [nextGraph, nextBacklinks, nextUsage] = options.showLoading
+      ? await Promise.all([
+          loadGraph ? Api.graph().catch((): PageGraph => ({ nodes: [], edges: [] })) : Promise.resolve({ nodes: [], edges: [] } as PageGraph),
+          Api.backlinks(result.page.path).catch(() => []),
+          Api.assetUsage(result.page.path).catch(() => []),
+        ])
+      : [graph.value, backlinks.value, []]
     page.value = result.page
+    missing.value = false
     graph.value = nextGraph
     backlinks.value = nextBacklinks
-    attachments.value = attachmentsForPage(nextUsage, result.page.path)
+    if (options.showLoading) attachments.value = attachmentsForPage(nextUsage, result.page.path)
     setPageMeta(result.page)
     redirectedFrom.value = result.redirectedFrom.length ? [...result.redirectedFrom] : redirectedFrom.value
     if (result.redirectedFrom.length && result.page.path !== path.value) {
       await router.replace({ path: `/${result.page.path}`, query: { redirectedFrom: result.redirectedFrom[0] } })
     }
   } catch (e) {
+    if (!options.showLoading) return
     page.value = null
     graph.value = { nodes: [], edges: [] }
     backlinks.value = []
     attachments.value = []
-    if (options.showLoading) error.value = friendlyError(e)
+    missing.value = e instanceof ApiClientError && e.kind === 'not_found'
+    error.value = missing.value ? null : friendlyError(e)
   } finally {
     if (options.showLoading) loading.value = false
   }
@@ -193,8 +201,14 @@ onUnmounted(stopRealtime)
     </aside>
   </div>
 
+  <section v-else-if="error" class="card mx-auto max-w-xl p-6 text-center">
+    <h1 class="text-lg font-semibold">{{ t('couldNotLoadPage') }}</h1>
+    <p class="mt-2 text-sm text-[var(--c-text-muted)]">{{ error }}</p>
+    <button class="btn-primary mt-4" type="button" @click="refreshPage({ showLoading: true })">{{ t('retry') }}</button>
+  </section>
+
   <EmptyState
-    v-else
+    v-else-if="missing"
     :title="t('thisPageMissing')"
     :message="`/${path}`"
   >
@@ -204,6 +218,5 @@ onUnmounted(stopRealtime)
       </RouterLink>
       <RouterLink v-else to="/_login" class="btn-ghost">{{ t('signInCreate') }}</RouterLink>
     </template>
-    <p v-if="error" class="text-xs text-[var(--c-text-muted)] mt-4">{{ error }}</p>
   </EmptyState>
 </template>

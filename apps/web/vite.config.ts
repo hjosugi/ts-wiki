@@ -8,6 +8,13 @@ export default defineConfig({
   base: '/ui/',
   plugins: [vue(), UnoCSS({ ...unoConfig, configFile: false })],
   resolve: {
+    dedupe: [
+      '@codemirror/state',
+      '@codemirror/view',
+      '@codemirror/language',
+      '@codemirror/autocomplete',
+      '@lezer/common',
+    ],
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
       // Consume the core package as TypeScript source so Vite transpiles it.

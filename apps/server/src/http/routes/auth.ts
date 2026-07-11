@@ -6,7 +6,6 @@ import {
   type Role,
   unauthorized,
 } from '@kawaii-wiki/core'
-import type { Env } from '../../env.ts'
 import type { Services } from '../../services/index.ts'
 import type { User } from '../../db/schema.ts'
 import {
@@ -28,6 +27,7 @@ interface JwtSigner {
 }
 
 const MFA_SETUP_TOKEN_TTL_SECONDS = 10 * 60
+const DUMMY_PASSWORD_HASH = '$2b$10$PSYytLzRuphaANMsomVtoeDEA6h2rM8oAmCeA8xKwnAbmbEE6OkXO'
 
 const base64UrlString = t.String({ minLength: 1 })
 const credentialType = t.Literal('public-key')
@@ -75,9 +75,8 @@ const authenticationResponse = t.Object({
 })
 
 export interface AuthRoutesContext {
-  readonly env: Env
   readonly authPolicy: () => {
-    readonly registration: Env['auth']['registration']
+    readonly registration: 'open' | 'off'
     readonly requireEmailVerification: boolean
     readonly requireTwoFactor: boolean
     readonly tokenTtlSeconds: number
@@ -98,7 +97,6 @@ export interface AuthRoutesContext {
 }
 
 export const createAuthRoutes = ({
-  env,
   authPolicy,
   logger,
   enforceAuthLimit,
@@ -231,7 +229,8 @@ export const createAuthRoutes = ({
 	        async ({ body, services, jwt, request, server, set }) => {
 	          enforceAuthLimit(request, server, 'login')
 	          const user = services.users.findByEmail(body.email)
-	          if (!user || !(await verifyPassword(body.password, user.passwordHash))) {
+              const passwordMatches = await verifyPassword(body.password, user?.passwordHash ?? DUMMY_PASSWORD_HASH)
+	          if (!user || !passwordMatches) {
 	            throw new HttpError(unauthorized('Invalid email or password'))
 	          }
 	          if (!isUserActive(user)) throw new HttpError(unauthorized('Account is deactivated'))
@@ -239,8 +238,11 @@ export const createAuthRoutes = ({
 	          if (policy.requireEmailVerification && user.emailVerifiedAt === null) {
 	            throw new HttpError(unauthorized('Email verification required'))
 	          }
-	          if (policy.requireTwoFactor && !user.totpEnabled && !services.passkeys.hasForUser(user.id)) {
+	          if (policy.requireTwoFactor && !user.totpEnabled) {
 	            audit(logger, 'auth.2fa.enforce', { userId: user.id })
+                if (services.passkeys.hasForUser(user.id)) {
+                  throw new HttpError(unauthorized('Passkey authentication is required for this account'))
+                }
 	            set.status = 202
 	            return {
 	              twoFactorSetupRequired: true as const,

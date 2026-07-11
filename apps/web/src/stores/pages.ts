@@ -5,6 +5,7 @@ import { Api, type PageSummary } from '@/lib/api'
 /** Holds the page list shown in the sidebar; refreshed after edits/deletes. */
 export const usePages = defineStore('pages', () => {
   const list = ref<PageSummary[]>([])
+  let refreshTimer: ReturnType<typeof setTimeout> | null = null
 
   async function refresh(): Promise<void> {
     try {
@@ -14,5 +15,13 @@ export const usePages = defineStore('pages', () => {
     }
   }
 
-  return { list, refresh }
+  function scheduleRefresh(delayMs = 400): void {
+    if (refreshTimer) clearTimeout(refreshTimer)
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null
+      void refresh()
+    }, delayMs)
+  }
+
+  return { list, refresh, scheduleRefresh }
 })
