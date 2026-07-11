@@ -1,7 +1,11 @@
 import type { AppError, PageStatus, Principal, Result } from '@kawaii-wiki/core'
 import type { DB } from '../db/client.ts'
-import type { AutomationRule, WebhookDelivery } from '../db/schema.ts'
-import type { WebhookSubscriptionRepository } from '../repositories/webhooks.ts'
+import type { AutomationRule } from '../db/schema.ts'
+import type {
+  WebhookDeliveryRepository,
+  WebhookDeliveryStatus as WebhookDeliveryStatusValue,
+  WebhookSubscriptionRepository,
+} from '../repositories/webhooks.ts'
 import { createAutomationRules } from './webhooks/automation.ts'
 import { createWebhookDelivery, type WebhookDeliveryPolicy } from './webhooks/delivery.ts'
 import { defaultFetcher, defaultResolver } from './webhooks/shared.ts'
@@ -15,7 +19,7 @@ export interface WebhookFetchTarget {
 export type WebhookFetcher = (url: string, init: RequestInit, target?: WebhookFetchTarget) => Promise<Response>
 export type WebhookHostnameResolver = (hostname: string) => Promise<readonly string[]>
 
-export type WebhookDeliveryStatus = WebhookDelivery['status']
+export type WebhookDeliveryStatus = WebhookDeliveryStatusValue
 export type AutomationRuleType = AutomationRule['type']
 export type AutomationTrigger = 'page.created' | 'page.updated' | 'page.deleted' | 'page.moved' | 'comment.created'
 
@@ -179,6 +183,7 @@ export interface WebhookServiceOptions {
 export const createWebhookService = (
   db: DB,
   subscriptionRepository: WebhookSubscriptionRepository,
+  deliveryRepository: WebhookDeliveryRepository,
   options: WebhookServiceOptions = {},
 ): WebhookService => {
   const fetcher = options.fetcher ?? defaultFetcher
@@ -188,7 +193,7 @@ export const createWebhookService = (
 
   const subscriptions = createWebhookSubscriptions(subscriptionRepository, { allowPrivateTargets, now })
   const automation = createAutomationRules(db, { now, pageService: options.pageService })
-  const delivery = createWebhookDelivery(db, {
+  const delivery = createWebhookDelivery(deliveryRepository, {
     fetcher,
     resolver,
     allowPrivateTargets,

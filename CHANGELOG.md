@@ -3,6 +3,23 @@
 All notable changes are documented here. This project follows Semantic
 Versioning; API compatibility details are in `docs/API.md`.
 
+## [1.0.24] - 2026-07-12
+
+### Changed
+
+- Moved webhook delivery lookup, enqueue, state updates, status-filtered
+  listing, and due-retry selection behind an asynchronous driver-neutral
+  repository.
+- Removed database, schema, and Drizzle imports from the webhook delivery
+  service while preserving signed delivery, redirect validation, retry policy,
+  and response-size limits.
+
+### Tests
+
+- Added shared SQLite and libSQL webhook delivery contract coverage for
+  ordering, status filters, due selection, attempt limits, updates, and missing
+  lookups.
+
 ## [1.0.23] - 2026-07-12
 
 ### Changed

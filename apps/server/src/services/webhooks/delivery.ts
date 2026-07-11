@@ -1,10 +1,11 @@
 import { createHmac } from 'node:crypto'
 import { isIP } from 'node:net'
-import { asc, desc, eq, lte } from 'drizzle-orm'
 import { err, notFound, ok, requirePermission, validationError } from '@kawaii-wiki/core'
-import type { DB } from '../../db/client.ts'
-import { webhookDeliveries, type WebhookDelivery } from '../../db/schema.ts'
-import type { WebhookSubscriptionRecord } from '../../repositories/webhooks.ts'
+import type {
+  WebhookDeliveryRecord,
+  WebhookDeliveryRepository,
+  WebhookSubscriptionRecord,
+} from '../../repositories/webhooks.ts'
 import type {
   WebhookDeliveryView,
   WebhookFetcher,
@@ -136,7 +137,7 @@ export interface WebhookDeliveryService {
 }
 
 export const createWebhookDelivery = (
-  db: DB,
+  repository: WebhookDeliveryRepository,
   {
     fetcher,
     resolver,
@@ -147,10 +148,9 @@ export const createWebhookDelivery = (
   }: WebhookDeliveryOptions,
 ): WebhookDeliveryService => {
   const policy = normalizePolicy(inputPolicy)
-  const findDelivery = (id: string): WebhookDelivery | null =>
-    db.select().from(webhookDeliveries).where(eq(webhookDeliveries.id, id)).get() ?? null
+  const findDelivery = (id: string) => repository.findById(id)
 
-  const toDeliveryView = async (row: WebhookDelivery): Promise<WebhookDeliveryView> => ({
+  const toDeliveryView = async (row: WebhookDeliveryRecord): Promise<WebhookDeliveryView> => ({
     id: row.id,
     subscriptionId: row.subscriptionId,
     subscriptionName: (await findSubscription(row.subscriptionId))?.name ?? null,
@@ -167,7 +167,7 @@ export const createWebhookDelivery = (
     deliveredAt: row.deliveredAt,
   })
 
-  const deliver = async (delivery: WebhookDelivery, subscription: WebhookSubscriptionRecord): Promise<WebhookDeliveryView> => {
+  const deliver = async (delivery: WebhookDeliveryRecord, subscription: WebhookSubscriptionRecord): Promise<WebhookDeliveryView> => {
     const startedAt = now()
     const attempts = delivery.attempts + 1
     const timestamp = String(startedAt)
@@ -193,8 +193,7 @@ export const createWebhookDelivery = (
       }, fetcher, resolver, allowPrivateTargets)
       const responseBody = await readLimitedResponseText(response, policy.maxResponseBytes).catch(() => '')
       const updatedAt = now()
-      db.update(webhookDeliveries)
-        .set({
+      await repository.update(delivery.id, {
           status: response.ok ? 'succeeded' : 'failed',
           attempts,
           nextAttemptAt: response.ok ? null : retryAt(updatedAt, attempts, policy),
@@ -203,13 +202,10 @@ export const createWebhookDelivery = (
           error: response.ok ? null : truncate(response.statusText || `HTTP ${response.status}`, policy.maxErrorBytes),
           updatedAt,
           deliveredAt: response.ok ? updatedAt : null,
-        })
-        .where(eq(webhookDeliveries.id, delivery.id))
-        .run()
+      })
     } catch (error) {
       const updatedAt = now()
-      db.update(webhookDeliveries)
-        .set({
+      await repository.update(delivery.id, {
           status: 'failed',
           attempts,
           nextAttemptAt: retryAt(updatedAt, attempts, policy),
@@ -218,19 +214,17 @@ export const createWebhookDelivery = (
           error: errorMessage(error, policy.maxErrorBytes),
           updatedAt,
           deliveredAt: null,
-        })
-        .where(eq(webhookDeliveries.id, delivery.id))
-        .run()
+      })
     }
 
-    const persisted = findDelivery(delivery.id)
+    const persisted = await findDelivery(delivery.id)
     if (!persisted) throw new Error(`Webhook delivery ${delivery.id} disappeared while it was being processed`)
     return await toDeliveryView(persisted)
   }
 
-  const enqueue = (subscription: WebhookSubscriptionRecord, payload: WebhookPayload): WebhookDelivery => {
+  const enqueue = async (subscription: WebhookSubscriptionRecord, payload: WebhookPayload): Promise<WebhookDeliveryRecord> => {
     const createdAt = now()
-    const delivery: WebhookDelivery = {
+    const delivery: WebhookDeliveryRecord = {
       id: crypto.randomUUID(),
       subscriptionId: subscription.id,
       eventId: payload.id,
@@ -246,65 +240,42 @@ export const createWebhookDelivery = (
       updatedAt: createdAt,
       deliveredAt: null,
     }
-    db.insert(webhookDeliveries).values(delivery).run()
+    await repository.insert(delivery)
     return delivery
   }
 
   return {
     async publish(payload, subscriptions) {
-      return await Promise.all(subscriptions.map((subscription) => toDeliveryView(enqueue(subscription, payload))))
+      return await Promise.all(subscriptions.map(async (subscription) => toDeliveryView(await enqueue(subscription, payload))))
     },
 
     async listDeliveries(principal, filters = {}) {
       const allowed = requirePermission(principal, 'automation:manage')
       if (!allowed.ok) return allowed
       const limit = Math.max(1, Math.min(filters.limit ?? 100, 500))
-      const rows = filters.status
-        ? db
-            .select()
-            .from(webhookDeliveries)
-            .where(eq(webhookDeliveries.status, filters.status))
-            .orderBy(desc(webhookDeliveries.createdAt))
-            .limit(limit)
-            .all()
-        : db
-            .select()
-            .from(webhookDeliveries)
-            .orderBy(desc(webhookDeliveries.createdAt))
-            .limit(limit)
-            .all()
+      const rows = await repository.list(filters.status, limit)
       return ok(await Promise.all(rows.map(toDeliveryView)))
     },
 
     async retryDelivery(principal, id) {
       const allowed = requirePermission(principal, 'automation:manage')
       if (!allowed.ok) return allowed
-      const delivery = findDelivery(id)
+      const delivery = await findDelivery(id)
       if (!delivery) return err(notFound('Webhook delivery not found'))
       const subscription = await findSubscription(delivery.subscriptionId)
       if (!subscription) return err(notFound('Webhook subscription not found'))
       if (!subscription.enabled) return err(validationError('Webhook subscription is disabled', 'subscriptionId'))
 
       const updatedAt = now()
-      db.update(webhookDeliveries)
-        .set({ status: 'pending', nextAttemptAt: updatedAt, error: null, updatedAt })
-        .where(eq(webhookDeliveries.id, id))
-        .run()
-      const queued = findDelivery(id)
+      await repository.update(id, { status: 'pending', nextAttemptAt: updatedAt, error: null, updatedAt })
+      const queued = await findDelivery(id)
       if (!queued) return err(notFound('Webhook delivery not found after queueing'))
       return ok(await deliver(queued, subscription))
     },
 
     async processDueDeliveries(limit = 25) {
       const dueAt = now()
-      const rows = db
-        .select()
-        .from(webhookDeliveries)
-        .where(lte(webhookDeliveries.nextAttemptAt, dueAt))
-        .orderBy(asc(webhookDeliveries.nextAttemptAt))
-        .limit(Math.max(1, Math.min(limit, 100)))
-        .all()
-        .filter((delivery) => delivery.status !== 'succeeded' && delivery.attempts < policy.maxAttempts)
+      const rows = await repository.listDue(dueAt, Math.max(1, Math.min(limit, 100)), policy.maxAttempts)
 
       const tasks: Array<Promise<WebhookDeliveryView>> = []
       for (const delivery of rows) {

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { Principal } from '@kawaii-wiki/core'
 import { createDb } from '../db/client.ts'
 import { createSqliteWebhookSubscriptionRepository } from '../db/repositories/webhook-subscriptions.ts'
+import { createSqliteWebhookDeliveryRepository } from '../db/repositories/webhook-deliveries.ts'
 import { createWebhookService, type WebhookFetcher } from './webhooks.ts'
 
 const admin: Principal = { id: 'admin-1', role: 'admin' }
@@ -21,12 +22,17 @@ describe('webhook service', () => {
         : new Response('ok', { status: 200 })
     }
     const db = createDb(':memory:')
-    const webhooks = createWebhookService(db, createSqliteWebhookSubscriptionRepository(db), {
+    const webhooks = createWebhookService(
+      db,
+      createSqliteWebhookSubscriptionRepository(db),
+      createSqliteWebhookDeliveryRepository(db),
+      {
       now: () => now,
       fetcher,
       resolver: async () => ['93.184.216.34'],
       policy: { maxAttempts: 2, backoffMs: [250], maxResponseBytes: 64, maxErrorBytes: 64 },
-    })
+      },
+    )
 
     const subscription = await webhooks.createSubscription(admin, {
       name: 'Deploy hook',

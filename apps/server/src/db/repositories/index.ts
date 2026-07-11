@@ -31,8 +31,9 @@ import type { CommentRepository } from '../../repositories/comments.ts'
 import { createSqliteCommentRepository } from './comments.ts'
 import type { AdminRepository } from '../../repositories/admin.ts'
 import { createSqliteAdminRepository } from './admin.ts'
-import type { WebhookSubscriptionRepository } from '../../repositories/webhooks.ts'
+import type { WebhookDeliveryRepository, WebhookSubscriptionRepository } from '../../repositories/webhooks.ts'
 import { createSqliteWebhookSubscriptionRepository } from './webhook-subscriptions.ts'
+import { createSqliteWebhookDeliveryRepository } from './webhook-deliveries.ts'
 
 /**
  * Repository composition boundary for the active database driver.
@@ -58,6 +59,7 @@ export interface DatabaseRepositories {
   readonly comments: CommentRepository
   readonly admin: AdminRepository
   readonly webhookSubscriptions: WebhookSubscriptionRepository
+  readonly webhookDeliveries: WebhookDeliveryRepository
 }
 
 export const createDatabaseRepositories = (db: DB): DatabaseRepositories => ({
@@ -78,4 +80,5 @@ export const createDatabaseRepositories = (db: DB): DatabaseRepositories => ({
   comments: createSqliteCommentRepository(db),
   admin: createSqliteAdminRepository(db),
   webhookSubscriptions: createSqliteWebhookSubscriptionRepository(db),
+  webhookDeliveries: createSqliteWebhookDeliveryRepository(db),
 })
