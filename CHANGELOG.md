@@ -3,6 +3,23 @@
 All notable changes are documented here. This project follows Semantic
 Versioning; API compatibility details are in `docs/API.md`.
 
+## [1.0.15] - 2026-07-12
+
+### Changed
+
+- Moved TOTP user-factor and recovery-code persistence behind an asynchronous,
+  driver-neutral repository and removed database/schema imports from the TOTP
+  service.
+- Made TOTP enablement plus recovery-code issuance atomic, and kept recovery
+  codes single-use through compare-and-set consumption.
+- Converted TOTP setup and disable HTTP call chains to await remote-capable
+  persistence.
+
+### Tests
+
+- Added shared SQLite and libSQL TOTP contract coverage for secret setup,
+  atomic enablement, recovery-code replacement/consumption, and disable cleanup.
+
 ## [1.0.14] - 2026-07-12
 
 ### Changed

@@ -338,7 +338,7 @@ export const createAuthRoutes = ({
 	        enforceCredentialLimit(request, server, 'totp-setup', principal)
 	        const user = await userForTotpEnrollment(jwt, principal, services, body?.setupToken)
 	        if (!user) throw new HttpError(unauthorized())
-	        return unwrap(services.totp.setup(user))
+	        return unwrap(await services.totp.setup(user))
 	      }, { body: t.Optional(t.Object({ setupToken: t.Optional(t.String()) })) })
 	      .post(
 	        '/api/auth/totp/enable',
@@ -379,7 +379,7 @@ export const createAuthRoutes = ({
           if (!principal) throw new HttpError(unauthorized())
           const user = await services.users.findById(principal.id)
           if (!user) throw new HttpError(unauthorized())
-          const updated = unwrap(services.totp.disable(user, body.code))
+          const updated = unwrap(await services.totp.disable(user, body.code))
           audit(logger, 'auth.totp.disable', { userId: user.id })
           return { user: publicUser(updated) }
         },
