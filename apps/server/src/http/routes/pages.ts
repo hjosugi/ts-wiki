@@ -76,7 +76,7 @@ export const createPageRoutes = ({
           .map((page) => [page.path, page]),
       )
       return {
-        pages: services.analytics.popular(query.days, query.limit).flatMap((insight) => {
+        pages: (await services.analytics.popular(query.days, query.limit)).flatMap((insight) => {
           const page = readable.get(insight.path)
           return page ? [{ ...page, views: insight.views, lastViewedAt: insight.lastViewedAt }] : []
         }),
@@ -262,7 +262,7 @@ export const createPageRoutes = ({
         await requirePageRead(principal, query.path)
         const page = unwrap(services.pages.getByPath(query.path))
         return {
-          ...services.analytics.page(page.path),
+          ...await services.analytics.page(page.path),
           ...unwrap(services.pages.revisionInsights(page.path)),
         }
       },

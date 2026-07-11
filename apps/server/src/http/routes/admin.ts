@@ -123,7 +123,7 @@ export const createAdminRoutes = ({
         to: t.Optional(t.Numeric()),
       }),
     })
-    .get('/api/admin/analytics', ({ services, principal }) => unwrap(services.analytics.summary(principal)))
+    .get('/api/admin/analytics', async ({ services, principal }) => unwrap(await services.analytics.summary(principal)))
     .put(
       '/api/admin/settings',
       ({ body, services, principal }) => ({ settings: unwrap(services.settings.update(principal, body)) }),

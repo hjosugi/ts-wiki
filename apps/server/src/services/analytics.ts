@@ -1,7 +1,5 @@
-import { desc, eq, gte, sql } from 'drizzle-orm'
 import { type AppError, type Principal, type Result, ok, requirePermission } from '@kawaii-wiki/core'
-import type { DB } from '../db/client.ts'
-import { pageAnalytics } from '../db/schema.ts'
+import type { AnalyticsRepository } from '../repositories/analytics.ts'
 import { unrefTimer } from '../utils/timers.ts'
 
 export interface PageInsight {
@@ -17,37 +15,27 @@ export interface AnalyticsSummary {
 
 export interface AnalyticsService {
   recordPageView(path: string, principal: Principal | null): Result<void, AppError>
-  page(path: string): PageInsight
-  summary(principal: Principal | null, limit?: number): Result<AnalyticsSummary, AppError>
-  popular(days?: number, limit?: number): PageInsight[]
-  flush(): void
+  page(path: string): Promise<PageInsight>
+  summary(principal: Principal | null, limit?: number): Promise<Result<AnalyticsSummary, AppError>>
+  popular(days?: number, limit?: number): Promise<PageInsight[]>
+  flush(): Promise<void>
 }
 
-export const createAnalyticsService = (db: DB): AnalyticsService => {
+export const createAnalyticsService = (repository: AnalyticsRepository): AnalyticsService => {
   const pending = new Map<string, { views: number; lastViewedAt: number }>()
   let flushTimer: ReturnType<typeof setTimeout> | null = null
-  const upsert = db.$client.prepare(`
-    INSERT INTO page_analytics(path, views, last_viewed_at)
-    VALUES (?, ?, ?)
-    ON CONFLICT(path) DO UPDATE SET
-      views = views + excluded.views,
-      last_viewed_at = excluded.last_viewed_at
-  `)
-
-  const flush = (): void => {
+  const flush = async (): Promise<void> => {
     if (flushTimer) clearTimeout(flushTimer)
     flushTimer = null
-    const batch = [...pending.entries()]
+    const batch = [...pending.entries()].map(([path, value]) => ({ path, ...value }))
     pending.clear()
     if (!batch.length) return
-    db.transaction(() => {
-      for (const [path, value] of batch) upsert.run(path, value.views, value.lastViewedAt)
-    })
+    await repository.incrementBatch(batch)
   }
 
-  const flushBestEffort = (): void => {
+  const flushBestEffort = async (): Promise<void> => {
     try {
-      flush()
+      await flush()
     } catch {
       // A buffered view is intentionally lossy. In particular, an application
       // instance may have shut down and closed its database before this timer.
@@ -56,7 +44,7 @@ export const createAnalyticsService = (db: DB): AnalyticsService => {
 
   const scheduleFlush = (): void => {
     if (flushTimer) return
-    flushTimer = setTimeout(flushBestEffort, 1_000)
+    flushTimer = setTimeout(() => void flushBestEffort(), 1_000)
     unrefTimer(flushTimer)
   }
 
@@ -70,56 +58,25 @@ export const createAnalyticsService = (db: DB): AnalyticsService => {
       scheduleFlush()
       return ok(undefined)
     },
-    page(path) {
-      const persisted = db
-        .select({
-          path: pageAnalytics.path,
-          views: pageAnalytics.views,
-          lastViewedAt: pageAnalytics.lastViewedAt,
-        })
-        .from(pageAnalytics)
-        .where(eq(pageAnalytics.path, path))
-        .get() ?? { path, views: 0, lastViewedAt: null }
+    async page(path) {
+      const persisted = await repository.find(path) ?? { path, views: 0, lastViewedAt: null }
       const buffered = pending.get(path)
       return buffered
         ? { path, views: persisted.views + buffered.views, lastViewedAt: buffered.lastViewedAt }
         : persisted
     },
-    summary(principal, limit = 10) {
+    async summary(principal, limit = 10) {
       const allowed = requirePermission(principal, 'admin:access')
       if (!allowed.ok) return allowed
-      flush()
-      const totalViews =
-        db.select({ total: sql<number>`coalesce(sum(${pageAnalytics.views}), 0)` }).from(pageAnalytics).get()
-          ?.total ?? 0
-      const topPages = db
-        .select({
-          path: pageAnalytics.path,
-          views: pageAnalytics.views,
-          lastViewedAt: pageAnalytics.lastViewedAt,
-        })
-        .from(pageAnalytics)
-        .orderBy(desc(pageAnalytics.views), desc(pageAnalytics.lastViewedAt))
-        .limit(limit)
-        .all()
-      return ok({ totalViews, topPages })
+      await flush()
+      return ok(await repository.summary(limit))
     },
-    popular(days = 7, limit = 10) {
-      flush()
+    async popular(days = 7, limit = 10) {
+      await flush()
       const cappedDays = Math.min(Math.max(Math.trunc(days), 1), 365)
       const cappedLimit = Math.min(Math.max(Math.trunc(limit), 1), 50)
       const cutoff = Date.now() - cappedDays * 24 * 60 * 60 * 1000
-      return db
-        .select({
-          path: pageAnalytics.path,
-          views: pageAnalytics.views,
-          lastViewedAt: pageAnalytics.lastViewedAt,
-        })
-        .from(pageAnalytics)
-        .where(gte(pageAnalytics.lastViewedAt, cutoff))
-        .orderBy(desc(pageAnalytics.views), desc(pageAnalytics.lastViewedAt))
-        .limit(cappedLimit)
-        .all()
+      return repository.popular(cutoff, cappedLimit)
     },
     flush,
   }

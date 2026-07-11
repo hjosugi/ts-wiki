@@ -3,6 +3,23 @@
 All notable changes are documented here. This project follows Semantic
 Versioning; API compatibility details are in `docs/API.md`.
 
+## [1.0.18] - 2026-07-12
+
+### Changed
+
+- Moved page-view analytics increments, lookup, summary, and popularity queries
+  behind an asynchronous driver-neutral repository.
+- Preserved buffered view aggregation while converting flush, page insight,
+  admin summary, and popular-page call chains to await remote-capable
+  persistence.
+- Replaced the page-view helper's database schema type with the shared
+  driver-neutral page record contract.
+
+### Tests
+
+- Added shared SQLite and libSQL analytics contract coverage for atomic batch
+  increments, totals, ranking, cutoffs, and deterministic limits.
+
 ## [1.0.17] - 2026-07-12
 
 ### Changed
