@@ -3,6 +3,24 @@
 All notable changes are documented here. This project follows Semantic
 Versioning; API compatibility details are in `docs/API.md`.
 
+## [1.0.16] - 2026-07-12
+
+### Changed
+
+- Moved API-key listing, lookup, creation, revocation, and usage tracking behind
+  an asynchronous, driver-neutral repository and removed database/schema
+  imports from the API-key service.
+- Made API-key revocation idempotent and guarded usage timestamps with an
+  active-and-unexpired conditional update so a concurrent revocation cannot
+  authenticate a stale lookup.
+- Converted API-key administration HTTP routes to await remote-capable
+  persistence.
+
+### Tests
+
+- Added shared SQLite and libSQL API-key contract coverage for ordered listing,
+  hash lookup, duplicate normalization, usage tracking, expiry, and revocation.
+
 ## [1.0.15] - 2026-07-12
 
 ### Changed

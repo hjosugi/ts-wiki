@@ -17,6 +17,8 @@ import type { PasskeyRepository } from '../../repositories/passkeys.ts'
 import { createSqlitePasskeyRepository } from './passkeys.ts'
 import type { TotpRepository } from '../../repositories/totp.ts'
 import { createSqliteTotpRepository } from './totp.ts'
+import type { ApiKeyRepository } from '../../repositories/api-keys.ts'
+import { createSqliteApiKeyRepository } from './api-keys.ts'
 
 /**
  * Repository composition boundary for the active database driver.
@@ -34,6 +36,7 @@ export interface DatabaseRepositories {
   readonly oidcStates: OidcStateRepository
   readonly passkeys: PasskeyRepository
   readonly totp: TotpRepository
+  readonly apiKeys: ApiKeyRepository
 }
 
 export const createDatabaseRepositories = (db: DB): DatabaseRepositories => ({
@@ -46,4 +49,5 @@ export const createDatabaseRepositories = (db: DB): DatabaseRepositories => ({
   oidcStates: createSqliteOidcStateRepository(db),
   passkeys: createSqlitePasskeyRepository(db),
   totp: createSqliteTotpRepository(db),
+  apiKeys: createSqliteApiKeyRepository(db),
 })

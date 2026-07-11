@@ -222,13 +222,13 @@ export const createAdminRoutes = ({
     .get('/api/admin/groups', async ({ services, principal }) => ({
       groups: unwrap(await services.authz.listGroups(principal)),
     }))
-    .get('/api/admin/api-keys', ({ services, principal }) => ({
-      apiKeys: unwrap(services.apiKeys.list(principal)),
+    .get('/api/admin/api-keys', async ({ services, principal }) => ({
+      apiKeys: unwrap(await services.apiKeys.list(principal)),
     }))
     .post(
       '/api/admin/api-keys',
-      ({ body, services, principal }) => {
-        const created = unwrap(services.apiKeys.create(principal, body))
+      async ({ body, services, principal }) => {
+        const created = unwrap(await services.apiKeys.create(principal, body))
         audit(logger, 'api-key.create', {
           userId: principal?.id ?? null,
           apiKeyId: created.apiKey.id,
@@ -247,8 +247,8 @@ export const createAdminRoutes = ({
     )
     .delete(
       '/api/admin/api-keys/:id',
-      ({ params, services, principal }) => {
-        const apiKey = unwrap(services.apiKeys.revoke(principal, params.id))
+      async ({ params, services, principal }) => {
+        const apiKey = unwrap(await services.apiKeys.revoke(principal, params.id))
         audit(logger, 'api-key.revoke', {
           userId: principal?.id ?? null,
           apiKeyId: apiKey.id,

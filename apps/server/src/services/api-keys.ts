@@ -1,5 +1,4 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { asc, eq } from 'drizzle-orm'
 import {
   type AppError,
   type Principal,
@@ -11,8 +10,7 @@ import {
   requirePermission,
   validationError,
 } from '@kawaii-wiki/core'
-import type { DB } from '../db/client.ts'
-import { apiKeys, type ApiKey } from '../db/schema.ts'
+import type { ApiKeyRecord, ApiKeyRepository } from '../repositories/api-keys.ts'
 import type { AuthzService } from './authz.ts'
 
 export const API_KEY_PREFIX = 'tswk_'
@@ -39,9 +37,9 @@ export interface CreateApiKeyInput {
 }
 
 export interface ApiKeyService {
-  list(principal: Principal | null): Result<ApiKeyView[], AppError>
-  create(principal: Principal | null, input: CreateApiKeyInput): Result<CreatedApiKey, AppError>
-  revoke(principal: Principal | null, id: string): Result<ApiKeyView, AppError>
+  list(principal: Principal | null): Promise<Result<ApiKeyView[], AppError>>
+  create(principal: Principal | null, input: CreateApiKeyInput): Promise<Result<CreatedApiKey, AppError>>
+  revoke(principal: Principal | null, id: string): Promise<Result<ApiKeyView, AppError>>
   resolve(secret: string | null | undefined): Promise<Principal | null>
 }
 
@@ -53,7 +51,7 @@ const hashApiKey = (secret: string): string =>
 const generateSecret = (): string =>
   `${API_KEY_PREFIX}${randomBytes(32).toString('base64url')}`
 
-const toView = (row: ApiKey): ApiKeyView => ({
+const toView = (row: ApiKeyRecord): ApiKeyView => ({
   id: row.id,
   name: row.name,
   role: row.role,
@@ -63,29 +61,23 @@ const toView = (row: ApiKey): ApiKeyView => ({
   createdAt: row.createdAt,
 })
 
-export const createApiKeyService = (db: DB, authz: AuthzService): ApiKeyService => {
-  const findById = (id: string): ApiKey | undefined =>
-    db.select().from(apiKeys).where(eq(apiKeys.id, id)).get()
-
-  const findByHash = (keyHash: string): ApiKey | undefined =>
-    db.select().from(apiKeys).where(eq(apiKeys.keyHash, keyHash)).get()
-
-  const uniqueSecret = (): string => {
+export const createApiKeyService = (repository: ApiKeyRepository, authz: AuthzService): ApiKeyService => {
+  const uniqueSecret = async (): Promise<string> => {
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const secret = generateSecret()
-      if (!findByHash(hashApiKey(secret))) return secret
+      if (!await repository.findByHash(hashApiKey(secret))) return secret
     }
     return `${API_KEY_PREFIX}${crypto.randomUUID().replace(/-/g, '')}${crypto.randomUUID().replace(/-/g, '')}`
   }
 
   return {
-    list(principal) {
+    async list(principal) {
       const allowed = requirePermission(principal, 'admin:access')
       if (!allowed.ok) return allowed
-      return ok(db.select().from(apiKeys).orderBy(asc(apiKeys.createdAt)).all().map(toView))
+      return ok((await repository.list()).map(toView))
     },
 
-    create(principal, input) {
+    async create(principal, input) {
       const allowed = requirePermission(principal, 'admin:access')
       if (!allowed.ok) return allowed
 
@@ -104,9 +96,9 @@ export const createApiKeyService = (db: DB, authz: AuthzService): ApiKeyService 
         }
       }
 
-      const secret = uniqueSecret()
+      const secret = await uniqueSecret()
       const now = Date.now()
-      const row: ApiKey = {
+      const row: ApiKeyRecord = {
         id: crypto.randomUUID(),
         name,
         keyHash: hashApiKey(secret),
@@ -116,30 +108,26 @@ export const createApiKeyService = (db: DB, authz: AuthzService): ApiKeyService 
         revokedAt: null,
         createdAt: now,
       }
-      db.insert(apiKeys).values(row).run()
+      await repository.insert(row)
       return ok({ apiKey: toView(row), secret })
     },
 
-    revoke(principal, id) {
+    async revoke(principal, id) {
       const allowed = requirePermission(principal, 'admin:access')
       if (!allowed.ok) return allowed
-      const row = findById(id)
+      const row = await repository.revoke(id, Date.now())
       if (!row) return err(notFound('API key not found'))
-      const revokedAt = row.revokedAt ?? Date.now()
-      if (row.revokedAt === null) {
-        db.update(apiKeys).set({ revokedAt }).where(eq(apiKeys.id, row.id)).run()
-      }
-      return ok(toView({ ...row, revokedAt }))
+      return ok(toView(row))
     },
 
     async resolve(secret) {
       if (!secret?.startsWith(API_KEY_PREFIX)) return null
-      const row = findByHash(hashApiKey(secret))
+      const row = await repository.findByHash(hashApiKey(secret))
       const now = Date.now()
       if (!row || row.revokedAt !== null || (row.expiresAt !== null && row.expiresAt <= now)) {
         return null
       }
-      db.update(apiKeys).set({ lastUsedAt: now }).where(eq(apiKeys.id, row.id)).run()
+      if (!await repository.markUsedIfActive(row.id, now)) return null
       return authz.principalForApiKey(row.id, row.role)
     },
   }
