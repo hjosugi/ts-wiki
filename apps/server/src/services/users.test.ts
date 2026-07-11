@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import type { Principal } from '@kawaii-wiki/core'
 import { createDb } from '../db/client.ts'
+import { createSqliteUserRepository } from '../db/repositories/users.ts'
 import { createUserService } from './users.ts'
 
 describe('user service', () => {
   test('normalizes email, rejects duplicates, and updates profiles', async () => {
-    const users = createUserService(createDb(':memory:'))
+    const users = createUserService(createSqliteUserRepository(createDb(':memory:')))
     const created = await users.create({
       email: 'USER@example.COM',
       name: '',
@@ -16,7 +17,7 @@ describe('user service', () => {
     if (!created.ok) throw new Error('user create failed')
     expect(created.value.email).toBe('user@example.com')
     expect(created.value.name).toBe('user@example.com')
-    expect(users.count()).toBe(1)
+    expect(await users.count()).toBe(1)
 
     const duplicate = await users.create({
       email: 'user@example.com',
@@ -28,7 +29,7 @@ describe('user service', () => {
     if (!duplicate.ok) expect(duplicate.error.kind).toBe('conflict')
 
     const principal: Principal = { id: created.value.id, role: 'viewer' }
-    const updated = users.updateProfile(principal, {
+    const updated = await users.updateProfile(principal, {
       name: 'Updated Name',
       bio: 'Hello **profile**',
       coverUrl: 'https://example.com/cover.jpg',
@@ -46,7 +47,7 @@ describe('user service', () => {
   })
 
   test('changes passwords only with the current password and invalidates tokens', async () => {
-    const users = createUserService(createDb(':memory:'))
+    const users = createUserService(createSqliteUserRepository(createDb(':memory:')))
     const created = await users.create({
       email: 'password@example.com',
       name: 'Password User',

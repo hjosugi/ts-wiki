@@ -2,7 +2,6 @@
  * User service — registration and lookup. Returns `Result` for expected
  * failures (duplicate email); throws only on genuinely exceptional states.
  */
-import { eq, sql } from 'drizzle-orm'
 import {
   type Result,
   ok,
@@ -15,9 +14,11 @@ import {
   validationError,
   normalizePath,
 } from '@kawaii-wiki/core'
-import type { DB } from '../db/client.ts'
-import { isUniqueConstraintError } from '../db/errors.ts'
-import { users, type User } from '../db/schema.ts'
+import {
+  DuplicateUserEmailError,
+  type UserRecord,
+  type UserRepository,
+} from '../repositories/users.ts'
 import { hashPassword, verifyPassword } from './auth.ts'
 
 export interface CreateUserInput {
@@ -42,19 +43,19 @@ export interface UpdateUserProfileInput {
 }
 
 export interface UserService {
-  count(): number
-  findById(id: string): User | undefined
-  findByEmail(email: string): User | undefined
-  updateProfile(principal: Principal | null, input: UpdateUserProfileInput): Result<User, AppError>
+  count(): Promise<number>
+  findById(id: string): Promise<UserRecord | undefined>
+  findByEmail(email: string): Promise<UserRecord | undefined>
+  updateProfile(principal: Principal | null, input: UpdateUserProfileInput): Promise<Result<UserRecord, AppError>>
   changePassword(
     principal: Principal | null,
     input: { currentPassword: string; newPassword: string },
-  ): Promise<Result<User, AppError>>
-  invalidateTokens(userId: string, invalidBefore?: number): void
-  create(input: CreateUserInput): Promise<Result<User, AppError>>
+  ): Promise<Result<UserRecord, AppError>>
+  invalidateTokens(userId: string, invalidBefore?: number): Promise<void>
+  create(input: CreateUserInput): Promise<Result<UserRecord, AppError>>
 }
 
-export const isUserActive = <T extends Pick<User, 'disabledAt'>>(user: T | null | undefined): user is T =>
+export const isUserActive = <T extends Pick<UserRecord, 'disabledAt'>>(user: T | null | undefined): user is T =>
   Boolean(user && user.disabledAt === null)
 
 const cleanName = (value: string | undefined, fallback: string): string => value?.trim() || fallback
@@ -108,23 +109,22 @@ const cleanFavoritePages = (paths: readonly string[] | undefined): Result<string
   return ok(out)
 }
 
-export const createUserService = (db: DB): UserService => ({
-  count() {
-    const row = db.select({ c: sql<number>`count(*)` }).from(users).get()
-    return row?.c ?? 0
+export const createUserService = (repository: UserRepository): UserService => ({
+  async count() {
+    return repository.count()
   },
 
-  findById(id) {
-    return db.select().from(users).where(eq(users.id, id)).get()
+  async findById(id) {
+    return repository.findById(id)
   },
 
-  findByEmail(email) {
-    return db.select().from(users).where(eq(users.email, email.toLowerCase())).get()
+  async findByEmail(email) {
+    return repository.findByEmail(email.toLowerCase())
   },
 
-  updateProfile(principal, input) {
+  async updateProfile(principal, input) {
     if (!principal) return err(unauthorized())
-    const user = this.findById(principal.id)
+    const user = await this.findById(principal.id)
     if (!user || !isUserActive(user)) return err(unauthorized())
     const name = cleanName(input.name, user.name)
     const coverUrl = cleanProfileUrl(input.coverUrl, 'coverUrl')
@@ -140,13 +140,13 @@ export const createUserService = (db: DB): UserService => ({
       ...(links.value !== undefined ? { profileLinks: JSON.stringify(links.value) } : {}),
       ...(favoritePages.value !== undefined ? { profileFavoritePages: JSON.stringify(favoritePages.value) } : {}),
     }
-    db.update(users).set(patch).where(eq(users.id, user.id)).run()
+    await repository.update(user.id, patch)
     return ok({ ...user, ...patch })
   },
 
   async changePassword(principal, input) {
     if (!principal) return err(unauthorized())
-    const user = this.findById(principal.id)
+    const user = await this.findById(principal.id)
     if (!user || !isUserActive(user)) return err(unauthorized())
     const invalid = validatePassword(input.newPassword)
     if (invalid) return err(invalid)
@@ -155,20 +155,20 @@ export const createUserService = (db: DB): UserService => ({
     }
     const passwordHash = await hashPassword(input.newPassword)
     const tokenInvalidBefore = Date.now()
-    db.update(users).set({ passwordHash, tokenInvalidBefore }).where(eq(users.id, user.id)).run()
+    await repository.update(user.id, { passwordHash, tokenInvalidBefore })
     return ok({ ...user, passwordHash, tokenInvalidBefore })
   },
 
-  invalidateTokens(userId, invalidBefore = Date.now()) {
-    db.update(users).set({ tokenInvalidBefore: invalidBefore }).where(eq(users.id, userId)).run()
+  async invalidateTokens(userId, invalidBefore = Date.now()) {
+    await repository.update(userId, { tokenInvalidBefore: invalidBefore })
   },
 
   async create(input) {
     const email = input.email.trim().toLowerCase()
-    if (this.findByEmail(email)) return err(conflict('An account with that email already exists'))
+    if (await this.findByEmail(email)) return err(conflict('An account with that email already exists'))
 
     const now = Date.now()
-    const user: User = {
+    const user: UserRecord = {
       id: crypto.randomUUID(),
       email,
       name: input.name.trim() || email,
@@ -186,9 +186,9 @@ export const createUserService = (db: DB): UserService => ({
       createdAt: now,
     }
     try {
-      db.insert(users).values(user).run()
+      await repository.insert(user)
     } catch (error) {
-      if (isUniqueConstraintError(error)) return err(conflict('An account with that email already exists'))
+      if (error instanceof DuplicateUserEmailError) return err(conflict('An account with that email already exists'))
       throw error
     }
     return ok(user)

@@ -2,6 +2,8 @@ import type { DB } from '../client.ts'
 import type { UserPreferenceRepository } from '../../repositories/user-preferences.ts'
 import type { PageTemplateRepository } from '../../repositories/page-templates.ts'
 import { createSqlitePageTemplateRepository } from './page-templates.ts'
+import type { UserRepository } from '../../repositories/users.ts'
+import { createSqliteUserRepository } from './users.ts'
 import { createSqliteUserPreferenceRepository } from './user-preferences.ts'
 
 /**
@@ -13,9 +15,11 @@ import { createSqliteUserPreferenceRepository } from './user-preferences.ts'
 export interface DatabaseRepositories {
   readonly userPreferences: UserPreferenceRepository
   readonly pageTemplates: PageTemplateRepository
+  readonly users: UserRepository
 }
 
 export const createDatabaseRepositories = (db: DB): DatabaseRepositories => ({
   userPreferences: createSqliteUserPreferenceRepository(db),
   pageTemplates: createSqlitePageTemplateRepository(db),
+  users: createSqliteUserRepository(db),
 })

@@ -83,9 +83,9 @@ export const createPageRoutes = ({
         limit: t.Optional(t.Numeric()),
       }),
     })
-    .get('/api/users/:id/profile', ({ params, services, principal }) => {
+    .get('/api/users/:id/profile', async ({ params, services, principal }) => {
       requirePageRead(principal)
-      const user = services.users.findById(params.id)
+      const user = await services.users.findById(params.id)
       if (!isUserActive(user)) throw new HttpError(notFound('User profile not found'))
       const readablePages = services.pages.list().filter((page) => canReadPage(principal, page.path) && canSeePage(principal, page))
       const byPath = new Map(readablePages.map((page) => [page.path, page]))

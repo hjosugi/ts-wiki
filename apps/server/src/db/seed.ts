@@ -43,7 +43,7 @@ export const runSeed = async (): Promise<void> => {
 
   try {
     const services = createServices(db)
-    let admin = services.users.findByEmail(ADMIN_EMAIL)
+    let admin = await services.users.findByEmail(ADMIN_EMAIL)
     if (!admin) {
       const seedPassword = resolveSeedAdminPassword()
       const created = await services.users.create({

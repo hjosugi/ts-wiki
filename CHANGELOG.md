@@ -11,6 +11,19 @@ Versioning; API compatibility details are in `docs/API.md`.
   matching archived paths, publish Git-reviewed pages, and refuse to reconcile
   an empty repository so a partial first sync cannot hide an entire wiki.
 
+### Changed
+
+- Moved user persistence behind the asynchronous cross-database repository
+  boundary and propagated async lookups through registration, login, profiles,
+  realtime authentication, seeding, and Git mirror attribution.
+- Normalized duplicate-email persistence failures into a driver-neutral error
+  instead of leaking SQLite/libSQL constraint details into the user service.
+
+### Tests
+
+- Added shared SQLite and libSQL user repository contract coverage for count,
+  lookup, insert, update, and duplicate-email behavior.
+
 ## [1.0.8] - 2026-07-11
 
 ### Changed

@@ -196,8 +196,8 @@ export const createApp = ({
   }
   const assetPolicy = () => ({ maxBytes: services.settings.public().assetMaxBytes })
 
-  const principalForUserId = (userId: string): Principal | null => {
-    const user = services.users.findById(userId)
+  const principalForUserId = async (userId: string): Promise<Principal | null> => {
+    const user = await services.users.findById(userId)
     if (!isUserActive(user)) return null
     return services.authz.principalForUser(user)
   }
@@ -209,7 +209,7 @@ export const createApp = ({
     const tokenPrincipal = await verifyTokenPrincipal(jwt, token)
     if (!tokenPrincipal) return null
     if (tokenPrincipal.mfaSetup) return null
-    const user = services.users.findById(tokenPrincipal.id)
+    const user = await services.users.findById(tokenPrincipal.id)
     if (!isUserActive(user)) return null
     if (user.tokenInvalidBefore > tokenPrincipal.issuedAtMs) return null
     return services.authz.principalForUser(user)
@@ -229,7 +229,7 @@ export const createApp = ({
     return { ticket, expiresAt }
   }
 
-  const consumeRealtimeTicket = (ticket: string | null | undefined): Principal | null => {
+  const consumeRealtimeTicket = async (ticket: string | null | undefined): Promise<Principal | null> => {
     if (!ticket) return null
     const row = db.$client.prepare(`
       DELETE FROM realtime_tickets
@@ -420,9 +420,9 @@ export const createApp = ({
   }
   const git = createGitStorage(gitConfig)
 
-  const gitAuthor = (id: string | undefined): { name: string; email: string } | null => {
+  const gitAuthor = async (id: string | undefined): Promise<{ name: string; email: string } | null> => {
     if (!id) return null
-    const u = services.users.findById(id)
+    const u = await services.users.findById(id)
     return u ? { name: u.name, email: u.email } : null
   }
 
@@ -446,12 +446,13 @@ export const createApp = ({
     feedCache.clear()
     emitPageChanged(action, targetPath, from)
     services.notifications.pageChanged(action, targetPath, from, principal?.id ?? null)
+    const author = await gitAuthor(principal?.id)
     const mirrorWrite = mirror === 'save' && page
-      ? git.savePage(page, gitAuthor(principal?.id))
+      ? git.savePage(page, author)
       : mirror === 'delete'
-        ? git.deletePage(targetPath, gitAuthor(principal?.id))
+        ? git.deletePage(targetPath, author)
         : mirror === 'move' && page && from
-          ? git.movePage(from, page, gitAuthor(principal?.id))
+          ? git.movePage(from, page, author)
           : null
     if (mirrorWrite) {
       if (env.git.sourceOfTruth) {

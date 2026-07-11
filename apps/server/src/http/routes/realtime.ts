@@ -15,7 +15,7 @@ export interface RealtimeRoutesContext {
   readonly collab: ReturnType<typeof createCollabRuntime>
   readonly privateWiki: () => boolean
   readonly mintRealtimeTicket: (principal: Principal | null) => { ticket: string; expiresAt: number }
-  readonly consumeRealtimeTicket: (ticket: string | null | undefined) => Principal | null
+  readonly consumeRealtimeTicket: (ticket: string | null | undefined) => Promise<Principal | null>
 }
 
 export const createRealtimeRoutes = ({
@@ -30,7 +30,7 @@ export const createRealtimeRoutes = ({
   app
     .post('/api/realtime/ticket', ({ principal }) => mintRealtimeTicket(principal))
     .get('/api/events', async ({ request, query, principal }) => {
-      const realtimePrincipal = principal ?? consumeRealtimeTicket(query.ticket)
+      const realtimePrincipal = principal ?? await consumeRealtimeTicket(query.ticket)
       if (!realtimePrincipal) throw new HttpError(unauthorized())
       requireHttpPermission(realtimePrincipal, 'page:read')
 
@@ -85,7 +85,7 @@ export const createRealtimeRoutes = ({
       open(ws) {
         void (async () => {
           const { path, ticket, mode } = ws.data.query
-          const principal = consumeRealtimeTicket(ticket)
+          const principal = await consumeRealtimeTicket(ticket)
           if (privateWiki() && !principal) {
             ws.close(1008, 'Authentication required')
             return
@@ -94,7 +94,7 @@ export const createRealtimeRoutes = ({
             ws.close(1008, 'Read access required')
             return
           }
-          const user = principal ? services.users.findById(principal.id) : null
+          const user = principal ? await services.users.findById(principal.id) : null
           presenceRuntime.open(ws.id, ws, path, {
             name: user?.name ?? 'Guest',
             userId: principal?.id,
@@ -112,7 +112,7 @@ export const createRealtimeRoutes = ({
       }),
       open(ws) {
         void (async () => {
-          const principal = consumeRealtimeTicket(ws.data.query.ticket)
+          const principal = await consumeRealtimeTicket(ws.data.query.ticket)
           const room = decodeURIComponent(ws.data.params.room)
           if (!principal || !requirePermission(principal, 'page:write', { path: room }).ok) {
             ws.close(1008, 'Authentication required')

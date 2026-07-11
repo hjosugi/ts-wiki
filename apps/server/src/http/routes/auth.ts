@@ -134,7 +134,7 @@ export const createAuthRoutes = ({
       const payload = await jwt.verify(token)
       const data = payload && typeof payload === 'object' ? payload as Record<string, unknown> : null
       if (!data || data.mfaSetup !== true || typeof data.sub !== 'string') return null
-      const user = services.users.findById(data.sub)
+      const user = await services.users.findById(data.sub)
       return isUserActive(user) ? user : null
     } catch {
       return null
@@ -148,7 +148,7 @@ export const createAuthRoutes = ({
     setupToken?: string,
   ): Promise<User | null> => {
     if (principal) {
-      const user = services.users.findById(principal.id)
+      const user = await services.users.findById(principal.id)
       return isUserActive(user) ? user : null
     }
     return userForMfaSetupToken(jwt, setupToken, services)
@@ -191,7 +191,7 @@ export const createAuthRoutes = ({
 	        '/api/auth/register',
 	        async ({ body, services, jwt, request, server, set }) => {
 	          enforceAuthLimit(request, server, 'register')
-	          const role: Role = services.users.count() === 0 ? 'admin' : 'viewer'
+	          const role: Role = await services.users.count() === 0 ? 'admin' : 'viewer'
 	          const policy = authPolicy()
 	          if (role !== 'admin' && policy.registration === 'off') {
 	            throw new HttpError(forbidden('Registration is disabled'))
@@ -228,7 +228,7 @@ export const createAuthRoutes = ({
         '/api/auth/login',
 	        async ({ body, services, jwt, request, server, set }) => {
 	          enforceAuthLimit(request, server, 'login')
-	          const user = services.users.findByEmail(body.email)
+	          const user = await services.users.findByEmail(body.email)
               const passwordMatches = await verifyPassword(body.password, user?.passwordHash ?? DUMMY_PASSWORD_HASH)
 	          if (!user || !passwordMatches) {
 	            throw new HttpError(unauthorized('Invalid email or password'))
@@ -269,16 +269,16 @@ export const createAuthRoutes = ({
         },
         { body: t.Object({ email: t.String(), password: t.String(), totpCode: t.Optional(t.String()) }) },
       )
-      .get('/api/auth/me', ({ principal, services }) => {
+      .get('/api/auth/me', async ({ principal, services }) => {
         if (!principal) throw new HttpError(unauthorized())
-        const user = services.users.findById(principal.id)
+        const user = await services.users.findById(principal.id)
         if (!user) throw new HttpError(unauthorized())
         return { user: publicUser(user) }
       })
       .put(
         '/api/auth/profile',
         async ({ body, principal, services }) => {
-          const user = unwrap(services.users.updateProfile(principal, body))
+          const user = unwrap(await services.users.updateProfile(principal, body))
           audit(logger, 'auth.profile.update', { userId: user.id })
           return { user: publicUser(user) }
         },
@@ -329,7 +329,7 @@ export const createAuthRoutes = ({
 	      .post('/api/auth/email/verification', async ({ principal, services, request, server }) => {
 	        enforceCredentialLimit(request, server, 'email-verification', principal)
 	        if (!principal) throw new HttpError(unauthorized())
-	        const user = services.users.findById(principal.id)
+	        const user = await services.users.findById(principal.id)
 	        if (!user || !isUserActive(user)) throw new HttpError(unauthorized())
 	        return unwrap(await services.recovery.sendEmailVerification(user))
 	      })
@@ -362,7 +362,7 @@ export const createAuthRoutes = ({
         async ({ body, principal, services, request, server }) => {
           enforceCredentialLimit(request, server, 'totp-recovery-codes', principal)
           if (!principal) throw new HttpError(unauthorized())
-          const user = services.users.findById(principal.id)
+          const user = await services.users.findById(principal.id)
           if (!user || !isUserActive(user) || !user.totpEnabled || !user.totpSecret) {
             throw new HttpError(unauthorized())
           }
@@ -374,10 +374,10 @@ export const createAuthRoutes = ({
       )
       .post(
         '/api/auth/totp/disable',
-        ({ body, principal, services, request, server }) => {
+        async ({ body, principal, services, request, server }) => {
           enforceCredentialLimit(request, server, 'totp-disable', principal)
           if (!principal) throw new HttpError(unauthorized())
-          const user = services.users.findById(principal.id)
+          const user = await services.users.findById(principal.id)
           if (!user) throw new HttpError(unauthorized())
           const updated = unwrap(services.totp.disable(user, body.code))
           audit(logger, 'auth.totp.disable', { userId: user.id })
