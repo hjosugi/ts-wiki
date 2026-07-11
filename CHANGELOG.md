@@ -3,6 +3,20 @@
 All notable changes are documented here. This project follows Semantic
 Versioning; API compatibility details are in `docs/API.md`.
 
+## [1.0.13] - 2026-07-11
+
+### Changed
+
+- Moved OIDC login state persistence behind an asynchronous, driver-neutral
+  repository and removed database/schema imports from the OIDC service.
+- Made OIDC state validation and one-time consumption atomic so concurrent
+  callbacks cannot replay the same login state.
+
+### Tests
+
+- Added shared SQLite and libSQL OIDC state contract coverage for provider
+  isolation, expiry cleanup, and single-use consumption.
+
 ## [1.0.12] - 2026-07-11
 
 ### Changed

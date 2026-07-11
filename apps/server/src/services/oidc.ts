@@ -1,5 +1,4 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { eq, lte } from 'drizzle-orm'
 import {
   type AppError,
   type PublicAuthProvider,
@@ -11,12 +10,9 @@ import {
   validationError,
 } from '@kawaii-wiki/core'
 import type { AuthEnv, OidcProviderEnv } from '../env.ts'
-import type { DB } from '../db/client.ts'
-import { createSqliteAuthAccountRepository } from '../db/repositories/auth-accounts.ts'
-import { createSqliteUserRepository } from '../db/repositories/users.ts'
 import type { AuthAccountRepository } from '../repositories/auth-accounts.ts'
+import type { OidcStateRepository } from '../repositories/oidc-states.ts'
 import type { UserRepository } from '../repositories/users.ts'
-import { oauthStates } from '../db/schema.ts'
 import {
   createAuthProviderService,
   type AuthProvider,
@@ -40,8 +36,6 @@ export interface OidcService {
 
 export interface OidcServiceOptions {
   readonly now?: () => number
-  readonly authAccounts?: AuthAccountRepository
-  readonly users?: UserRepository
 }
 
 interface OidcDiscovery {
@@ -164,15 +158,11 @@ const requiredCallbackParam = (
 }
 
 export const createOidcAuthProviders = (
-  db: DB,
+  states: OidcStateRepository,
   auth: AuthEnv,
   options: OidcServiceOptions = {},
 ): AuthProvider[] => {
   const now = options.now ?? (() => Date.now())
-
-  const cleanupStates = (): void => {
-    db.delete(oauthStates).where(lte(oauthStates.expiresAt, now())).run()
-  }
 
   return auth.oidcProviders.map((provider): AuthProvider => ({
     id: provider.id,
@@ -180,23 +170,21 @@ export const createOidcAuthProviders = (
     kind: 'oidc',
 
     async startLogin(redirectAfter = null) {
-      cleanupStates()
+      await states.cleanupExpired(now())
       const discovery = await discover(provider)
       const state = randomUrlToken()
       const nonce = randomUrlToken()
       const codeVerifier = randomUrlToken(48)
       const createdAt = now()
-      db.insert(oauthStates)
-        .values({
-          state,
-          provider: provider.id,
-          nonce,
-          codeVerifier,
-          redirectAfter: safeRedirectAfter(redirectAfter),
-          expiresAt: createdAt + OIDC_STATE_TTL_MS,
-          createdAt,
-        })
-        .run()
+      await states.insert({
+        state,
+        provider: provider.id,
+        nonce,
+        codeVerifier,
+        redirectAfter: safeRedirectAfter(redirectAfter),
+        expiresAt: createdAt + OIDC_STATE_TTL_MS,
+        createdAt,
+      })
       const url = new URL(discovery.authorization_endpoint)
       url.searchParams.set('client_id', provider.clientId)
       url.searchParams.set('redirect_uri', provider.redirectUri)
@@ -214,16 +202,8 @@ export const createOidcAuthProviders = (
       if (!code.ok) return code
       const state = requiredCallbackParam(params, 'state')
       if (!state.ok) return state
-      const stored = db.select().from(oauthStates).where(eq(oauthStates.state, state.value)).get()
-      if (!stored || stored.provider !== provider.id) {
-        return err(unauthorized('OIDC state is invalid or expired'))
-      }
-      const nowMs = now()
-      if (stored.expiresAt <= nowMs) {
-        db.delete(oauthStates).where(eq(oauthStates.state, state.value)).run()
-        return err(unauthorized('OIDC state is invalid or expired'))
-      }
-      db.delete(oauthStates).where(eq(oauthStates.state, state.value)).run()
+      const stored = await states.consume(state.value, provider.id, now())
+      if (!stored) return err(unauthorized('OIDC state is invalid or expired'))
 
       const discovery = await discover(provider)
       const token = await fetchJson<TokenResponse>(discovery.token_endpoint, {
@@ -262,17 +242,19 @@ export const createOidcAuthProviders = (
 }
 
 export const createOidcService = (
-  db: DB,
+  states: OidcStateRepository,
+  authAccounts: AuthAccountRepository,
+  users: UserRepository,
   auth: AuthEnv,
   authz: AuthzService,
   options: OidcServiceOptions = {},
 ): OidcService => {
   const service = createAuthProviderService(
-    options.authAccounts ?? createSqliteAuthAccountRepository(db),
-    options.users ?? createSqliteUserRepository(db),
+    authAccounts,
+    users,
     auth,
     authz,
-    createOidcAuthProviders(db, auth, options),
+    createOidcAuthProviders(states, auth, options),
   )
   return {
     publicProviders: () => service.publicProviders(),

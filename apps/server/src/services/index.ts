@@ -171,7 +171,7 @@ export const createServices = (db: DB, options: ServiceOptions = {}): Services =
     renderMarkdown: (content) => rendererForSettings().renderMarkdown(content),
     defaultLocale: () => settings.public().defaultLocale,
   })
-  const authProviders = createAuthProviderService(repositories.authAccounts, repositories.users, auth, authz, createOidcAuthProviders(db, auth), {
+  const authProviders = createAuthProviderService(repositories.authAccounts, repositories.users, auth, authz, createOidcAuthProviders(repositories.oidcStates, auth), {
     registration: () => settings.public().registration,
   })
   return {
@@ -185,10 +185,7 @@ export const createServices = (db: DB, options: ServiceOptions = {}): Services =
     settings,
     authz,
     authProviders,
-    oidc: createOidcService(db, auth, authz, {
-      authAccounts: repositories.authAccounts,
-      users: repositories.users,
-    }),
+    oidc: createOidcService(repositories.oidcStates, repositories.authAccounts, repositories.users, auth, authz),
     passkeys: createPasskeyService(db, auth),
     shares: createPageShareService(db),
     templates: createPageTemplateService(repositories.pageTemplates),
