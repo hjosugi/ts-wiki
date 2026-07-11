@@ -1,9 +1,9 @@
 import { normalizeLabels, parseJsonStringArray } from '@kawaii-wiki/core'
-import type { Page } from '../db/schema.ts'
+import type { PageRecord } from '../repositories/pages.ts'
 
 export const parsePageLabels = (value: string): string[] => normalizeLabels(parseJsonStringArray(value))
 
-export const pageSnapshot = (page: Page) => ({
+export const pageSnapshot = (page: PageRecord) => ({
   id: page.id,
   path: page.path,
   title: page.title,

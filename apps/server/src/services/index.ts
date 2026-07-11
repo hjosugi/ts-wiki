@@ -181,7 +181,7 @@ export const createServices = (db: DB, options: ServiceOptions = {}): Services =
     assets: createAssetService(db, { urlForStorageName: options.assetUrl, searchIndexer }),
     admin: createAdminService(db, authz),
     comments: createCommentService(db, searchIndexer),
-    analytics: createAnalyticsService(db),
+    analytics: createAnalyticsService(repositories.analytics),
     settings,
     authz,
     authProviders,

@@ -725,7 +725,7 @@ describe('page + search slice (in-memory db)', () => {
     expect(comments.create('docs/comments', 'anonymous', anon).ok).toBe(false)
   })
 
-  test('asset and analytics services enforce authorization directly', () => {
+  test('asset and analytics services enforce authorization directly', async () => {
     const db = createDb(':memory:')
     const { assets, analytics } = createServices(db)
 
@@ -761,8 +761,8 @@ describe('page + search slice (in-memory db)', () => {
     expect(assets.purge('asset-1', admin).ok).toBe(true)
 
     analytics.recordPageView('docs/private', admin)
-    expect(analytics.summary(viewer).ok).toBe(false)
-    const summary = analytics.summary(admin)
+    expect((await analytics.summary(viewer)).ok).toBe(false)
+    const summary = await analytics.summary(admin)
     expect(summary.ok).toBe(true)
     if (summary.ok) expect(summary.value.totalViews).toBe(1)
   })
@@ -778,12 +778,13 @@ describe('page + search slice (in-memory db)', () => {
     expect(pages.trash()).toContainEqual(expect.objectContaining({ path: 'gone', lifecycle: 'deleted' }))
   })
 
-  test('archive, restore, and purge control recoverable page lifecycle', () => {
+  test('archive, restore, and purge control recoverable page lifecycle', async () => {
     const db = createDb(':memory:')
     const { pages, search, comments, analytics } = createServices(db)
     pages.create({ path: 'docs/archive-me', title: 'Archive me', content: 'durable kiwi' }, admin)
     comments.create('docs/archive-me', 'sensitive note', admin)
     analytics.recordPageView('docs/archive-me', admin)
+    await analytics.flush()
 
     const archived = pages.archive('docs/archive-me', admin)
     expect(archived.ok).toBe(true)
