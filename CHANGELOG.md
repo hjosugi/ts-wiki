@@ -3,6 +3,27 @@
 All notable changes are documented here. This project follows Semantic
 Versioning; API compatibility details are in `docs/API.md`.
 
+## [1.0.28] - 2026-07-12
+
+### Changed
+
+- Split the database-neutral search facade and query parser from the
+  SQLite-specific FTS5 adapter.
+- Moved FTS schema rebuilds, raw search statements, supplemental comment and
+  asset indexing, and page-asset reference SQL under the database adapter
+  boundary.
+- Removed database, schema, Drizzle, and migration imports from the production
+  search and asset-reference services.
+- Routed service composition and the search reindex command through the
+  explicit SQLite FTS adapter while preserving current synchronous page-write
+  behavior ahead of the page repository migration.
+
+### Tests
+
+- Added shared SQLite and libSQL FTS adapter contract coverage for page,
+  comment, and asset indexing, ACL filtering, tokenizer status and rebuilds,
+  Japanese short queries, and index removal.
+
 ## [1.0.27] - 2026-07-12
 
 ### Changed

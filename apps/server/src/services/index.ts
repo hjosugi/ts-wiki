@@ -8,7 +8,8 @@ import type { AssetUploadEnv, AuthEnv, BrandingEnv, LocalizationEnv, MailEnv, Se
 import type { StructuredLogger } from '../observability/logging.ts'
 import { createDatabaseRepositories } from '../db/repositories/index.ts'
 import { createPageService, type PageService } from './pages.ts'
-import { createFtsSearchIndexer, createSearchService, type SearchService } from './search.ts'
+import { createFtsSearchIndexer } from '../db/repositories/search.ts'
+import { createSearchService, type SearchService } from './search.ts'
 import { createUserService, type UserService } from './users.ts'
 import { createAssetService, type AssetService } from './assets.ts'
 import { createAdminService, type AdminService } from './admin.ts'
@@ -176,7 +177,7 @@ export const createServices = (db: DB, options: ServiceOptions = {}): Services =
   })
   return {
     pages: pageService,
-    search: createSearchService(db, { configuredTokenizer: search.ftsTokenizer, indexer: searchIndexer }),
+    search: createSearchService(searchIndexer),
     users: createUserService(repositories.users),
     assets: createAssetService(repositories.assets, { urlForStorageName: options.assetUrl, searchIndexer }),
     admin: createAdminService(repositories.admin, authz),
