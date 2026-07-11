@@ -1,4 +1,3 @@
-import { eq, and, lt } from 'drizzle-orm'
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -15,15 +14,21 @@ import {
   type AppError,
   type Principal,
   type Result,
+  conflict,
   err,
   notFound,
   ok,
   requirePermission,
   unauthorized,
 } from '@kawaii-wiki/core'
-import type { DB } from '../db/client.ts'
 import type { AuthEnv } from '../env.ts'
-import { passkeys, users, webauthnChallenges, type Passkey, type User } from '../db/schema.ts'
+import {
+  DuplicatePasskeyCredentialError,
+  type PasskeyRecord,
+  type PasskeyRepository,
+  type WebauthnChallengePurpose,
+} from '../repositories/passkeys.ts'
+import type { UserRecord, UserRepository } from '../repositories/users.ts'
 import { isUserActive } from './users.ts'
 
 export interface PasskeyView {
@@ -45,14 +50,14 @@ export interface PasskeyAuthenticationOptions {
 }
 
 export interface PasskeyLoginResult {
-  readonly user: User
+  readonly user: UserRecord
   readonly passkey: PasskeyView
 }
 
 export interface PasskeyService {
-  list(principal: Principal | null): Result<PasskeyView[], AppError>
-  hasForUser(userId: string): boolean
-  delete(principal: Principal | null, id: string): Result<{ id: string }, AppError>
+  list(principal: Principal | null): Promise<Result<PasskeyView[], AppError>>
+  hasForUser(userId: string): Promise<boolean>
+  delete(principal: Principal | null, id: string): Promise<Result<{ id: string }, AppError>>
   registrationOptions(principal: Principal | null): Promise<Result<PasskeyRegistrationOptions, AppError>>
   verifyRegistration(
     principal: Principal | null,
@@ -84,7 +89,7 @@ const parseTransports = (value: string): AuthenticatorTransportFuture[] => {
   }
 }
 
-const toView = (row: Passkey): PasskeyView => ({
+const toView = (row: PasskeyRecord): PasskeyView => ({
   id: row.id,
   name: row.name,
   deviceType: row.deviceType,
@@ -94,7 +99,7 @@ const toView = (row: Passkey): PasskeyView => ({
   lastUsedAt: row.lastUsedAt,
 })
 
-const credentialFromRow = (row: Passkey): WebAuthnCredential => ({
+const credentialFromRow = (row: PasskeyRecord): WebAuthnCredential => ({
   id: row.id,
   publicKey: decodeBytes(row.publicKey),
   counter: row.counter,
@@ -124,78 +129,63 @@ const clientChallenge = (clientDataJSON: string): string | null => {
 }
 
 export const createPasskeyService = (
-  db: DB,
+  repository: PasskeyRepository,
+  userRepository: UserRepository,
   auth: AuthEnv,
   verifier: PasskeyVerifier = { verifyRegistrationResponse, verifyAuthenticationResponse },
 ): PasskeyService => {
   const now = () => Date.now()
 
-  const cleanupChallenges = (): void => {
-    db.delete(webauthnChallenges).where(lt(webauthnChallenges.expiresAt, now())).run()
-  }
-
-  const storeChallenge = (challenge: string, purpose: 'registration' | 'authentication', userId: string | null): void => {
-    cleanupChallenges()
+  const storeChallenge = async (
+    challenge: string,
+    purpose: WebauthnChallengePurpose,
+    userId: string | null,
+  ): Promise<void> => {
+    await repository.cleanupChallenges(now())
     const createdAt = now()
-    db.insert(webauthnChallenges)
-      .values({
-        challenge,
-        userId,
-        purpose,
-        expiresAt: createdAt + CHALLENGE_TTL_MS,
-        createdAt,
-      })
-      .run()
+    await repository.insertChallenge({
+      challenge,
+      userId,
+      purpose,
+      expiresAt: createdAt + CHALLENGE_TTL_MS,
+      createdAt,
+    })
   }
 
-  const takeChallenge = (challenge: string, purpose: 'registration' | 'authentication') => {
-    const row = db
-      .select()
-      .from(webauthnChallenges)
-      .where(and(eq(webauthnChallenges.challenge, challenge), eq(webauthnChallenges.purpose, purpose)))
-      .get()
-    if (!row || row.expiresAt < now()) return null
-    db.delete(webauthnChallenges).where(eq(webauthnChallenges.challenge, challenge)).run()
-    return row
-  }
-
-  const findUser = (principal: Principal | null): User | null => {
+  const findUser = async (principal: Principal | null): Promise<UserRecord | null> => {
     if (!principal) return null
-    const user = db.select().from(users).where(eq(users.id, principal.id)).get() ?? null
+    const user = await userRepository.findById(principal.id)
     return isUserActive(user) ? user : null
   }
 
-  const passkeysForUser = (userId: string): Passkey[] =>
-    db.select().from(passkeys).where(eq(passkeys.userId, userId)).all()
-
   return {
-    list(principal) {
-      const user = findUser(principal)
+    async list(principal) {
+      const user = await findUser(principal)
       if (!user) return err(unauthorized())
-      return ok(passkeysForUser(user.id).map(toView))
+      return ok((await repository.listByUser(user.id)).map(toView))
     },
 
-    hasForUser(userId) {
-      return passkeysForUser(userId).length > 0
+    async hasForUser(userId) {
+      return (await repository.listByUser(userId)).length > 0
     },
 
-    delete(principal, id) {
-      const user = findUser(principal)
+    async delete(principal, id) {
+      const user = await findUser(principal)
       if (!user) return err(unauthorized())
-      const row = db.select().from(passkeys).where(eq(passkeys.id, id)).get()
+      const row = await repository.findById(id)
       if (!row) return err(notFound('Passkey not found'))
       if (row.userId !== user.id) {
         const allowed = requirePermission(principal, 'admin:access')
         if (!allowed.ok) return allowed
       }
-      db.delete(passkeys).where(eq(passkeys.id, id)).run()
+      await repository.delete(id)
       return ok({ id })
     },
 
     async registrationOptions(principal) {
-      const user = findUser(principal)
+      const user = await findUser(principal)
       if (!user) return err(unauthorized())
-      const existing = passkeysForUser(user.id)
+      const existing = await repository.listByUser(user.id)
       const options = await generateRegistrationOptions({
         rpName: auth.siteName,
         rpID: auth.passkeyRpId,
@@ -212,17 +202,19 @@ export const createPasskeyService = (
           userVerification: 'preferred',
         },
       })
-      storeChallenge(options.challenge, 'registration', user.id)
+      await storeChallenge(options.challenge, 'registration', user.id)
       return ok({ options })
     },
 
     async verifyRegistration(principal, input) {
-      const user = findUser(principal)
+      const user = await findUser(principal)
       if (!user) return err(unauthorized())
       const responseChallenge = clientChallenge(input.response.response.clientDataJSON)
       if (!responseChallenge) return err(unauthorized('Passkey challenge is invalid or expired'))
-      const challenge = takeChallenge(responseChallenge, 'registration')
-      if (!challenge || challenge.userId !== user.id) return err(unauthorized('Passkey challenge is invalid or expired'))
+      const challenge = await repository.consumeChallenge(responseChallenge, 'registration', now())
+      if (!challenge || challenge.userId !== user.id) {
+        return err(unauthorized('Passkey challenge is invalid or expired'))
+      }
 
       const verified = await verifier.verifyRegistrationResponse({
         response: input.response,
@@ -235,7 +227,7 @@ export const createPasskeyService = (
 
       const { credential, credentialDeviceType, credentialBackedUp } = verified.registrationInfo
       const createdAt = now()
-      const row: Passkey = {
+      const row: PasskeyRecord = {
         id: credential.id,
         userId: user.id,
         name: cleanPasskeyName(input.name, passkeyLabel(input.response)),
@@ -247,15 +239,22 @@ export const createPasskeyService = (
         createdAt,
         lastUsedAt: null,
       }
-      db.insert(passkeys).values(row).run()
+      try {
+        await repository.insert(row)
+      } catch (error) {
+        if (error instanceof DuplicatePasskeyCredentialError) {
+          return err(conflict('Passkey is already registered'))
+        }
+        throw error
+      }
       return ok(toView(row))
     },
 
     async authenticationOptions(input = {}) {
       const email = input.email?.trim().toLowerCase()
-      const user = email ? db.select().from(users).where(eq(users.email, email)).get() : null
+      const user = email ? await userRepository.findByEmail(email) : undefined
       const activeUser = isUserActive(user) ? user : null
-      const credentials = activeUser ? passkeysForUser(activeUser.id) : []
+      const credentials = activeUser ? await repository.listByUser(activeUser.id) : []
       const options = await generateAuthenticationOptions({
         rpID: auth.passkeyRpId,
         allowCredentials: activeUser ? credentials.map((credential) => ({
@@ -264,17 +263,17 @@ export const createPasskeyService = (
         })) : undefined,
         userVerification: 'preferred',
       })
-      storeChallenge(options.challenge, 'authentication', activeUser?.id ?? null)
+      await storeChallenge(options.challenge, 'authentication', activeUser?.id ?? null)
       return ok({ options })
     },
 
     async verifyAuthentication(input) {
       const responseChallenge = clientChallenge(input.response.response.clientDataJSON)
       if (!responseChallenge) return err(unauthorized('Passkey challenge is invalid or expired'))
-      const challenge = takeChallenge(responseChallenge, 'authentication')
+      const challenge = await repository.consumeChallenge(responseChallenge, 'authentication', now())
       if (!challenge) return err(unauthorized('Passkey challenge is invalid or expired'))
 
-      const credential = db.select().from(passkeys).where(eq(passkeys.id, input.response.id)).get()
+      const credential = await repository.findById(input.response.id)
       if (!credential || (challenge.userId && credential.userId !== challenge.userId)) {
         return err(unauthorized('Passkey is not registered'))
       }
@@ -289,17 +288,16 @@ export const createPasskeyService = (
       })
       if (!verified.verified) return err(unauthorized('Passkey authentication failed'))
 
-      db.update(passkeys)
-        .set({
-          counter: verified.authenticationInfo.newCounter,
-          backedUp: verified.authenticationInfo.credentialBackedUp,
-          deviceType: verified.authenticationInfo.credentialDeviceType,
-          lastUsedAt: now(),
-        })
-        .where(eq(passkeys.id, credential.id))
-        .run()
+      const lastUsedAt = now()
+      const updated = await repository.updateAuthentication(credential.id, credential.counter, {
+        counter: verified.authenticationInfo.newCounter,
+        backedUp: verified.authenticationInfo.credentialBackedUp,
+        deviceType: verified.authenticationInfo.credentialDeviceType,
+        lastUsedAt,
+      })
+      if (!updated) return err(unauthorized('Passkey authentication was already used'))
 
-      const user = db.select().from(users).where(eq(users.id, credential.userId)).get()
+      const user = await userRepository.findById(credential.userId)
       if (!isUserActive(user)) return err(unauthorized('Passkey user was not found'))
       return ok({
         user,
@@ -308,7 +306,7 @@ export const createPasskeyService = (
           counter: verified.authenticationInfo.newCounter,
           backedUp: verified.authenticationInfo.credentialBackedUp,
           deviceType: verified.authenticationInfo.credentialDeviceType,
-          lastUsedAt: now(),
+          lastUsedAt,
         }),
       })
     },

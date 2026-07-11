@@ -12,6 +12,7 @@ import { createDb } from '../db/client.ts'
 import { passkeys } from '../db/schema.ts'
 import { createServices } from './index.ts'
 import { createPasskeyService, type PasskeyVerifier } from './passkeys.ts'
+import { createDatabaseRepositories } from '../db/repositories/index.ts'
 
 const auth: AuthEnv = {
   siteName: 'ts-wiki',
@@ -123,7 +124,8 @@ describe('passkey service', () => {
         return verifiedAuthentication(credential, true, 8)
       },
     }
-    const service = createPasskeyService(db, auth, verifier)
+    const repositories = createDatabaseRepositories(db)
+    const service = createPasskeyService(repositories.passkeys, repositories.users, auth, verifier)
 
     const options = await service.registrationOptions(principal)
     expect(options.ok).toBe(true)
@@ -174,7 +176,8 @@ describe('passkey service', () => {
       verifyAuthenticationResponse: async ({ credential }) =>
         verifiedAuthentication(credential, credential.counter < 2, 2),
     }
-    const service = createPasskeyService(db, auth, verifier)
+    const repositories = createDatabaseRepositories(db)
+    const service = createPasskeyService(repositories.passkeys, repositories.users, auth, verifier)
 
     const registrationOptions = await service.registrationOptions(principal)
     expect(registrationOptions.ok).toBe(true)

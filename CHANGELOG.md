@@ -3,6 +3,24 @@
 All notable changes are documented here. This project follows Semantic
 Versioning; API compatibility details are in `docs/API.md`.
 
+## [1.0.14] - 2026-07-12
+
+### Changed
+
+- Moved passkey credentials and WebAuthn challenges behind an asynchronous,
+  driver-neutral repository and removed database/schema imports from the
+  passkey service.
+- Made WebAuthn challenge consumption atomic and single-use, and protected
+  authentication counter updates with compare-and-set persistence.
+- Converted passkey list, presence, deletion, registration, and login call
+  chains to await remote-capable user and credential repositories.
+
+### Tests
+
+- Added shared SQLite and libSQL passkey contract coverage for credential CRUD,
+  duplicate normalization, challenge expiry/single-use behavior, and guarded
+  authentication counter updates.
+
 ## [1.0.13] - 2026-07-11
 
 ### Changed
