@@ -1,6 +1,7 @@
 import type { AppError, PageStatus, Principal, Result } from '@kawaii-wiki/core'
 import type { DB } from '../db/client.ts'
 import type { AutomationRule, WebhookDelivery } from '../db/schema.ts'
+import type { WebhookSubscriptionRepository } from '../repositories/webhooks.ts'
 import { createAutomationRules } from './webhooks/automation.ts'
 import { createWebhookDelivery, type WebhookDeliveryPolicy } from './webhooks/delivery.ts'
 import { defaultFetcher, defaultResolver } from './webhooks/shared.ts'
@@ -135,21 +136,21 @@ export interface WebhookPayload {
 }
 
 export interface WebhookService {
-  listSubscriptions(principal: Principal | null): Result<WebhookSubscriptionView[], AppError>
+  listSubscriptions(principal: Principal | null): Promise<Result<WebhookSubscriptionView[], AppError>>
   createSubscription(
     principal: Principal | null,
     input: CreateWebhookSubscriptionInput,
-  ): Result<WebhookSubscriptionView, AppError>
+  ): Promise<Result<WebhookSubscriptionView, AppError>>
   updateSubscription(
     principal: Principal | null,
     id: string,
     input: UpdateWebhookSubscriptionInput,
-  ): Result<WebhookSubscriptionView, AppError>
-  deleteSubscription(principal: Principal | null, id: string): Result<{ id: string }, AppError>
+  ): Promise<Result<WebhookSubscriptionView, AppError>>
+  deleteSubscription(principal: Principal | null, id: string): Promise<Result<{ id: string }, AppError>>
   listDeliveries(
     principal: Principal | null,
     filters?: { readonly status?: WebhookDeliveryStatus; readonly limit?: number },
-  ): Result<WebhookDeliveryView[], AppError>
+  ): Promise<Result<WebhookDeliveryView[], AppError>>
   retryDelivery(principal: Principal | null, id: string): Promise<Result<WebhookDeliveryView, AppError>>
   listAutomationRules(principal: Principal | null): Result<AutomationRuleView[], AppError>
   createAutomationRule(
@@ -175,13 +176,17 @@ export interface WebhookServiceOptions {
   readonly pageService?: import('./pages.ts').PageService
 }
 
-export const createWebhookService = (db: DB, options: WebhookServiceOptions = {}): WebhookService => {
+export const createWebhookService = (
+  db: DB,
+  subscriptionRepository: WebhookSubscriptionRepository,
+  options: WebhookServiceOptions = {},
+): WebhookService => {
   const fetcher = options.fetcher ?? defaultFetcher
   const resolver = options.resolver ?? defaultResolver
   const allowPrivateTargets = options.allowPrivateTargets ?? false
   const now = options.now ?? (() => Date.now())
 
-  const subscriptions = createWebhookSubscriptions(db, { allowPrivateTargets, now })
+  const subscriptions = createWebhookSubscriptions(subscriptionRepository, { allowPrivateTargets, now })
   const automation = createAutomationRules(db, { now, pageService: options.pageService })
   const delivery = createWebhookDelivery(db, {
     fetcher,
@@ -214,7 +219,7 @@ export const createWebhookService = (db: DB, options: WebhookServiceOptions = {}
         actor: { id: event.actorId ?? null },
         data: applied.data,
       }
-      const deliveries = await delivery.publish(payload, subscriptions.enabledForEvent(payload.type))
+      const deliveries = await delivery.publish(payload, await subscriptions.enabledForEvent(payload.type))
       for (const extra of applied.extraEvents) {
         const extraPayload: WebhookPayload = {
           schemaVersion: 1,
@@ -224,7 +229,7 @@ export const createWebhookService = (db: DB, options: WebhookServiceOptions = {}
           actor: { id: extra.actorId ?? null },
           data: extra.data,
         }
-        deliveries.push(...await delivery.publish(extraPayload, subscriptions.enabledForEvent(extraPayload.type)))
+        deliveries.push(...await delivery.publish(extraPayload, await subscriptions.enabledForEvent(extraPayload.type)))
       }
       // Delivery happens out of band: page writes wait only for durable enqueue.
       // Kick the worker promptly; the periodic timer remains the retry safety net.

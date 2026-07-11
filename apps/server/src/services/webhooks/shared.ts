@@ -16,7 +16,7 @@ import {
   parseJsonStringArray,
   validationError,
 } from '@kawaii-wiki/core'
-import type { WebhookSubscription } from '../../db/schema.ts'
+import type { WebhookSubscriptionRecord } from '../../repositories/webhooks.ts'
 import type {
   AutomationRuleActions,
   AutomationRuleConditions,
@@ -369,7 +369,7 @@ export const parseRuleConfig = (value: string): EventAutomationRuleConfig => {
   }
 }
 
-export const eventMatches = (subscription: WebhookSubscription, eventType: string): boolean => {
+export const eventMatches = (subscription: WebhookSubscriptionRecord, eventType: string): boolean => {
   const eventTypes = parseEventTypes(subscription.eventTypes)
   return eventTypes.includes('*') || eventTypes.includes(eventType)
 }
