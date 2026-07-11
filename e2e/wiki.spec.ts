@@ -1,5 +1,10 @@
 import { expect, test } from '@playwright/test'
 
+// This flow owns a fresh database and cannot be replayed against the same
+// server after setup has completed. The structural assertions below remain
+// deterministic; visual pixels allow only minor host font/glow differences.
+test.describe.configure({ retries: 0 })
+
 test('owner setup, page creation, and search work through the production app', async ({ page }) => {
   await page.goto('/setup')
   await page.getByLabel('Site title').fill('E2E Wiki')
@@ -99,7 +104,10 @@ test('owner setup, page creation, and search work through the production app', a
   await page.getByRole('heading', { name: 'E2E Release Page' }).click()
   await expect(moreDetails).not.toHaveAttribute('open', '')
 
-  await expect(page.locator('.app-shell-header')).toHaveScreenshot('centered-header.png', { animations: 'disabled' })
+  await expect(page.locator('.app-shell-header')).toHaveScreenshot('centered-header.png', {
+    animations: 'disabled',
+    maxDiffPixelRatio: 0.02,
+  })
   await expect(page.locator('.prose').first()).toHaveScreenshot('minimal-prose.png', { animations: 'disabled' })
 
   await page.setViewportSize({ width: 390, height: 844 })
