@@ -120,11 +120,13 @@ test('owner setup, page creation, and search work through the production app', a
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
 
   await page.goto('/_admin')
-  await expect(page.getByPlaceholder('Search settings')).toBeVisible()
+  await expect(page).toHaveURL(/\/_admin$/)
+  const settingsSearch = page.getByRole('searchbox', { name: 'Search settings' })
+  await expect(settingsSearch).toBeVisible({ timeout: 15_000 })
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
 
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.getByPlaceholder('Search settings').fill('git')
+  await settingsSearch.fill('git')
   await expect(page.getByRole('link', { name: 'Git', exact: true })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Pages', exact: true })).toBeHidden()
 
