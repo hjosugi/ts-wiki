@@ -73,7 +73,7 @@ export const createExportImportRoutes = ({
     .get('/api/export/site', async ({ query, services, principal }) => {
       requireHttpPermission(principal, 'admin:access')
       const exportedAt = new Date().toISOString()
-      const exportedPages = services.pages.allActive().map((page) => ({
+      const exportedPages = (await services.pages.allActive()).map((page) => ({
           path: page.path,
           title: page.title,
           description: page.description,

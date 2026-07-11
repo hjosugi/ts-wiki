@@ -168,7 +168,7 @@ export const createServices = (db: DB, options: ServiceOptions = {}): Services =
     sender: options.mailSender,
     logger: options.logger,
   })
-  const pageService = createPageService(db, searchIndexer, {
+  const pageService = createPageService(db, repositories.pageReads, searchIndexer, {
     renderMarkdown: (content) => rendererForSettings().renderMarkdown(content),
     defaultLocale: () => settings.public().defaultLocale,
   })

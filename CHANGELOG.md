@@ -3,6 +3,26 @@
 All notable changes are documented here. This project follows Semantic
 Versioning; API compatibility details are in `docs/API.md`.
 
+## [1.0.29] - 2026-07-12
+
+### Changed
+
+- Moved active/trash page listing, redirect listing, revision history,
+  contributor aggregation, and recent-change pagination behind an asynchronous
+  driver-neutral page-read repository.
+- Derived spaces, graph, backlinks, labels, broken links, and calendar events
+  from asynchronously loaded active-page records in the service layer.
+- Converted page/search/system/export HTTP reads and Git synchronization to
+  await remote-capable page reads.
+- Preserved the existing synchronous atomic page-write path for the next
+  migration slice.
+
+### Tests
+
+- Added shared SQLite and libSQL page-read contract coverage for lifecycle and
+  path ordering, stable revision tie-breaks, cursors, redirect ordering,
+  author joins, and contributor aggregation.
+
 ## [1.0.28] - 2026-07-12
 
 ### Changed

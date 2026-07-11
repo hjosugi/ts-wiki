@@ -9,7 +9,7 @@ import type { GitStorage } from './git.ts'
 const admin: Principal = { id: 'admin', role: 'admin' }
 
 describe('git sync runtime wiring', () => {
-  test('upsert creates/updates pages and emits page-change events', () => {
+  test('upsert creates/updates pages and emits page-change events', async () => {
     const db = createDb(':memory:')
     const services = createServices(db)
     const bus = createEventBus()
@@ -17,8 +17,8 @@ describe('git sync runtime wiring', () => {
     bus.subscribe((event) => events.push(event))
     const handlers = createGitSyncHandlers({ services, bus, systemPrincipal: admin })
 
-    handlers.upsert('docs/git', { title: 'Git', description: 'from git', content: 'first' })
-    handlers.upsert('docs/git', { title: 'Git v2', description: 'updated', content: 'second' })
+    await handlers.upsert('docs/git', { title: 'Git', description: 'from git', content: 'first' })
+    await handlers.upsert('docs/git', { title: 'Git v2', description: 'updated', content: 'second' })
 
     const page = services.pages.getByPath('docs/git')
     expect(page.ok).toBe(true)
@@ -30,7 +30,7 @@ describe('git sync runtime wiring', () => {
     db.$client.close()
   })
 
-  test('remove deletes pages and emits a delete event', () => {
+  test('remove deletes pages and emits a delete event', async () => {
     const db = createDb(':memory:')
     const services = createServices(db)
     services.pages.create({ path: 'docs/remove', title: 'Remove', content: 'x' }, admin)
@@ -39,14 +39,14 @@ describe('git sync runtime wiring', () => {
     bus.subscribe((event) => events.push(event))
     const handlers = createGitSyncHandlers({ services, bus, systemPrincipal: admin })
 
-    handlers.remove('docs/remove')
+    await handlers.remove('docs/remove')
 
     expect(services.pages.getByPath('docs/remove').ok).toBe(false)
     expect(events).toEqual([{ type: 'page:changed', action: 'deleted', path: 'docs/remove' }])
     db.$client.close()
   })
 
-  test('authoritative reconciliation removes database pages absent from Git', () => {
+  test('authoritative reconciliation removes database pages absent from Git', async () => {
     const db = createDb(':memory:')
     const services = createServices(db)
     services.pages.create({ path: 'docs/tracked', title: 'Tracked', content: 'x' }, admin)
@@ -56,7 +56,7 @@ describe('git sync runtime wiring', () => {
     bus.subscribe((event) => events.push(event))
     const handlers = createGitSyncHandlers({ services, bus, systemPrincipal: admin, authoritative: true })
 
-    handlers.reconcile?.(['docs/tracked'])
+    await handlers.reconcile?.(['docs/tracked'])
 
     expect(services.pages.getByPath('docs/tracked').ok).toBe(true)
     expect(services.pages.getByPath('docs/db-only').ok).toBe(false)
@@ -64,15 +64,15 @@ describe('git sync runtime wiring', () => {
     db.$client.close()
   })
 
-  test('authoritative imports restore archived paths and publish Git-reviewed pages', () => {
+  test('authoritative imports restore archived paths and publish Git-reviewed pages', async () => {
     const db = createDb(':memory:')
     const services = createServices(db)
     services.pages.create({ path: 'docs/restored', title: 'Old', content: 'old' }, admin)
     services.pages.remove('docs/restored', admin)
     const handlers = createGitSyncHandlers({ services, bus: createEventBus(), systemPrincipal: admin, authoritative: true })
 
-    handlers.upsert('docs/restored', { title: 'Restored', description: '', content: 'from git' })
-    handlers.upsert('docs/new', { title: 'New', description: '', content: 'from git' })
+    await handlers.upsert('docs/restored', { title: 'Restored', description: '', content: 'from git' })
+    await handlers.upsert('docs/new', { title: 'New', description: '', content: 'from git' })
 
     const restored = services.pages.getByPath('docs/restored')
     const created = services.pages.getByPath('docs/new')

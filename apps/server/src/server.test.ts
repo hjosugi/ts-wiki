@@ -262,7 +262,7 @@ describe('page + search slice (in-memory db)', () => {
     expect(search.search('天ぷら').tokenizerHint).toBeUndefined()
   })
 
-  test('page metadata supports labels, status, review dates, and filtered search', () => {
+  test('page metadata supports labels, status, review dates, and filtered search', async () => {
     const db = createDb(':memory:')
     const { pages, search } = createServices(db)
     const reviewAt = Date.UTC(2026, 6, 10)
@@ -288,7 +288,7 @@ describe('page + search slice (in-memory db)', () => {
       expect(created.value.spaceKey).toBe('docs')
       expect(created.value.locale).toBe('en-us')
     }
-    expect(pages.list()[0]).toMatchObject({
+    expect((await pages.list())[0]).toMatchObject({
       path: 'docs/runbook',
       labels: '["ops","incident-response"]',
       status: 'verified',
@@ -304,7 +304,7 @@ describe('page + search slice (in-memory db)', () => {
       locale: 'en-us',
     }).hits.length).toBe(1)
     expect(search.search('banana', 20, { label: 'missing' }).hits.length).toBe(0)
-    expect(pages.spaces()).toContainEqual(expect.objectContaining({ key: 'docs', pages: 1 }))
+    expect(await pages.spaces()).toContainEqual(expect.objectContaining({ key: 'docs', pages: 1 }))
   })
 
   test('search ranks exact titles first and can sort equal hits by recency', () => {
@@ -409,7 +409,7 @@ describe('page + search slice (in-memory db)', () => {
     if (listed.ok) expect(listed.value[0]?.filename).toBe('diagram.png')
   })
 
-  test('move changes the page path and preserves search index', () => {
+  test('move changes the page path and preserves search index', async () => {
     const db = createDb(':memory:')
     const { pages, search } = createServices(db)
     pages.create({ path: 'old/path', title: 'Movable', content: 'portable pear' }, admin)
@@ -432,13 +432,13 @@ describe('page + search slice (in-memory db)', () => {
       expect(home.value.content).toContain('[[new/path|old page]]')
       expect(home.value.content).toContain('[legacy](/new/path#details)')
     }
-    expect(pages.backlinks('new/path')).toEqual([
+    expect(await pages.backlinks('new/path')).toEqual([
       { path: 'home', title: 'Home', label: 'old page', kind: 'wikilink' },
       { path: 'home', title: 'Home', label: 'new/path', kind: 'markdown' },
     ])
   })
 
-  test('rewriteLinksForMove rewrites wiki and markdown page links in active pages', () => {
+  test('rewriteLinksForMove rewrites wiki and markdown page links in active pages', async () => {
     const db = createDb(':memory:')
     const { pages } = createServices(db)
     const source = pages.create({
@@ -471,7 +471,7 @@ describe('page + search slice (in-memory db)', () => {
       expect(updated.value.renderedHtml).toContain('href="/docs/new#top"')
       expect(reindexed).toEqual([{ id: updated.value.id, content: updated.value.content }])
     }
-    const history = pages.history('docs/source')
+    const history = await pages.history('docs/source')
     expect(history.ok).toBe(true)
     if (history.ok) {
       expect(history.value).toContainEqual(expect.objectContaining({ action: 'updated', createdAt: now }))
@@ -530,13 +530,13 @@ describe('page + search slice (in-memory db)', () => {
     expect(pages.getByPath('one').ok).toBe(true)
   })
 
-  test('graph exposes resolved and missing page links', () => {
+  test('graph exposes resolved and missing page links', async () => {
     const db = createDb(':memory:')
     const { pages } = createServices(db)
     pages.create({ path: 'home', title: 'Home', content: 'See [[Docs/Intro]] and [Missing](/missing).' }, admin)
     pages.create({ path: 'docs/intro', title: 'Intro', content: 'Back to [Home](/home).' }, admin)
 
-    const graph = pages.graph()
+    const graph = await pages.graph()
 
     expect(graph.nodes).toContainEqual({ path: 'home', title: 'Home', kind: 'page' })
     expect(graph.nodes).toContainEqual({ path: 'docs/intro', title: 'Intro', kind: 'page' })
@@ -546,24 +546,24 @@ describe('page + search slice (in-memory db)', () => {
     expect(graph.edges).toContainEqual({ source: 'docs/intro', target: 'home', kind: 'markdown' })
   })
 
-  test('backlinks expose incoming page mentions', () => {
+  test('backlinks expose incoming page mentions', async () => {
     const db = createDb(':memory:')
     const { pages } = createServices(db)
     pages.create({ path: 'home', title: 'Home', content: 'See [[Docs/Intro|intro]].' }, admin)
     pages.create({ path: 'docs/intro', title: 'Intro', content: 'Hello.' }, admin)
 
-    expect(pages.backlinks('docs/intro')).toEqual([
+    expect(await pages.backlinks('docs/intro')).toEqual([
       { path: 'home', title: 'Home', label: 'intro', kind: 'wikilink' },
     ])
   })
 
-  test('history returns stored revisions newest first', () => {
+  test('history returns stored revisions newest first', async () => {
     const db = createDb(':memory:')
     const { pages } = createServices(db)
     pages.create({ path: 'docs/history', title: 'History', content: 'one' }, admin)
     pages.update('docs/history', { content: 'two' }, admin)
 
-    const history = pages.history('docs/history')
+    const history = await pages.history('docs/history')
 
     expect(history.ok).toBe(true)
     if (history.ok) {
@@ -588,7 +588,7 @@ describe('page + search slice (in-memory db)', () => {
 
     pages.create({ path: 'docs/a', title: 'A', content: 'one' }, alice)
     pages.update('docs/a', { content: 'two' }, alice)
-    const history = pages.history('docs/a')
+    const history = await pages.history('docs/a')
     expect(history.ok).toBe(true)
     if (history.ok) expect(history.value[0]?.authorName).toBe('Alice')
 
@@ -600,30 +600,30 @@ describe('page + search slice (in-memory db)', () => {
     if (list.ok) expect(list.value[0]?.authorName).toBe('Alice')
 
     // A revision with no matching user row resolves to a null name, not a crash.
-    const orphan = pages.history('docs/a')
+    const orphan = await pages.history('docs/a')
     expect(orphan.ok).toBe(true)
   })
 
-  test('labels() aggregates distinct labels with counts', () => {
+  test('labels() aggregates distinct labels with counts', async () => {
     const db = createDb(':memory:')
     const { pages } = createServices(db)
     pages.create({ path: 'a', title: 'A', content: 'x', labels: ['guide', 'api'] }, admin)
     pages.create({ path: 'b', title: 'B', content: 'y', labels: ['guide'] }, admin)
 
-    const labels = pages.labels()
+    const labels = await pages.labels()
     expect(labels.find((l) => l.label === 'guide')?.count).toBe(2)
     expect(labels.find((l) => l.label === 'api')?.count).toBe(1)
     // Sorted most-used first.
     expect(labels[0]?.label).toBe('guide')
   })
 
-  test('brokenLinks() reports links to non-existent pages', () => {
+  test('brokenLinks() reports links to non-existent pages', async () => {
     const db = createDb(':memory:')
     const { pages } = createServices(db)
     pages.create({ path: 'docs/start', title: 'Start', content: 'see [[Docs/Intro]] and [[Docs/Ghost]]' }, admin)
     pages.create({ path: 'docs/intro', title: 'Intro', content: 'hi' }, admin)
 
-    const broken = pages.brokenLinks()
+    const broken = await pages.brokenLinks()
     expect(broken.length).toBe(1)
     expect(broken[0]?.path).toBe('docs/start')
     expect(broken[0]?.target).toBe('docs/ghost')
@@ -631,25 +631,25 @@ describe('page + search slice (in-memory db)', () => {
     expect(broken.some((b) => b.target === 'docs/intro')).toBe(false)
   })
 
-  test('recentChanges() returns revisions across pages, newest first, capped', () => {
+  test('recentChanges() returns revisions across pages, newest first, capped', async () => {
     const db = createDb(':memory:')
     const { pages } = createServices(db)
     pages.create({ path: 'a', title: 'A', content: 'one' }, admin)
     pages.create({ path: 'b', title: 'B', content: 'two' }, admin)
     pages.update('a', { content: 'one!' }, admin)
 
-    const changes = pages.recentChanges()
+    const changes = await pages.recentChanges()
     expect(changes.length).toBeGreaterThanOrEqual(3)
     // Newest first: the update to 'a' is the most recent action.
     expect(changes[0]?.path).toBe('a')
     expect(changes[0]?.action).toBe('updated')
     // The limit is respected and capped.
-    expect(pages.recentChanges(1).length).toBe(1)
-    expect(pages.recentChanges(9999).length).toBeLessThanOrEqual(200)
-    expect(pages.recentChanges(10, changes[0]?.createdAt ?? 0).map((change) => change.id)).not.toContain(changes[0]?.id)
+    expect((await pages.recentChanges(1)).length).toBe(1)
+    expect((await pages.recentChanges(9999)).length).toBeLessThanOrEqual(200)
+    expect((await pages.recentChanges(10, changes[0]?.createdAt ?? 0)).map((change) => change.id)).not.toContain(changes[0]?.id)
   })
 
-  test('history stays newest-first even when revisions share a timestamp', () => {
+  test('history stays newest-first even when revisions share a timestamp', async () => {
     const db = createDb(':memory:')
     const { pages } = createServices(db)
     pages.create({ path: 'docs/history', title: 'History', content: 'one' }, admin)
@@ -658,7 +658,7 @@ describe('page + search slice (in-memory db)', () => {
     // the clock — the rowid tie-break must still put the newer one first.
     db.$client.prepare('UPDATE page_revisions SET created_at = 1000').run()
 
-    const history = pages.history('docs/history')
+    const history = await pages.history('docs/history')
     expect(history.ok).toBe(true)
     if (history.ok) {
       expect(history.value.length).toBe(2)
@@ -667,12 +667,12 @@ describe('page + search slice (in-memory db)', () => {
     }
   })
 
-  test('restoreRevision applies an old revision as a new update', () => {
+  test('restoreRevision applies an old revision as a new update', async () => {
     const db = createDb(':memory:')
     const { pages } = createServices(db)
     pages.create({ path: 'docs/history', title: 'History', content: 'one' }, admin)
     pages.update('docs/history', { content: 'two' }, admin)
-    const history = pages.history('docs/history')
+    const history = await pages.history('docs/history')
     expect(history.ok).toBe(true)
     if (!history.ok) return
 
@@ -680,12 +680,12 @@ describe('page + search slice (in-memory db)', () => {
 
     expect(restored.ok).toBe(true)
     if (restored.ok) expect(restored.value.content).toBe('one')
-    const nextHistory = pages.history('docs/history')
+    const nextHistory = await pages.history('docs/history')
     expect(nextHistory.ok).toBe(true)
     if (nextHistory.ok) expect(nextHistory.value[0]?.action).toBe('updated')
   })
 
-  test('events index extracts calendar fences across pages', () => {
+  test('events index extracts calendar fences across pages', async () => {
     const db = createDb(':memory:')
     const { pages } = createServices(db)
     pages.create({
@@ -694,7 +694,7 @@ describe('page + search slice (in-memory db)', () => {
       content: '```event\ntitle: Sync\nstart: 2026-07-05 10:00\n```',
     }, admin)
 
-    expect(pages.events()).toEqual([
+    expect(await pages.events()).toEqual([
       {
         id: 'calendar/sync:0:sync',
         sourcePath: 'calendar/sync',
@@ -767,7 +767,7 @@ describe('page + search slice (in-memory db)', () => {
     if (summary.ok) expect(summary.value.totalViews).toBe(1)
   })
 
-  test('delete removes from search', () => {
+  test('delete removes from search', async () => {
     const db = createDb(':memory:')
     const { pages, search } = createServices(db)
     pages.create({ path: 'gone', title: 'Gone', content: 'ephemeral mango' }, admin)
@@ -775,7 +775,7 @@ describe('page + search slice (in-memory db)', () => {
     pages.remove('gone', admin)
     expect(search.search('mango').hits.length).toBe(0)
     expect(pages.getByPath('gone').ok).toBe(false)
-    expect(pages.trash()).toContainEqual(expect.objectContaining({ path: 'gone', lifecycle: 'deleted' }))
+    expect(await pages.trash()).toContainEqual(expect.objectContaining({ path: 'gone', lifecycle: 'deleted' }))
   })
 
   test('archive, restore, and purge control recoverable page lifecycle', async () => {
@@ -788,8 +788,8 @@ describe('page + search slice (in-memory db)', () => {
 
     const archived = pages.archive('docs/archive-me', admin)
     expect(archived.ok).toBe(true)
-    expect(pages.list().some((page) => page.path === 'docs/archive-me')).toBe(false)
-    expect(pages.trash()).toContainEqual(expect.objectContaining({ path: 'docs/archive-me', lifecycle: 'archived' }))
+    expect((await pages.list()).some((page) => page.path === 'docs/archive-me')).toBe(false)
+    expect(await pages.trash()).toContainEqual(expect.objectContaining({ path: 'docs/archive-me', lifecycle: 'archived' }))
     expect(search.search('kiwi').hits.length).toBe(0)
 
     const restored = pages.restore('docs/archive-me', admin)
@@ -799,7 +799,7 @@ describe('page + search slice (in-memory db)', () => {
 
     const purged = pages.purge('docs/archive-me', admin)
     expect(purged.ok).toBe(true)
-    expect(pages.history('docs/archive-me').ok).toBe(false)
+    expect((await pages.history('docs/archive-me')).ok).toBe(false)
     expect(tableCount(db, 'page_revisions')).toBe(0)
     expect(tableCount(db, 'page_comments')).toBe(0)
     expect(tableCount(db, 'page_analytics')).toBe(0)

@@ -126,7 +126,7 @@ export const createSystemRoutes = ({
       })
     }
 
-    const recentChanges = services.pages.recentChanges(50)
+    const recentChanges = await services.pages.recentChanges(50)
     const changes = (await Promise.all(recentChanges.map(async (change) =>
       await canReadPage(principal, change.path) ? change : null
     ))).filter((change): change is RecentChange => change !== null)
@@ -146,7 +146,7 @@ export const createSystemRoutes = ({
 
   const sitemapResponse = async (): Promise<Response> => {
     if (publicSettings().privateWiki) return new Response('Not found', { status: 404 })
-    const pages = services.pages.list()
+    const pages = await services.pages.list()
     const publicPages = (await Promise.all(pages.map(async (page) =>
       await canReadPage(null, page.path) ? page : null
     ))).filter((page): page is PageSummary => page !== null)

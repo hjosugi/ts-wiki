@@ -39,6 +39,8 @@ import type { AssetRepository } from '../../repositories/assets.ts'
 import { createSqliteAssetRepository } from './assets.ts'
 import type { SettingsRepository } from '../../repositories/settings.ts'
 import { createSqliteSettingsRepository } from './settings.ts'
+import type { PageReadRepository } from '../../repositories/pages.ts'
+import { createSqlitePageReadRepository } from './pages.ts'
 
 /**
  * Repository composition boundary for the active database driver.
@@ -68,6 +70,7 @@ export interface DatabaseRepositories {
   readonly webhookAutomation: WebhookAutomationRepository
   readonly assets: AssetRepository
   readonly settings: SettingsRepository
+  readonly pageReads: PageReadRepository
 }
 
 export const createDatabaseRepositories = (db: DB): DatabaseRepositories => ({
@@ -92,4 +95,5 @@ export const createDatabaseRepositories = (db: DB): DatabaseRepositories => ({
   webhookAutomation: createSqliteWebhookAutomationRepository(db),
   assets: createSqliteAssetRepository(db),
   settings: createSqliteSettingsRepository(db),
+  pageReads: createSqlitePageReadRepository(db),
 })

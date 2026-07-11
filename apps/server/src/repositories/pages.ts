@@ -27,3 +27,38 @@ export interface PageRecord {
   readonly createdAt: number
   readonly updatedAt: number
 }
+
+export interface PageRevisionWithAuthorRecord {
+  readonly id: string
+  readonly pageId?: string
+  readonly path: string
+  readonly title: string
+  readonly description?: string
+  readonly content?: string
+  readonly authorId: string | null
+  readonly authorName: string | null
+  readonly action: 'created' | 'updated' | 'moved' | 'deleted' | 'archived' | 'restored' | 'purged'
+  readonly createdAt: number
+}
+
+export interface PageRedirectRecord {
+  readonly fromPath: string
+  readonly toPath: string
+  readonly createdAt: number
+}
+
+export interface PageRevisionContributorRecord {
+  readonly authorId: string | null
+  readonly authorName: string | null
+  readonly revisions: number
+  readonly lastContributionAt: number
+}
+
+export interface PageReadRepository {
+  listActive(): Promise<PageRecord[]>
+  listInactive(): Promise<PageRecord[]>
+  listRecentRevisions(before: number | null, limit: number): Promise<PageRevisionWithAuthorRecord[]>
+  listRedirects(): Promise<PageRedirectRecord[]>
+  listRevisions(pageId: string): Promise<PageRevisionWithAuthorRecord[]>
+  revisionContributors(pageId: string): Promise<PageRevisionContributorRecord[]>
+}

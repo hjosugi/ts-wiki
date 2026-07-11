@@ -9,7 +9,7 @@
  * and aren't searchable; storage writes aren't transactional. Here a save is
  * atomic and the page is fully rendered and indexed the instant it returns.
  */
-import { eq, ne, asc, desc, lt, sql } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import {
   type Result,
   ok,
@@ -45,11 +45,11 @@ import {
   pageRedirects,
   pages,
   pageRevisions,
-  users,
   type Page,
   type PageRevision,
 } from '../db/schema.ts'
 import type { SearchIndexer } from './search.ts'
+import type { PageReadRepository } from '../repositories/pages.ts'
 
 export interface PageSummary {
   readonly path: string
@@ -199,21 +199,21 @@ export interface UpsertPageFileResult {
 }
 
 export interface PageService {
-  list(): PageSummary[]
-  allActive(): Page[]
-  trash(): PageSummary[]
-  spaces(): PageSpace[]
-  graph(): PageGraph
-  backlinks(path: string): PageBacklink[]
-  labels(): LabelCount[]
-  brokenLinks(): BrokenLink[]
-  recentChanges(limit?: number, before?: number | null, canRead?: (path: string) => boolean): RecentChange[]
-  redirects(principal: Principal | null): Result<PageRedirectView[], AppError>
+  list(): Promise<PageSummary[]>
+  allActive(): Promise<Page[]>
+  trash(): Promise<PageSummary[]>
+  spaces(): Promise<PageSpace[]>
+  graph(): Promise<PageGraph>
+  backlinks(path: string): Promise<PageBacklink[]>
+  labels(): Promise<LabelCount[]>
+  brokenLinks(): Promise<BrokenLink[]>
+  recentChanges(limit?: number, before?: number | null, canRead?: (path: string) => boolean): Promise<RecentChange[]>
+  redirects(principal: Principal | null): Promise<Result<PageRedirectView[], AppError>>
   createRedirect(fromPath: string, toPath: string, principal: Principal | null): Result<PageRedirectView, AppError>
   deleteRedirect(fromPath: string, principal: Principal | null): Result<{ fromPath: string }, AppError>
-  events(): ExtractedCalendarEvent[]
-  history(path: string): Result<PageRevisionSummary[], AppError>
-  revisionInsights(path: string): Result<PageRevisionInsight, AppError>
+  events(): Promise<ExtractedCalendarEvent[]>
+  history(path: string): Promise<Result<PageRevisionSummary[], AppError>>
+  revisionInsights(path: string): Promise<Result<PageRevisionInsight, AppError>>
   getByPath(path: string): Result<Page, AppError>
   resolveByPath(path: string): Result<ResolvedPage, AppError>
   create(input: PageInput, principal: Principal | null): Result<Page, AppError>
@@ -309,6 +309,7 @@ export interface PageServiceOptions {
 
 export const createPageService = (
   db: DB,
+  pageReads: PageReadRepository,
   searchIndexer: SearchIndexer,
   options: PageServiceOptions = {},
 ): PageService => {
@@ -331,25 +332,13 @@ export const createPageService = (
     readonly events: ExtractedCalendarEvent[]
   }
   let derivedCache: { signature: string; pages: DerivedPageData[] } | null = null
-  const derivedPages = (): DerivedPageData[] => {
-    const stamp = db
-      .select({
-        count: sql<number>`count(*)`,
-        latest: sql<number>`coalesce(max(${pages.updatedAt}), 0)`,
-        total: sql<number>`coalesce(sum(${pages.updatedAt}), 0)`,
-      })
-      .from(pages)
-      .where(eq(pages.lifecycle, 'active'))
-      .get()
-    const signature = `${derivedVersion}:${stamp?.count ?? 0}:${stamp?.latest ?? 0}:${stamp?.total ?? 0}`
+  const derivedPages = async (): Promise<DerivedPageData[]> => {
+    const activePages = await pageReads.listActive()
+    const latest = activePages.reduce((value, page) => Math.max(value, page.updatedAt), 0)
+    const total = activePages.reduce((value, page) => value + page.updatedAt, 0)
+    const signature = `${derivedVersion}:${activePages.length}:${latest}:${total}`
     if (derivedCache?.signature === signature) return derivedCache.pages
-    const indexed = db
-      .select({ path: pages.path, title: pages.title, content: pages.content })
-      .from(pages)
-      .where(eq(pages.lifecycle, 'active'))
-      .orderBy(asc(pages.path))
-      .all()
-      .map((page) => ({
+    const indexed = activePages.map((page) => ({
         path: page.path,
         title: page.title,
         links: extractPageLinks(page.content),
@@ -462,82 +451,33 @@ export const createPageService = (
   }
 
   return {
-    allActive() {
-      return db.select().from(pages).where(eq(pages.lifecycle, 'active')).orderBy(asc(pages.path)).all()
+    async allActive() {
+      return await pageReads.listActive()
     },
 
-    list() {
-      return db
-        .select({
-          path: pages.path,
-          title: pages.title,
-          description: pages.description,
-          icon: pages.icon,
-          coverUrl: pages.coverUrl,
-          coverPosition: pages.coverPosition,
-          lifecycle: pages.lifecycle,
-          status: pages.status,
-          labels: pages.labels,
-          ownerId: pages.ownerId,
-          authorId: pages.authorId,
-          reviewAt: pages.reviewAt,
-          publishAt: pages.publishAt,
-          navOrder: pages.navOrder,
-          pinned: pages.pinned,
-          spaceKey: pages.spaceKey,
-          locale: pages.locale,
-          updatedAt: pages.updatedAt,
+    async list() {
+      return await pageReads.listActive()
+    },
+
+    async trash() {
+      return await pageReads.listInactive()
+    },
+
+    async spaces() {
+      const spaces = new Map<string, PageSpace>()
+      for (const page of await pageReads.listActive()) {
+        const current = spaces.get(page.spaceKey)
+        spaces.set(page.spaceKey, {
+          key: page.spaceKey,
+          pages: (current?.pages ?? 0) + 1,
+          updatedAt: Math.max(current?.updatedAt ?? 0, page.updatedAt),
         })
-        .from(pages)
-        .where(eq(pages.lifecycle, 'active'))
-        .orderBy(asc(pages.path))
-        .all()
+      }
+      return [...spaces.values()].sort((a, b) => a.key.localeCompare(b.key))
     },
 
-    trash() {
-      return db
-        .select({
-          path: pages.path,
-          title: pages.title,
-          description: pages.description,
-          icon: pages.icon,
-          coverUrl: pages.coverUrl,
-          coverPosition: pages.coverPosition,
-          lifecycle: pages.lifecycle,
-          status: pages.status,
-          labels: pages.labels,
-          ownerId: pages.ownerId,
-          authorId: pages.authorId,
-          reviewAt: pages.reviewAt,
-          publishAt: pages.publishAt,
-          navOrder: pages.navOrder,
-          pinned: pages.pinned,
-          spaceKey: pages.spaceKey,
-          locale: pages.locale,
-          updatedAt: pages.updatedAt,
-        })
-        .from(pages)
-        .where(ne(pages.lifecycle, 'active'))
-        .orderBy(desc(pages.updatedAt))
-        .all()
-    },
-
-    spaces() {
-      return db
-        .select({
-          key: pages.spaceKey,
-          pages: sql<number>`count(*)`,
-          updatedAt: sql<number>`max(${pages.updatedAt})`,
-        })
-        .from(pages)
-        .where(eq(pages.lifecycle, 'active'))
-        .groupBy(pages.spaceKey)
-        .orderBy(asc(pages.spaceKey))
-        .all()
-    },
-
-    graph() {
-      const allPages = derivedPages()
+    async graph() {
+      const allPages = await derivedPages()
       const existing = new Map(allPages.map((page) => [page.path, page]))
       const missing = new Set<string>()
       const edgeKeys = new Set<string>()
@@ -564,11 +504,11 @@ export const createPageService = (
       return { nodes, edges }
     },
 
-    backlinks(path) {
+    async backlinks(path) {
       const target = normalizePath(path)
       const out: PageBacklink[] = []
       const seen = new Set<string>()
-      for (const page of derivedPages()) {
+      for (const page of await derivedPages()) {
         for (const link of page.links) {
           if (link.path !== target) continue
           const key = `${page.path}\u0000${link.kind}`
@@ -580,9 +520,9 @@ export const createPageService = (
       return out
     },
 
-    labels() {
+    async labels() {
       const counts = new Map<string, number>()
-      for (const page of db.select({ labels: pages.labels }).from(pages).where(eq(pages.lifecycle, 'active')).all()) {
+      for (const page of await pageReads.listActive()) {
         for (const label of parseLabels(page.labels)) {
           counts.set(label, (counts.get(label) ?? 0) + 1)
         }
@@ -592,8 +532,8 @@ export const createPageService = (
         .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
     },
 
-    brokenLinks() {
-      const allPages = derivedPages()
+    async brokenLinks() {
+      const allPages = await derivedPages()
       const existing = new Set(allPages.map((page) => page.path))
       const out: BrokenLink[] = []
       const seen = new Set<string>()
@@ -609,28 +549,13 @@ export const createPageService = (
       return out
     },
 
-    recentChanges(limit = 50, before = null, canRead) {
+    async recentChanges(limit = 50, before = null, canRead) {
       const capped = Math.min(Math.max(limit, 1), 200)
-      const selection = {
-        id: pageRevisions.id,
-        path: pageRevisions.path,
-        title: pageRevisions.title,
-        action: pageRevisions.action,
-        authorId: pageRevisions.authorId,
-        authorName: users.name,
-        createdAt: pageRevisions.createdAt,
-      }
-      const fetchBatch = (cursor: number | null, batchSize: number) => {
-        const query = db.select(selection).from(pageRevisions).leftJoin(users, eq(users.id, pageRevisions.authorId))
-        return cursor === null
-          ? query.orderBy(desc(pageRevisions.createdAt), sql`page_revisions.rowid desc`).limit(batchSize).all()
-          : query.where(lt(pageRevisions.createdAt, cursor)).orderBy(desc(pageRevisions.createdAt), sql`page_revisions.rowid desc`).limit(batchSize).all()
-      }
       const readable: RecentChange[] = []
       const batchSize = Math.min(Math.max(capped * 3, 50), 500)
       let cursor = before ?? null
       for (let batch = 0; batch < 20 && readable.length < capped; batch += 1) {
-        const rows = fetchBatch(cursor, batchSize)
+        const rows = await pageReads.listRecentRevisions(cursor, batchSize)
         if (!rows.length) break
         for (const row of rows) {
           if (!canRead || canRead(row.path)) readable.push({ ...row, authorName: row.authorName ?? null })
@@ -642,10 +567,10 @@ export const createPageService = (
       return readable
     },
 
-    redirects(principal) {
+    async redirects(principal) {
       const allowed = requirePagePermission(principal, 'page:update')
       if (!allowed.ok) return allowed
-      return ok(db.select().from(pageRedirects).orderBy(asc(pageRedirects.fromPath)).all())
+      return ok(await pageReads.listRedirects())
     },
 
     createRedirect(fromPath, toPath, principal) {
@@ -678,69 +603,29 @@ export const createPageService = (
       return ok({ fromPath: from })
     },
 
-    events() {
-      return derivedPages()
+    async events() {
+      return (await derivedPages())
         .flatMap((page) => page.events)
         .sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title))
     },
 
-    history(path) {
+    async history(path) {
       const page = findByPath(path)
       if (!page) return err(notFound(`No page at "${path}"`))
-      const revisions = db
-        .select({
-          id: pageRevisions.id,
-          path: pageRevisions.path,
-          title: pageRevisions.title,
-          description: pageRevisions.description,
-          content: pageRevisions.content,
-          authorId: pageRevisions.authorId,
-          authorName: users.name,
-          action: pageRevisions.action,
-          createdAt: pageRevisions.createdAt,
-        })
-        .from(pageRevisions)
-        .leftJoin(users, eq(users.id, pageRevisions.authorId))
-        .where(eq(pageRevisions.pageId, page.id))
-        // Tie-break equal timestamps by insertion order (SQLite rowid) so
-        // revisions created in the same millisecond still sort deterministically
-        // newest-first. Qualify rowid — the users join makes a bare `rowid` ambiguous.
-        .orderBy(desc(pageRevisions.createdAt), sql`page_revisions.rowid desc`)
-        .all()
-      return ok(revisions.map((r) => ({ ...r, authorName: r.authorName ?? null })))
+      return ok(await pageReads.listRevisions(page.id) as PageRevisionSummary[])
     },
 
-    revisionInsights(path) {
+    async revisionInsights(path) {
       const page = findByPath(path)
       if (page?.lifecycle !== 'active') return err(notFound(`No page at "${path}"`))
-      const revisionCount = Number(
-        db
-          .select({ total: sql<number>`count(*)` })
-          .from(pageRevisions)
-          .where(eq(pageRevisions.pageId, page.id))
-          .get()?.total ?? 0,
-      )
-      const lastContributionAt = sql<number>`max(${pageRevisions.createdAt})`
-      const contributors = db
-        .select({
-          authorId: pageRevisions.authorId,
-          authorName: users.name,
-          revisions: sql<number>`count(*)`,
-          lastContributionAt,
-        })
-        .from(pageRevisions)
-        .leftJoin(users, eq(users.id, pageRevisions.authorId))
-        .where(eq(pageRevisions.pageId, page.id))
-        .groupBy(pageRevisions.authorId, users.name)
-        .orderBy(desc(lastContributionAt), asc(users.name))
-        .all()
-        .map((row) => ({
+      const revisions = await pageReads.listRevisions(page.id)
+      const contributors = (await pageReads.revisionContributors(page.id)).map((row) => ({
           authorId: row.authorId,
           authorName: row.authorName ?? (row.authorId ? 'Unknown user' : 'Unknown'),
-          revisions: Number(row.revisions),
-          lastContributionAt: Number(row.lastContributionAt),
+          revisions: row.revisions,
+          lastContributionAt: row.lastContributionAt,
         }))
-      return ok({ revisionCount, contributors })
+      return ok({ revisionCount: revisions.length, contributors })
     },
 
     getByPath(path) {

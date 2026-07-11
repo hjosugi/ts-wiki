@@ -30,11 +30,11 @@ export const createGitSyncHandlers = ({
   onPageWrite,
   authoritative = false,
 }: GitSyncRuntimeDeps): GitSyncHandlers => ({
-  upsert: (path, file) => {
+  upsert: async (path, file) => {
     // A previous authoritative reconciliation may have archived this path while
     // the remote was empty or incomplete. Bring it back before applying Git so
     // imports cannot silently conflict with the trash entry forever.
-    if (authoritative && services.pages.trash().some((page) => page.path === path)) {
+    if (authoritative && (await services.pages.trash()).some((page) => page.path === path)) {
       services.pages.restore(path, systemPrincipal)
     }
     const result = services.pages.upsertFromFile(
@@ -56,9 +56,9 @@ export const createGitSyncHandlers = ({
     }
   },
   reconcile: authoritative
-    ? (trackedPaths) => {
+    ? async (trackedPaths) => {
         const tracked = new Set(trackedPaths)
-        for (const page of services.pages.allActive()) {
+        for (const page of await services.pages.allActive()) {
           if (!tracked.has(page.path)) {
             const result = services.pages.remove(page.path, systemPrincipal)
             if (result.ok) {

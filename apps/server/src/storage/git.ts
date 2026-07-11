@@ -53,10 +53,10 @@ export interface PageForGit {
 export type GitAuthor = { name: string; email: string } | null
 
 export interface GitSyncHandlers {
-  upsert(path: string, file: PageFileData): void
-  remove(path: string): void
+  upsert(path: string, file: PageFileData): unknown | Promise<unknown>
+  remove(path: string): unknown | Promise<unknown>
   /** Reconcile an existing DB against all paths tracked by Git on initial sync. */
-  reconcile?(trackedPaths: readonly string[]): void
+  reconcile?(trackedPaths: readonly string[]): unknown | Promise<unknown>
 }
 
 export interface SyncResult {
@@ -256,25 +256,25 @@ export const createGitStorage = (config: GitConfig): GitStorage => {
         const upserted: string[] = []
         const deleted: string[] = []
 
-        const apply = (status: string, file: string, renamedFrom?: string): void => {
+        const apply = async (status: string, file: string, renamedFrom?: string): Promise<void> => {
           if (status.startsWith('R')) {
             if (renamedFrom) {
               const oldPath = filePathToPagePath(renamedFrom)
               if (oldPath) {
-                handlers.remove(oldPath)
+                await handlers.remove(oldPath)
                 deleted.push(oldPath)
               }
             }
             const newPath = filePathToPagePath(file)
             const data = readFile(file)
             if (newPath && data) {
-              handlers.upsert(newPath, data)
+              await handlers.upsert(newPath, data)
               upserted.push(newPath)
             }
           } else if (status === 'D') {
             const path = filePathToPagePath(file)
             if (path) {
-              handlers.remove(path)
+              await handlers.remove(path)
               deleted.push(path)
             }
           } else {
@@ -282,7 +282,7 @@ export const createGitStorage = (config: GitConfig): GitStorage => {
             const path = filePathToPagePath(file)
             const data = readFile(file)
             if (path && data) {
-              handlers.upsert(path, data)
+              await handlers.upsert(path, data)
               upserted.push(path)
             }
           }
@@ -300,23 +300,23 @@ export const createGitStorage = (config: GitConfig): GitStorage => {
             if (!file.trim()) continue
             const path = filePathToPagePath(file.trim())
             if (path) trackedPaths.push(path)
-            apply('A', file)
+            await apply('A', file)
           }
           // An empty/misconfigured remote must never erase the entire wiki.
-          if (trackedPaths.length) handlers.reconcile?.(trackedPaths)
+          if (trackedPaths.length) await handlers.reconcile?.(trackedPaths)
         } else if (marker && marker !== head) {
           const diff = await git('diff', '--name-status', '-M', `${marker}..HEAD`, '--', 'content')
           for (const line of diff.text().split('\n')) {
             if (!line.trim()) continue
             const parts = line.split('\t')
-            if (parts[0]?.startsWith('R')) apply(parts[0], parts[2] ?? '', parts[1])
-            else apply(parts[0] ?? '', parts[1] ?? '')
+            if (parts[0]?.startsWith('R')) await apply(parts[0], parts[2] ?? '', parts[1])
+            else await apply(parts[0] ?? '', parts[1] ?? '')
           }
         } else if (!marker) {
           // No marker yet: import every tracked content file.
           const files = await git('ls-files', 'content')
           for (const file of files.text().split('\n')) {
-            if (file.trim()) apply('A', file)
+            if (file.trim()) await apply('A', file)
           }
         }
 

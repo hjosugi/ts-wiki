@@ -65,14 +65,14 @@ export const createPageRoutes = ({
   app
     .get('/api/pages', async ({ query, services, principal }) => {
       await requirePageRead(principal)
-      const visiblePages = await filterAsync(services.pages.list(), async (page) => await canReadPage(principal, page.path) && canSeePage(principal, page))
+      const visiblePages = await filterAsync(await services.pages.list(), async (page) => await canReadPage(principal, page.path) && canSeePage(principal, page))
       const result = pageOf(visiblePages, query.limit, query.offset)
       return { pages: result.items, total: result.total, limit: result.limit, offset: result.offset }
     }, { query: t.Object({ limit: t.Optional(t.Numeric()), offset: t.Optional(t.Numeric()) }) })
     .get('/api/pages/popular', async ({ query, services, principal }) => {
       await requirePageRead(principal)
       const readable = new Map(
-        (await filterAsync(services.pages.list(), async (page) => await canReadPage(principal, page.path) && canSeePage(principal, page)))
+        (await filterAsync(await services.pages.list(), async (page) => await canReadPage(principal, page.path) && canSeePage(principal, page)))
           .map((page) => [page.path, page]),
       )
       return {
@@ -91,7 +91,7 @@ export const createPageRoutes = ({
       await requirePageRead(principal)
       const user = await services.users.findById(params.id)
       if (!isUserActive(user)) throw new HttpError(notFound('User profile not found'))
-      const readablePages = await filterAsync(services.pages.list(), async (page) => await canReadPage(principal, page.path) && canSeePage(principal, page))
+      const readablePages = await filterAsync(await services.pages.list(), async (page) => await canReadPage(principal, page.path) && canSeePage(principal, page))
       const byPath = new Map(readablePages.map((page) => [page.path, page]))
       const profile = publicUserProfile(user)
       const favoritePages = profile.profileFavoritePages.flatMap((path) => {
@@ -112,7 +112,7 @@ export const createPageRoutes = ({
     })
     .get('/api/spaces', async ({ query, services, principal }) => {
       await requirePageRead(principal)
-      const visiblePages = await filterAsync(services.pages.list(), async (page) => await canReadPage(principal, page.path) && canSeePage(principal, page))
+      const visiblePages = await filterAsync(await services.pages.list(), async (page) => await canReadPage(principal, page.path) && canSeePage(principal, page))
       const spaces = [...visiblePages.reduce((map, page) => {
         const current = map.get(page.spaceKey)
         map.set(page.spaceKey, { key: page.spaceKey, pages: (current?.pages ?? 0) + 1, updatedAt: Math.max(current?.updatedAt ?? 0, page.updatedAt) })
@@ -121,15 +121,15 @@ export const createPageRoutes = ({
       const result = pageOf(spaces, query.limit, query.offset)
       return { spaces: result.items, total: result.total, limit: result.limit, offset: result.offset }
     }, { query: t.Object({ limit: t.Optional(t.Numeric()), offset: t.Optional(t.Numeric()) }) })
-    .get('/api/pages/trash', ({ query, services, principal }) => {
+    .get('/api/pages/trash', async ({ query, services, principal }) => {
       requireHttpPermission(principal, 'page:delete')
-      const result = pageOf(services.pages.trash(), query.limit, query.offset)
+      const result = pageOf(await services.pages.trash(), query.limit, query.offset)
       return { pages: result.items, total: result.total, limit: result.limit, offset: result.offset }
     }, { query: t.Object({ limit: t.Optional(t.Numeric()), offset: t.Optional(t.Numeric()) }) })
     .get('/api/graph', async ({ services, principal }) => {
       await requirePageRead(principal)
-      const visible = new Set((await filterAsync(services.pages.list(), async (page) => await canReadPage(principal, page.path) && canSeePage(principal, page))).map((page) => page.path))
-      const graph = services.pages.graph()
+      const visible = new Set((await filterAsync(await services.pages.list(), async (page) => await canReadPage(principal, page.path) && canSeePage(principal, page))).map((page) => page.path))
+      const graph = await services.pages.graph()
       const kindByPath = new Map(graph.nodes.map((node) => [node.path, node.kind]))
       return {
         nodes: graph.nodes.filter((node) => visible.has(node.path) || (node.kind === 'missing' && graph.edges.some((edge) => edge.target === node.path && visible.has(edge.source)))),
@@ -138,25 +138,25 @@ export const createPageRoutes = ({
     })
     .get('/api/events/index', async ({ services, principal }) => {
       await requirePageRead(principal)
-      const visible = new Set((await filterAsync(services.pages.list(), async (page) => await canReadPage(principal, page.path) && canSeePage(principal, page))).map((page) => page.path))
-      return { events: services.pages.events().filter((event) => visible.has(event.sourcePath)) }
+      const visible = new Set((await filterAsync(await services.pages.list(), async (page) => await canReadPage(principal, page.path) && canSeePage(principal, page))).map((page) => page.path))
+      return { events: (await services.pages.events()).filter((event) => visible.has(event.sourcePath)) }
     })
     .get('/api/labels', async ({ services, principal }) => {
       await requirePageRead(principal)
       const counts = new Map<string, number>()
-      for (const page of await filterAsync(services.pages.list(), async (item) => await canReadPage(principal, item.path) && canSeePage(principal, item))) {
+      for (const page of await filterAsync(await services.pages.list(), async (item) => await canReadPage(principal, item.path) && canSeePage(principal, item))) {
         for (const label of parseJsonStringArray(page.labels)) counts.set(label, (counts.get(label) ?? 0) + 1)
       }
       return { labels: [...counts].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)) }
     })
     .get('/api/links/broken', async ({ services, principal }) => {
       await requirePageRead(principal)
-      const readable = new Set((await filterAsync(services.pages.list(), async (page) => await canReadPage(principal, page.path) && canSeePage(principal, page))).map((page) => page.path))
-      return { links: services.pages.brokenLinks().filter((link) => readable.has(link.path)) }
+      const readable = new Set((await filterAsync(await services.pages.list(), async (page) => await canReadPage(principal, page.path) && canSeePage(principal, page))).map((page) => page.path))
+      return { links: (await services.pages.brokenLinks()).filter((link) => readable.has(link.path)) }
     })
     .get('/api/changes', async ({ query, services, principal }) => {
       await requirePageRead(principal)
-      const changes = services.pages.recentChanges(query.limit, query.before)
+      const changes = await services.pages.recentChanges(query.limit, query.before)
       return {
         changes: await filterAsync(changes, (change) => canReadPage(principal, change.path)),
       }
@@ -166,8 +166,8 @@ export const createPageRoutes = ({
         before: t.Optional(t.Numeric()),
       }),
     })
-    .get('/api/redirects', ({ services, principal }) => ({
-      redirects: unwrap(services.pages.redirects(principal)),
+    .get('/api/redirects', async ({ services, principal }) => ({
+      redirects: unwrap(await services.pages.redirects(principal)),
     }))
     .post('/api/redirects', ({ body, services, principal }) => {
       const redirect = unwrap(services.pages.createRedirect(body.fromPath, body.toPath, principal))
@@ -263,7 +263,7 @@ export const createPageRoutes = ({
         const page = unwrap(services.pages.getByPath(query.path))
         return {
           ...await services.analytics.page(page.path),
-          ...unwrap(services.pages.revisionInsights(page.path)),
+          ...unwrap(await services.pages.revisionInsights(page.path)),
         }
       },
       { query: t.Object({ path: t.String() }) },
@@ -307,8 +307,8 @@ export const createPageRoutes = ({
       '/api/page/backlinks',
       async ({ query, services, principal }) => {
         await requirePageRead(principal, query.path)
-        const visible = new Set((await filterAsync(services.pages.list(), async (page) => await canReadPage(principal, page.path) && canSeePage(principal, page))).map((page) => page.path))
-        return { backlinks: services.pages.backlinks(query.path).filter((link) => visible.has(link.path)) }
+        const visible = new Set((await filterAsync(await services.pages.list(), async (page) => await canReadPage(principal, page.path) && canSeePage(principal, page))).map((page) => page.path))
+        return { backlinks: (await services.pages.backlinks(query.path)).filter((link) => visible.has(link.path)) }
       },
       { query: t.Object({ path: t.String() }) },
     )
@@ -316,7 +316,7 @@ export const createPageRoutes = ({
       '/api/page/history',
       async ({ query, services, principal }) => {
         await requirePageRead(principal, query.path)
-        return { revisions: unwrap(services.pages.history(query.path)) }
+        return { revisions: unwrap(await services.pages.history(query.path)) }
       },
       { query: t.Object({ path: t.String() }) },
     )

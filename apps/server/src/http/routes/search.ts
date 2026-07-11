@@ -10,7 +10,7 @@ export interface SearchRoutesContext {
 export const createSearchRoutes = ({ requireSearchRead, canReadPage }: SearchRoutesContext) => (app: BaseApp) =>
   app.get('/api/search', async ({ query, services, principal }) => {
     requireSearchRead(principal)
-    const pages = services.pages.list()
+    const pages = await services.pages.list()
     const publicationByPath = new Map(pages.map((page) => [page.path, page]))
     const readablePaths = new Set((await Promise.all(pages.map(async (page) =>
       await canReadPage(principal, page.path) ? page.path : null
