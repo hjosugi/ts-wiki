@@ -285,7 +285,7 @@ export const createFtsSearchIndexer = (
 ): SearchIndexer => {
   const configuredTokenizer = options.configuredTokenizer ?? 'unicode61'
   const ftsInsert = db.$client.prepare(
-    'INSERT INTO pages_fts(page_id, title, description, content, comments, assets) VALUES (?, ?, ?, ?, ?, ?)',
+    'INSERT INTO pages_fts(rowid, page_id, title, description, content, comments, assets) VALUES (?, ?, ?, ?, ?, ?, ?)',
   )
   const ftsDelete = db.$client.prepare('DELETE FROM pages_fts WHERE page_id = ?')
 
@@ -452,16 +452,15 @@ export const createFtsSearchIndexer = (
       return a.rank - b.rank || b.updatedAt - a.updatedAt || a.path.localeCompare(b.path)
     })
 
-  const page = {
-    indexPageById(pageId: string) {
-      const page = db.select().from(pages).where(eq(pages.id, pageId)).get()
-      ftsDelete.run(pageId)
-      if (!page || page.lifecycle !== 'active') {
-        db.delete(pageAssetRefs).where(eq(pageAssetRefs.pageId, pageId)).run()
+  const indexPage = (page: typeof pages.$inferSelect): void => {
+      ftsDelete.run(page.id)
+      if (page.lifecycle !== 'active') {
+        db.delete(pageAssetRefs).where(eq(pageAssetRefs.pageId, page.id)).run()
         return
       }
       syncPageAssetReferences(db, page.id, page.content)
       ftsInsert.run(
+        Math.floor(Math.random() * 2 ** 48) + 2 ** 32,
         page.id,
         page.title,
         page.description,
@@ -469,6 +468,19 @@ export const createFtsSearchIndexer = (
         commentTextForPage(db, page.id),
         assetTextForPage(db, page.id),
       )
+  }
+
+  const page = {
+    indexPage,
+
+    indexPageById(pageId: string) {
+      const record = db.select().from(pages).where(eq(pages.id, pageId)).get()
+      if (!record) {
+        ftsDelete.run(pageId)
+        db.delete(pageAssetRefs).where(eq(pageAssetRefs.pageId, pageId)).run()
+        return
+      }
+      indexPage(record)
     },
 
     removePage(pageId: string) {

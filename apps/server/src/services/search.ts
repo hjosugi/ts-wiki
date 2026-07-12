@@ -5,6 +5,7 @@ import {
   ok,
   requirePermission,
 } from '@kawaii-wiki/core'
+import type { PageRecord } from '../repositories/pages.ts'
 export { buildMatchQuery, containsCjk } from './search-query.ts'
 
 export type SearchHitKind = 'page' | 'comment' | 'asset'
@@ -88,6 +89,7 @@ export interface SearchIndexRebuildInput {
 }
 
 export interface SearchIndexer {
+  indexPage(page: PageRecord): void
   indexPageById(pageId: string): void
   removePage(pageId: string): void
   search(query: string, request: Required<SearchRequest>, canRead?: (path: string) => boolean): SearchResponse

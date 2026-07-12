@@ -2,13 +2,14 @@ import { describe, expect, test } from 'bun:test'
 import type { Principal } from '@kawaii-wiki/core'
 import { createDb } from '../db/client.ts'
 import { createSqliteCommentRepository } from '../db/repositories/comments.ts'
-import { createServices } from './index.ts'
+import { createServices } from '../db/services.ts'
 import { createCommentService } from './comments.ts'
 import type { SearchIndexer } from './search.ts'
 
 const admin: Principal = { id: 'admin-1', role: 'admin' }
 
 const fakeIndexer = (indexed: string[]): SearchIndexer => ({
+  indexPage: (page) => indexed.push(page.id),
   indexPageById: (pageId) => indexed.push(pageId),
   removePage: () => {},
   search: () => {

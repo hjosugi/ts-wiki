@@ -32,13 +32,15 @@ export const FTS_TOKENIZER = FTS_TOKENIZER_SQL[DEFAULT_FTS_TOKENIZER]
 
 export interface MigrationOptions {
   readonly ftsTokenizer?: FtsTokenizer
+  /** Verify Drizzle schema after migration. Remote replicas verify after sync. */
+  readonly verifySchema?: boolean
 }
 
 const hasColumn = (sqlite: MigratableDatabase, table: string, column: string): boolean =>
   sqlite
     .prepare(`PRAGMA table_info(${table})`)
     .all()
-    .some((row) => (row as { name?: string }).name === column)
+    .some((row) => (row as { name?: string }).name?.toLowerCase() === column.toLowerCase())
 
 const addColumn = (sqlite: MigratableDatabase, table: string, column: string, definition: string): boolean => {
   if (!hasColumn(sqlite, table, column)) {
@@ -60,10 +62,10 @@ const assertSchemaMatchesDatabase = (sqlite: MigratableDatabase): void => {
     if (!config.name || !config.columns.length) continue
     const existingColumns = new Set(
       sqlite.prepare(`PRAGMA table_info("${config.name}")`).all()
-        .map((row) => (row as { name?: string }).name)
+        .map((row) => (row as { name?: string }).name?.toLowerCase())
         .filter((name): name is string => Boolean(name)),
     )
-    const missingColumns = config.columns.map((column) => column.name).filter((name) => !existingColumns.has(name))
+    const missingColumns = config.columns.map((column) => column.name).filter((name) => !existingColumns.has(name.toLowerCase()))
     if (missingColumns.length) {
       throw new Error(`Database schema drift: ${config.name} is missing columns ${missingColumns.join(', ')}`)
     }
@@ -635,6 +637,10 @@ export const runMigrations = (sqlite: MigratableDatabase, options: MigrationOpti
     sqlite.exec('UPDATE users SET email_verified_at = created_at WHERE email_verified_at IS NULL;')
   }
   sqlite.exec(`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (1, ${Date.now()});`)
+  if (options.verifySchema !== false) assertSchemaMatchesDatabase(sqlite)
+}
+
+export const verifyDatabaseSchema = (sqlite: MigratableDatabase): void => {
   assertSchemaMatchesDatabase(sqlite)
 }
 

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { Database as BunDatabase } from 'bun:sqlite'
 import { createDb } from './client.ts'
 import { runMigrations } from './migrate.ts'
-import { createServices } from '../services/index.ts'
+import { createServices } from './services.ts'
 
 describe('createDb', () => {
   test('email verification backfill runs only when the column is first added', async () => {

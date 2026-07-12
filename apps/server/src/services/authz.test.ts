@@ -3,7 +3,7 @@ import { can, type Principal, type Role } from '@kawaii-wiki/core'
 import { createDb } from '../db/client.ts'
 import { createSqliteAuthzRepository } from '../db/repositories/authz.ts'
 import { createAuthzService } from './authz.ts'
-import { createServices } from './index.ts'
+import { createServices } from '../db/services.ts'
 
 const admin: Principal = { id: 'admin-1', role: 'admin' }
 

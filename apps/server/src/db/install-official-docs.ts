@@ -3,7 +3,7 @@ import type { Principal } from '@kawaii-wiki/core'
 import { loadEnv } from '../env.ts'
 import { createDb } from './client.ts'
 import { users } from './schema.ts'
-import { createServices } from '../services/index.ts'
+import { createServices } from './services.ts'
 import { OFFICIAL_DOCS_VERSION, officialDocumentationPages } from '../official-docs.ts'
 
 export const runOfficialDocsInstall = async (): Promise<void> => {

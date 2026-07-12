@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { Principal } from '@kawaii-wiki/core'
 import { createDb } from '../db/client.ts'
-import { createServices } from './index.ts'
+import { createServices } from '../db/services.ts'
 
 describe('notification service', () => {
   test('watches pages, notifies other editors, and marks notifications read', async () => {

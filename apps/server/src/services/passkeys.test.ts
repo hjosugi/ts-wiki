@@ -10,7 +10,7 @@ import type {
 import type { AuthEnv } from '../env.ts'
 import { createDb } from '../db/client.ts'
 import { passkeys } from '../db/schema.ts'
-import { createServices } from './index.ts'
+import { createServices } from '../db/services.ts'
 import { createPasskeyService, type PasskeyVerifier } from './passkeys.ts'
 import { createDatabaseRepositories } from '../db/repositories/index.ts'
 

@@ -94,22 +94,29 @@ export const createSqlitePageWriteRepository = (db: DB, searchIndexer: SearchInd
     return db.select().from(pageRedirects).where(eq(pageRedirects.fromPath, path)).get()?.toPath ?? null
   },
   async writeExisting(input) {
-    return db.transaction((tx) => {
+    const page = db.transaction((tx) => {
       if (input.revision) insertRevision(tx, input.revision)
       tx.update(pages).set(input.changes).where(eq(pages.id, input.pageId)).run()
-      searchIndexer.indexPageById(input.pageId)
-      return tx.select().from(pages).where(eq(pages.id, input.pageId)).get()
+      const updated = tx.select().from(pages).where(eq(pages.id, input.pageId)).get()
+      if (updated && !db.$syncAfterWrite) searchIndexer.indexPage(updated)
+      return updated
     })
+    if (page && db.$syncAfterWrite) searchIndexer.indexPage(page)
+    await db.$syncAfterWrite?.()
+    return page
   },
   async create(page, revision) {
     try {
-      return db.transaction((tx) => {
+      const created = db.transaction((tx) => {
         tx.delete(pageRedirects).where(eq(pageRedirects.fromPath, page.path)).run()
         tx.insert(pages).values(page).run()
         insertRevision(tx, revision)
-        searchIndexer.indexPageById(page.id)
+        if (!db.$syncAfterWrite) searchIndexer.indexPage(page)
         return tx.select().from(pages).where(eq(pages.id, page.id)).get()
       })
+      if (created && db.$syncAfterWrite) searchIndexer.indexPage(created)
+      await db.$syncAfterWrite?.()
+      return created
     } catch (error) {
       if (isUniqueConstraintError(error)) throw new DuplicatePagePathError()
       throw error
@@ -117,22 +124,34 @@ export const createSqlitePageWriteRepository = (db: DB, searchIndexer: SearchInd
   },
   async createRedirect(record) {
     db.insert(pageRedirects).values(record).run()
+    await db.$syncAfterWrite?.()
   },
   async deleteRedirect(fromPath) {
     db.delete(pageRedirects).where(eq(pageRedirects.fromPath, fromPath)).run()
+    await db.$syncAfterWrite?.()
   },
   async setLifecycle(input) {
-    return db.transaction((tx) => {
+    const page = db.transaction((tx) => {
       insertRevision(tx, input.revision)
       tx.update(pages).set({ lifecycle: input.lifecycle, updatedAt: input.updatedAt })
         .where(eq(pages.id, input.pageId)).run()
-      if (input.index) searchIndexer.indexPageById(input.pageId)
-      else searchIndexer.removePage(input.pageId)
-      return tx.select().from(pages).where(eq(pages.id, input.pageId)).get()
+      const updated = tx.select().from(pages).where(eq(pages.id, input.pageId)).get()
+      if (!db.$syncAfterWrite) {
+        if (input.index && updated) searchIndexer.indexPage(updated)
+        else searchIndexer.removePage(input.pageId)
+      }
+      return updated
     })
+    if (db.$syncAfterWrite) {
+      if (input.index && page) searchIndexer.indexPage(page)
+      else searchIndexer.removePage(input.pageId)
+    }
+    await db.$syncAfterWrite?.()
+    return page
   },
   async move(input) {
-    return db.transaction((tx) => {
+    const pagesToIndex: Array<typeof pages.$inferSelect> = []
+    const page = db.transaction((tx) => {
       insertRevision(tx, input.revision)
       tx.update(pages).set({ path: input.newPath, spaceKey: input.spaceKey, updatedAt: input.updatedAt })
         .where(eq(pages.id, input.pageId)).run()
@@ -153,22 +172,36 @@ export const createSqlitePageWriteRepository = (db: DB, searchIndexer: SearchInd
           toc: rewritten.toc,
           updatedAt: rewritten.updatedAt,
         }).where(eq(pages.id, rewritten.pageId)).run()
-        searchIndexer.indexPageById(rewritten.pageId)
+        const updated = tx.select().from(pages).where(eq(pages.id, rewritten.pageId)).get()
+        if (updated) {
+          if (db.$syncAfterWrite) pagesToIndex.push(updated)
+          else searchIndexer.indexPage(updated)
+        }
       }
-      searchIndexer.indexPageById(input.pageId)
-      return tx.select().from(pages).where(eq(pages.id, input.pageId)).get()
+      const moved = tx.select().from(pages).where(eq(pages.id, input.pageId)).get()
+      if (moved) {
+        if (db.$syncAfterWrite) pagesToIndex.push(moved)
+        else searchIndexer.indexPage(moved)
+      }
+      return moved
     })
+    for (const indexedPage of pagesToIndex) searchIndexer.indexPage(indexedPage)
+    await db.$syncAfterWrite?.()
+    return page
   },
   async remove(input) {
-    return db.transaction((tx) => {
+    const page = db.transaction((tx) => {
       insertRevision(tx, input.revision)
       tx.update(pages).set({ lifecycle: 'deleted', updatedAt: input.updatedAt })
         .where(eq(pages.id, input.pageId)).run()
       tx.delete(pageRedirects).where(eq(pageRedirects.fromPath, input.path)).run()
       tx.delete(pageRedirects).where(eq(pageRedirects.toPath, input.path)).run()
-      searchIndexer.removePage(input.pageId)
+      if (!db.$syncAfterWrite) searchIndexer.removePage(input.pageId)
       return tx.select().from(pages).where(eq(pages.id, input.pageId)).get()
     })
+    if (db.$syncAfterWrite) searchIndexer.removePage(input.pageId)
+    await db.$syncAfterWrite?.()
+    return page
   },
   async purge(pageId, path) {
     db.transaction((tx) => {
@@ -188,7 +221,9 @@ export const createSqlitePageWriteRepository = (db: DB, searchIndexer: SearchInd
       tx.delete(pageComments).where(eq(pageComments.pageId, pageId)).run()
       tx.delete(pageRevisions).where(eq(pageRevisions.pageId, pageId)).run()
       tx.delete(pages).where(eq(pages.id, pageId)).run()
-      searchIndexer.removePage(pageId)
+      if (!db.$syncAfterWrite) searchIndexer.removePage(pageId)
     })
+    if (db.$syncAfterWrite) searchIndexer.removePage(pageId)
+    await db.$syncAfterWrite?.()
   },
 })

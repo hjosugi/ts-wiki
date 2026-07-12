@@ -7,7 +7,7 @@
 import type { Principal } from '@kawaii-wiki/core'
 import { loadEnv } from '../env.ts'
 import { createDb } from './client.ts'
-import { createServices } from '../services/index.ts'
+import { createServices } from './services.ts'
 import { sampleSeedPages } from '../sample-content.ts'
 
 const ADMIN_EMAIL = 'admin@example.com'

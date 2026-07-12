@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, describe, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 import type { DB } from '../client.ts'
 import { createLibsqlDb, createSqliteDb } from '../client.ts'
 import { pageRedirects, pageRevisions, pages, users } from '../schema.ts'
@@ -7,15 +9,22 @@ import { createFtsSearchIndexer } from './search.ts'
 import { createSqlitePageReadRepository, createSqlitePageWriteRepository } from './pages.ts'
 
 const databases: DB[] = []
+const externalReplicaDir = mkdtempSync(join(process.cwd(), '.kawaii-wiki-libsql-contract-'))
+let externalReplicaSequence = 0
 
 afterEach(() => {
   while (databases.length) databases.pop()?.$client.close()
 })
 
-const drivers = [
+afterAll(() => rmSync(externalReplicaDir, { recursive: true, force: true }))
+
+const localDrivers = [
   ['sqlite', () => createSqliteDb(':memory:')],
   ['libsql', () => createLibsqlDb({ driver: 'libsql', url: ':memory:', authToken: null, replicaPath: null })],
 ] as const
+
+const externalLibsqlUrl = process.env.KAWAII_WIKI_TEST_LIBSQL_URL?.trim()
+const drivers: ReadonlyArray<readonly [string, () => DB]> = localDrivers
 
 const seedPage = (db: DB, id: string, lifecycle: 'active' | 'archived', updatedAt: number): void => {
   db.insert(pages).values({
@@ -82,10 +91,7 @@ describe.each(drivers)('%s page read repository contract', (_driver, create) => 
   })
 })
 
-describe.each(drivers)('%s page write repository contract', (_driver, create) => {
-  test('keeps page, revision, redirect, lifecycle, and FTS mutations consistent', async () => {
-    const db = create()
-    databases.push(db)
+const assertPageWriteContract = async (db: DB): Promise<void> => {
     const search = createFtsSearchIndexer(db, { configuredTokenizer: 'unicode61' })
     const repository = createSqlitePageWriteRepository(db, search)
     const original = pageRecord('page-1', 'docs/old', 'searchable banana')
@@ -148,11 +154,9 @@ describe.each(drivers)('%s page write repository contract', (_driver, create) =>
     await repository.purge(current.id, 'docs/new')
     expect(await repository.findById(current.id)).toBeUndefined()
     expect(await repository.findRevision('revision-created')).toBeUndefined()
-  })
+}
 
-  test('normalizes duplicate page paths at the repository boundary', async () => {
-    const db = create()
-    databases.push(db)
+const assertDuplicatePathContract = async (db: DB): Promise<void> => {
     const repository = createSqlitePageWriteRepository(
       db,
       createFtsSearchIndexer(db, { configuredTokenizer: 'unicode61' }),
@@ -160,7 +164,34 @@ describe.each(drivers)('%s page write repository contract', (_driver, create) =>
     const first = pageRecord('first', 'docs/same')
     const second = pageRecord('second', 'docs/same')
     await repository.create(first, revisionRecord(first, 'first-created', 'created', 1))
-    expect(repository.create(second, revisionRecord(second, 'second-created', 'created', 2)))
+    await expect(repository.create(second, revisionRecord(second, 'second-created', 'created', 2)))
       .rejects.toBeInstanceOf(DuplicatePagePathError)
+}
+
+describe.each(drivers)('%s page write repository contract', (_driver, create) => {
+  test('keeps page, revision, redirect, lifecycle, and FTS mutations consistent', async () => {
+    const db = create()
+    databases.push(db)
+    await assertPageWriteContract(db)
+  })
+
+  test('normalizes duplicate page paths at the repository boundary', async () => {
+    const db = create()
+    databases.push(db)
+    await assertDuplicatePathContract(db)
   })
 })
+
+if (externalLibsqlUrl) {
+  test('provisions an external libSQL page repository and runs the write contract', async () => {
+    const db = createLibsqlDb({
+      driver: 'libsql',
+      url: externalLibsqlUrl,
+      authToken: process.env.KAWAII_WIKI_TEST_LIBSQL_AUTH_TOKEN?.trim() || null,
+      replicaPath: join(externalReplicaDir, `replica-${externalReplicaSequence += 1}.db`),
+    })
+    databases.push(db)
+    await assertPageWriteContract(db)
+    await assertDuplicatePathContract(db)
+  })
+}

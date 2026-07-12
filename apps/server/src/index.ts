@@ -23,6 +23,7 @@ process.once('SIGTERM', shutdown)
 process.once('SIGINT', shutdown)
 
 console.log(`🌸 kawaii-wiki.ts server  →  http://localhost:${env.port}`)
+console.log(`  database: ${db.$driver}`)
 console.log(`  health: http://localhost:${env.port}/api/health`)
 
 export type { App } from './http/app.ts'

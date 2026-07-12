@@ -1,16 +1,12 @@
 /**
- * Composition root for the service layer. Everything the HTTP layer needs is
- * built here from a single `DB` dependency and passed down explicitly.
+ * Driver-neutral composition for the service layer. Concrete database adapters
+ * are assembled outside this directory and passed in explicitly.
  */
-import type { DB } from '../db/client.ts'
 import { createRenderer, type MarkdownRenderer } from '@kawaii-wiki/core'
 import type { AssetUploadEnv, AuthEnv, BrandingEnv, LocalizationEnv, MailEnv, SearchEnv, WebhookEnv } from '../env.ts'
 import type { StructuredLogger } from '../observability/logging.ts'
-import { createDatabaseRepositories } from '../db/repositories/index.ts'
 import { createPageService, type PageService } from './pages.ts'
-import { createFtsSearchIndexer } from '../db/repositories/search.ts'
-import { createSqlitePageWriteRepository } from '../db/repositories/pages.ts'
-import { createSearchService, type SearchService } from './search.ts'
+import { createSearchService, type SearchIndexer, type SearchService } from './search.ts'
 import { createUserService, type UserService } from './users.ts'
 import { createAssetService, type AssetService } from './assets.ts'
 import { createAdminService, type AdminService } from './admin.ts'
@@ -36,6 +32,7 @@ import {
   type WebhookHostnameResolver,
   type WebhookService,
 } from './webhooks.ts'
+import type { ServiceDataLayer } from '../repositories/index.ts'
 
 export interface ServiceOptions {
   readonly assetUrl?: (storageName: string) => string
@@ -113,16 +110,16 @@ const defaultLocalization: LocalizationEnv = {
   dateFormat: null,
 }
 
-export const createServices = (db: DB, options: ServiceOptions = {}): Services => {
-  const repositories = createDatabaseRepositories(db)
+export const createServiceLayer = (
+  data: ServiceDataLayer & { readonly searchIndexer: SearchIndexer },
+  options: ServiceOptions = {},
+): Services => {
+  const { repositories, pageWrites, searchIndexer } = data
   const authz = createAuthzService(repositories.authz)
   const auth = options.auth ?? defaultAuth
   const assetUpload = options.assetUpload ?? defaultAssetUpload
-  const search = options.search ?? { ftsTokenizer: 'unicode61' as const }
   const branding = options.branding ?? defaultBranding
   const localization = options.localization ?? defaultLocalization
-  const searchIndexer = createFtsSearchIndexer(db, { configuredTokenizer: search.ftsTokenizer })
-  const pageWrites = createSqlitePageWriteRepository(db, searchIndexer)
   const settings = createSettingsService(repositories.settings, {
     defaults: {
       ...(branding.siteTitle ? { siteTitle: branding.siteTitle } : {}),

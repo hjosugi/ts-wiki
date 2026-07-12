@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { Principal } from '@kawaii-wiki/core'
 import { createDb } from '../db/client.ts'
-import { createServices } from '../services/index.ts'
+import { createServices } from '../db/services.ts'
 import { createEventBus, type WikiEvent } from '../realtime/bus.ts'
 import { createGitSyncHandlers, startGitSyncScheduler } from './git-sync.ts'
 import type { GitStorage } from './git.ts'

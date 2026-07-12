@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import type { Principal } from '@kawaii-wiki/core'
 import { createDb } from './db/client.ts'
-import { createServices } from './services/index.ts'
+import { createServices } from './db/services.ts'
 
 const admin: Principal = { id: 'admin-1', role: 'admin' }
 const viewer: Principal = { id: 'viewer-1', role: 'viewer' }

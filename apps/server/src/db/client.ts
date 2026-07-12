@@ -18,7 +18,7 @@ import { BetterSQLiteSession } from 'drizzle-orm/better-sqlite3/session'
 import { createTableRelationsHelpers, extractTablesRelationalConfig } from 'drizzle-orm/relations'
 import type { DatabaseConfig, DatabaseDriver, LibsqlDatabaseConfig } from './config.ts'
 import * as schema from './schema.ts'
-import { runMigrationsAtomically, type FtsTokenizer } from './migrate.ts'
+import { runMigrationsAtomically, verifyDatabaseSchema, type FtsTokenizer } from './migrate.ts'
 
 export interface RawStatement {
   run(...params: unknown[]): { readonly changes?: number; readonly lastInsertRowid?: number | bigint }
@@ -37,6 +37,7 @@ export interface RawDatabase {
 export type DB = BunSQLiteDatabase<typeof schema> & {
   readonly $client: RawDatabase
   readonly $driver: DatabaseDriver
+  readonly $syncAfterWrite?: () => Promise<void>
 }
 
 export interface CreateDbOptions {
@@ -124,12 +125,35 @@ export const createLibsqlDb = (config: LibsqlDatabaseConfig, options: CreateDbOp
     ...(config.authToken ? { authToken: config.authToken } : {}),
   } as ConstructorParameters<typeof LibsqlDatabase>[1]) as RawDatabase
 
-  client.exec('PRAGMA foreign_keys = ON;')
-  client.exec('PRAGMA busy_timeout = 5000;')
-  if (options.migrate !== false) runMigrationsAtomically(client, { ftsTokenizer: options.ftsTokenizer })
+  // Pull an existing primary before inspecting or migrating the local replica.
   if (target.syncUrl) client.sync?.()
+  client.exec('PRAGMA foreign_keys = ON;')
+  // Remote embedded replicas reject busy_timeout because writer lock timing is
+  // owned by the primary server, not the local replica connection.
+  if (!target.syncUrl) client.exec('PRAGMA busy_timeout = 5000;')
+  if (options.migrate !== false) {
+    runMigrationsAtomically(client, {
+      ftsTokenizer: options.ftsTokenizer,
+      verifySchema: !target.syncUrl,
+    })
+  }
+  if (target.syncUrl) {
+    client.sync?.()
+    if (options.migrate !== false) verifyDatabaseSchema(client)
+  }
 
-  return drizzleLibsqlSync(client)
+  const db = drizzleLibsqlSync(client)
+  return target.syncUrl
+    ? Object.assign(db, {
+        $syncAfterWrite: async () => {
+          client.sync?.()
+          // libSQL primary writes become visible to an embedded replica on a
+          // short read-your-writes delay even when sync() reports no new frame.
+          await new Promise((resolve) => setTimeout(resolve, 250))
+          client.sync?.()
+        },
+      })
+    : db
 }
 
 export const createDb = (configOrPath: DatabaseConfig | string, options: CreateDbOptions = {}): DB => {

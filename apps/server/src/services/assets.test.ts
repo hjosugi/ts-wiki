@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { Principal } from '@kawaii-wiki/core'
 import { createDb } from '../db/client.ts'
-import { createServices } from './index.ts'
+import { createServices } from '../db/services.ts'
 import { createAssetService } from './assets.ts'
 import { createSqliteAssetRepository } from '../db/repositories/assets.ts'
 import type { SearchIndexer } from './search.ts'
@@ -10,6 +10,7 @@ const admin: Principal = { id: 'admin-1', role: 'admin' }
 const editor: Principal = { id: 'editor-1', role: 'editor' }
 
 const fakeIndexer = (indexed: string[]): SearchIndexer => ({
+  indexPage: (page) => indexed.push(page.id),
   indexPageById: (pageId) => indexed.push(pageId),
   removePage: () => {},
   search: () => {
