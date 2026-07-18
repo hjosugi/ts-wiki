@@ -22,7 +22,7 @@ describe.skipIf(!testPostgresUrl)('postgres composed services', () => {
 
   beforeAll(async () => {
     harness = await createPostgresContractDb('kw_services_contract')
-    services = createPostgresServices(harness.db)
+    services = createPostgresServices(harness.client)
     await services.authz.ensureDefaults()
   })
   afterAll(async () => {
@@ -119,9 +119,10 @@ describe.skipIf(!testPostgresUrl)('postgres composed services', () => {
     expect(exported?.content).toContain('import body')
   })
 
-  test('search: composes but returns empty results (placeholder indexer)', async () => {
-    const response = await services.search.search('anything')
-    expect(response.hits).toEqual([])
-    expect(response.total).toBe(0)
+  test('search: indexes on write and finds pages through the composed layer', async () => {
+    await services.pages.create({ path: 'searchable/pg', title: 'Findme', content: 'uniquebody about kiwithree' }, admin)
+    const response = await services.search.search('kiwithree')
+    expect(response.hits.map((hit) => hit.path)).toContain('searchable/pg')
+    expect(await services.search.search('nomatchxyz')).toMatchObject({ hits: [], total: 0 })
   })
 })

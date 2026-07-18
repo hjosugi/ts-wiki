@@ -73,9 +73,31 @@ export const postgresSchemaStatements = (): string[] => {
   return statements
 }
 
-/** Create the relational schema on a Postgres database. Idempotent. */
+/**
+ * Full-text search backing table (the Postgres analogue of SQLite's `pages_fts`
+ * FTS5 virtual table). Not expressible in pg-core — it carries a weighted
+ * `tsvector` (word matching, GIN-indexed) and a lowercased `searchable` column
+ * for CJK/substring `LIKE` matching — so it is raw DDL. `tsvector` GIN is
+ * built-in (no extension); the `searchable` scan is unindexed, which is fine at
+ * this scale (a `pg_trgm` GIN index is a later performance optimization).
+ */
+export const postgresSearchStatements = (): string[] => [
+  `CREATE TABLE IF NOT EXISTS "page_search" (
+  "page_id" text PRIMARY KEY,
+  "title" text NOT NULL,
+  "description" text NOT NULL,
+  "content" text NOT NULL,
+  "comments" text NOT NULL,
+  "assets" text NOT NULL,
+  "tsv" tsvector NOT NULL,
+  "searchable" text NOT NULL
+)`,
+  'CREATE INDEX IF NOT EXISTS "page_search_tsv_idx" ON "page_search" USING gin ("tsv")',
+]
+
+/** Create the relational schema + search table on a Postgres database. Idempotent. */
 export const runPostgresMigrations = async (sql: SQL): Promise<void> => {
-  const statements = postgresSchemaStatements()
+  const statements = [...postgresSchemaStatements(), ...postgresSearchStatements()]
   await sql.begin(async (tx: SQL) => {
     for (const statement of statements) {
       await tx.unsafe(statement)
