@@ -5,15 +5,27 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadEnv } from './env.ts'
 import { createDb } from './db/client.ts'
+import { createPostgresClient } from './db/postgres/client.ts'
+import { runPostgresMigrations } from './db/postgres/migrate.ts'
 import { createSqliteDatabaseAdapter, type DatabaseAdapter } from './http/database-adapter.ts'
+import { createPostgresDatabaseAdapter } from './http/postgres-adapter.ts'
 import { createApp } from './http/app.ts'
 
 const env = loadEnv()
 mkdirSync(join(env.dataDir, 'assets'), { recursive: true })
 
-const database: DatabaseAdapter = createSqliteDatabaseAdapter(
-  createDb(env.database, { ftsTokenizer: env.search.ftsTokenizer }),
-)
+/** Open the connection for the configured driver, migrating Postgres on boot. */
+const openDatabase = async (): Promise<DatabaseAdapter> => {
+  if (env.database.driver === 'postgres') {
+    const client = createPostgresClient(env.database)
+    await client.ping() // fail fast on an unreachable server before migrating
+    await runPostgresMigrations(client.sql)
+    return createPostgresDatabaseAdapter(client)
+  }
+  return createSqliteDatabaseAdapter(createDb(env.database, { ftsTokenizer: env.search.ftsTokenizer }))
+}
+
+const database = await openDatabase()
 const app = createApp({ database, env }).listen(env.port)
 
 const shutdown = async () => {

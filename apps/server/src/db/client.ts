@@ -163,9 +163,10 @@ export const createDb = (configOrPath: DatabaseConfig | string, options: CreateD
     return createLibsqlDb(config, options)
   }
   if (config.driver === 'postgres') {
-    // The PostgreSQL adapter (connection, schema, repositories, migrations) is
-    // being built out under #364 and is not yet a runnable runtime driver. Fail
-    // fast with a clear message instead of silently falling back to SQLite.
+    // `createDb` only builds the SQLite-family (bun:sqlite / libSQL) handle.
+    // Postgres runs through `createPostgresClient` + `createPostgresDatabaseAdapter`
+    // in the entry point instead, so reaching here means a SQLite-only caller was
+    // handed a Postgres config — fail fast rather than fall back silently.
     throw new UnsupportedDatabaseDriverError(config, 'server runtime')
   }
   return createSqliteDb(config.path, options)
