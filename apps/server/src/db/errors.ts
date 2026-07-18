@@ -1,11 +1,21 @@
-const errorText = (error: unknown): string => {
-  if (error instanceof Error) return `${error.name} ${error.message}`
-  if (error && typeof error === 'object') {
-    const value = error as { code?: unknown; message?: unknown }
-    return `${String(value.code ?? '')} ${String(value.message ?? '')}`
+const errorText = (error: unknown, depth = 0): string => {
+  if (depth > 5 || error == null) return ''
+  // Driver errors are often wrapped (e.g. Drizzle's "Failed query" error holds
+  // the real Postgres error on `.cause`), so fold the whole cause chain in.
+  if (error instanceof Error) {
+    const cause = (error as { cause?: unknown }).cause
+    const code = (error as { code?: unknown }).code
+    return `${String(code ?? '')} ${error.name} ${error.message} ${errorText(cause, depth + 1)}`
+  }
+  if (typeof error === 'object') {
+    const value = error as { code?: unknown; message?: unknown; cause?: unknown }
+    return `${String(value.code ?? '')} ${String(value.message ?? '')} ${errorText(value.cause, depth + 1)}`
   }
   return String(error)
 }
 
 export const isUniqueConstraintError = (error: unknown): boolean =>
-  /SQLITE_CONSTRAINT_(?:UNIQUE|PRIMARYKEY)|UNIQUE constraint failed|PRIMARY KEY constraint failed/i.test(errorText(error))
+  // SQLite text codes/messages, plus PostgreSQL unique_violation (SQLSTATE 23505).
+  /SQLITE_CONSTRAINT_(?:UNIQUE|PRIMARYKEY)|UNIQUE constraint failed|PRIMARY KEY constraint failed|duplicate key value violates unique constraint|\b23505\b/i.test(
+    errorText(error),
+  )
