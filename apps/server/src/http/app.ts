@@ -36,10 +36,10 @@ import { requireHttpPermission } from './permissions.ts'
 import {
   authRateLimitError,
   clientIp,
-  createDbRateLimiter,
-  createRateLimiter,
+  createRateLimiterFactory,
   rateLimitError,
   type RateLimiter,
+  type RateLimiterFactory,
   type RequestIpServer,
 } from './rate-limit.ts'
 import { createBaseApp, type JwtVerifier } from './base.ts'
@@ -70,6 +70,12 @@ export interface AppDeps {
   readonly mailSender?: MailSender
   readonly webhookFetcher?: WebhookFetcher
   readonly webhookResolver?: WebhookHostnameResolver
+  /**
+   * Builds rate limiters for the app. Defaults to a SQLite-family strategy
+   * (DB-backed when the realtime bus is `db`, else in-memory). Non-SQLite
+   * drivers supply their own factory — Postgres uses in-memory limiters.
+   */
+  readonly rateLimiterFactory?: RateLimiterFactory
 }
 
 interface TokenPrincipal {
@@ -120,6 +126,7 @@ export const createApp = ({
   mailSender,
   webhookFetcher,
   webhookResolver,
+  rateLimiterFactory: suppliedRateLimiterFactory,
 }: AppDeps) => {
   const logger = createAuditLogger(createSqliteAuditLogRepository(db), suppliedLogger, env.audit)
   const assetStorage = suppliedAssetStorage ?? createAssetStorage(env.assetStorage)
@@ -145,10 +152,10 @@ export const createApp = ({
   })
   const settingsReady = services.settings.initialize()
   const corsOrigin = env.cors.origins === null ? true : [...env.cors.origins]
-  const createAppRateLimiter = (limit: number): RateLimiter =>
-    env.realtime.eventBus === 'db'
-      ? createDbRateLimiter(db.$client, limit, RATE_LIMIT_WINDOW_MS)
-      : createRateLimiter(limit, RATE_LIMIT_WINDOW_MS)
+  const createAppRateLimiter: RateLimiterFactory = suppliedRateLimiterFactory ?? createRateLimiterFactory({
+    windowMs: RATE_LIMIT_WINDOW_MS,
+    database: env.realtime.eventBus === 'db' ? db.$client : null,
+  })
   const authLimiter = createAppRateLimiter(AUTH_RATE_LIMIT_ATTEMPTS)
   const credentialLimiter = createAppRateLimiter(CREDENTIAL_RATE_LIMIT_ATTEMPTS)
   const assetUploadLimiter = createAppRateLimiter(ASSET_UPLOAD_RATE_LIMIT_ATTEMPTS)

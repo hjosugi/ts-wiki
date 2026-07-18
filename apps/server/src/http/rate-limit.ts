@@ -161,6 +161,28 @@ export const createDbRateLimiter = (
   }
 }
 
+/** Builds a rate limiter for a given attempt budget, hiding the driver choice. */
+export type RateLimiterFactory = (limit: number) => RateLimiter
+
+export interface RateLimiterFactoryOptions {
+  readonly windowMs: number
+  /**
+   * When provided, hits are persisted to this database so limits hold across app
+   * instances sharing it. When null the limiter is in-memory — the only option
+   * for drivers without a synchronous `RateLimitDatabase` (e.g. Postgres).
+   */
+  readonly database?: RateLimitDatabase | null
+}
+
+/**
+ * Driver-neutral rate-limiter factory. Callers pick DB-backed vs in-memory by
+ * supplying (or omitting) a `database`, so the app layer never branches on the
+ * concrete database driver.
+ */
+export const createRateLimiterFactory = ({ windowMs, database }: RateLimiterFactoryOptions): RateLimiterFactory =>
+  (limit) =>
+    database ? createDbRateLimiter(database, limit, windowMs) : createRateLimiter(limit, windowMs)
+
 export interface RequestIpServer {
   requestIP(request: Request): { address: string } | null
 }
