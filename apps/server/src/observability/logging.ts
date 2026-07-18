@@ -1,6 +1,4 @@
-import { lte } from 'drizzle-orm'
-import type { DB } from '../db/client.ts'
-import { auditLog } from '../db/schema.ts'
+import type { AuditLogRepository } from '../repositories/audit-log.ts'
 
 export type LogLevel = 'info' | 'warn' | 'error'
 
@@ -47,12 +45,12 @@ const safeJson = (value: unknown): string => {
   }
 }
 
-const persistAuditEvent = (
-  db: DB,
+const persistAuditEvent = async (
+  repo: AuditLogRepository,
   sink: StructuredLogger,
   event: LogEvent,
   options: AuditPersistenceOptions,
-): void => {
+): Promise<void> => {
   const action = typeof event.action === 'string' && event.action.trim() ? event.action.trim() : null
   if (!action) return
   const now = Date.now()
@@ -60,24 +58,10 @@ const persistAuditEvent = (
   const path = typeof event.path === 'string' ? event.path : null
   const { type: _type, action: _action, userId: _userId, path: _path, ...data } = event
   try {
-    db.insert(auditLog).values({
-      action,
-      userId,
-      path,
-      data: safeJson(data),
-      createdAt: now,
-    }).run()
-    db.delete(auditLog)
-      .where(lte(auditLog.createdAt, now - options.retentionDays * 24 * 60 * 60 * 1000))
-      .run()
-    db.$client.prepare(`
-      DELETE FROM audit_log
-      WHERE id NOT IN (
-        SELECT id FROM audit_log
-        ORDER BY created_at DESC, id DESC
-        LIMIT ?
-      )
-    `).run(options.maxRows)
+    await repo.record(
+      { action, userId, path, data: safeJson(data), createdAt: now },
+      { retentionMs: options.retentionDays * 24 * 60 * 60 * 1000, maxRows: options.maxRows },
+    )
   } catch (error) {
     sink.warn({
       type: 'audit',
@@ -88,13 +72,13 @@ const persistAuditEvent = (
 }
 
 export const createAuditLogger = (
-  db: DB,
+  repo: AuditLogRepository,
   sink: StructuredLogger,
   options: AuditPersistenceOptions,
 ): StructuredLogger => ({
   info: (event) => {
     sink.info(event)
-    if (options.persist && event.type === 'audit') persistAuditEvent(db, sink, event, options)
+    if (options.persist && event.type === 'audit') void persistAuditEvent(repo, sink, event, options)
   },
   warn: (event) => sink.warn(event),
   error: (event) => sink.error(event),

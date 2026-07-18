@@ -30,6 +30,7 @@ import {
 } from '../observability/logging.ts'
 import type { AutomationEvent, WebhookFetcher, WebhookHostnameResolver } from '../services/webhooks.ts'
 import { createSqliteRealtimeTicketRepository } from '../db/repositories/realtime-tickets.ts'
+import { createSqliteAuditLogRepository } from '../db/repositories/audit-log.ts'
 import { HttpError } from './errors.ts'
 import { requireHttpPermission } from './permissions.ts'
 import {
@@ -120,7 +121,7 @@ export const createApp = ({
   webhookFetcher,
   webhookResolver,
 }: AppDeps) => {
-  const logger = createAuditLogger(db, suppliedLogger, env.audit)
+  const logger = createAuditLogger(createSqliteAuditLogRepository(db), suppliedLogger, env.audit)
   const assetStorage = suppliedAssetStorage ?? createAssetStorage(env.assetStorage)
   const services = createServices(db, {
     assetUrl: assetStorage.url,
