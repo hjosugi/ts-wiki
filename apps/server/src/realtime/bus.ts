@@ -35,7 +35,8 @@ export interface EventBus {
   close(): void
 }
 
-const deliver = (listeners: Set<Listener>, event: WikiEvent): void => {
+/** Deliver an event to every listener; a throwing listener never breaks the loop. */
+export const deliver = (listeners: Set<Listener>, event: WikiEvent): void => {
   for (const listener of listeners) {
     try {
       listener(event)
@@ -78,7 +79,7 @@ export interface DbEventBusOptions {
 }
 
 const DEFAULT_MAX_STORED_EVENTS = 10_000
-const maxStoredEventsFrom = (value: number | undefined): number =>
+export const maxStoredEventsFrom = (value: number | undefined): number =>
   typeof value === 'number' && Number.isFinite(value)
     ? Math.max(1, Math.floor(value))
     : DEFAULT_MAX_STORED_EVENTS
