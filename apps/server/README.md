@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](README.md) | [日本語](README.ja.md)
+
 # kawaii-wiki.ts Server
 
 Bun + Elysia API server for the kawaii-wiki.ts hands-on project.

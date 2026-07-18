@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](INLINE_COMMENTS_RFC.md) | [日本語](INLINE_COMMENTS_RFC.ja.md)
+
 # Inline Anchored Comments RFC
 
 Status: go for block/heading anchored comments; defer arbitrary text ranges.

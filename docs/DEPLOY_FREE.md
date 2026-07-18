@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](DEPLOY_FREE.md) | [日本語](DEPLOY_FREE.ja.md)
+
 # Render Free + Turso + R2 Deployment
 
 This is the zero-cost deployment path for issue #44.

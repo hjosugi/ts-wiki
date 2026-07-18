@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](DESIGN.md) | [日本語](DESIGN.ja.md)
+
 # kawaii-wiki.ts — Design & Architecture
 
 The big picture and the *why*. For setup and a one-minute overview see the

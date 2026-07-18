@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](README.md) | [日本語](README.ja.md)
+
 # kawaii-wiki.ts
 
 A free, self-hosted wiki for connecting knowledge with Markdown, fast Japanese

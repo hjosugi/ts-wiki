@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](ISSUE_RESOLUTION.md) | [日本語](ISSUE_RESOLUTION.ja.md)
+
 # Issue Resolution Notes
 
 As of 2026-07-05, the open GitHub issues were triaged against the current

@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](KAWAII_WIKI_DESIGN_RFC.md) | [日本語](KAWAII_WIKI_DESIGN_RFC.ja.md)
+
 # Kawaii Wiki Design RFC
 
 Status: accepted baseline for the `kawaii-wiki.ts` product direction.

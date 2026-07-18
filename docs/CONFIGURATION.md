@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](CONFIGURATION.md) | [日本語](CONFIGURATION.ja.md)
+
 # Configuration reference
 
 The server reads environment variables at startup. Values marked **bootstrap**

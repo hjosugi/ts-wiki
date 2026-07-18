@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](UPGRADING.md) | [日本語](UPGRADING.ja.md)
+
 # Upgrading and rollback
 
 ## Before upgrading

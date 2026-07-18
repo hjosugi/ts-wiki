@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](README.md) | [日本語](README.ja.md)
+
 # kawaii-wiki.ts Web
 
 Vue 3 + Vite front end for the kawaii-wiki.ts hands-on project.

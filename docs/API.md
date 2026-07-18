@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](API.md) | [日本語](API.ja.md)
+
 # HTTP API contract
 
 kawaii-wiki.ts 1.x treats the HTTP routes under `/api` as a public integration

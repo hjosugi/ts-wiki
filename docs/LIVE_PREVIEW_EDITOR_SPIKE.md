@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](LIVE_PREVIEW_EDITOR_SPIKE.md) | [日本語](LIVE_PREVIEW_EDITOR_SPIKE.ja.md)
+
 # Live Preview Editor Spike
 
 Status: viable as an optional editor mode; do not replace Markdown or visual

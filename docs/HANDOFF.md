@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](HANDOFF.md) | [日本語](HANDOFF.ja.md)
+
 # kawaii-wiki.ts — Handoff / 引き継ぎ資料
 
 A practical guide for whoever picks this up next (human or AI). The user-facing overview is in
