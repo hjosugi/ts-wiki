@@ -23,6 +23,10 @@ apps/server/data/
 *.sqlite-wal
 *.db
 
+# External libSQL contract test scratch replicas (cleaned in afterAll; ignored
+# so an interrupted run cannot leave committable artifacts)
+.kawaii-wiki-libsql-*/
+
 # Drizzle generated migration journal cache (keep SQL, ignore meta snapshots if desired)
 # apps/server/drizzle/meta/
 
