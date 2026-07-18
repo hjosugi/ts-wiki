@@ -8,6 +8,21 @@
  * column/index declarations with SQLite and fails loudly on drift.
  */
 import { sqliteTable, text, integer, index, primaryKey } from 'drizzle-orm/sqlite-core'
+import {
+  ROLES,
+  WEBAUTHN_CHALLENGE_PURPOSES,
+  SUBJECT_TYPES,
+  PERMISSION_EFFECTS,
+  PAGE_RULE_MATCHERS,
+  PAGE_LIFECYCLES,
+  PAGE_STATUSES,
+  PAGE_REVISION_ACTIONS,
+  LINK_PREVIEW_KINDS,
+  WIKI_EVENT_TYPES,
+  WIKI_EVENT_ACTIONS,
+  WEBHOOK_DELIVERY_STATUSES,
+  AUTOMATION_RULE_TYPES,
+} from './schema-enums'
 
 export const schemaMigrations = sqliteTable('schema_migrations', {
   version: integer('version').primaryKey(),
@@ -19,7 +34,7 @@ export const users = sqliteTable('users', {
   email: text('email').notNull().unique(),
   name: text('name').notNull(),
   passwordHash: text('password_hash').notNull(),
-  role: text('role', { enum: ['admin', 'editor', 'viewer'] })
+  role: text('role', { enum: ROLES })
     .notNull()
     .default('viewer'),
   totpSecret: text('totp_secret'),
@@ -118,7 +133,7 @@ export const webauthnChallenges = sqliteTable(
   {
     challenge: text('challenge').primaryKey(),
     userId: text('user_id'),
-    purpose: text('purpose', { enum: ['registration', 'authentication'] }).notNull(),
+    purpose: text('purpose', { enum: WEBAUTHN_CHALLENGE_PURPOSES }).notNull(),
     expiresAt: integer('expires_at').notNull(),
     createdAt: integer('created_at').notNull(),
   },
@@ -134,7 +149,7 @@ export const apiKeys = sqliteTable(
     id: text('id').primaryKey(),
     name: text('name').notNull(),
     keyHash: text('key_hash').notNull().unique(),
-    role: text('role', { enum: ['admin', 'editor', 'viewer'] })
+    role: text('role', { enum: ROLES })
       .notNull()
       .default('viewer'),
     expiresAt: integer('expires_at'),
@@ -172,10 +187,10 @@ export const permissionGrants = sqliteTable(
   'permission_grants',
   {
     id: text('id').primaryKey(),
-    subjectType: text('subject_type', { enum: ['user', 'group', 'anonymous'] }).notNull(),
+    subjectType: text('subject_type', { enum: SUBJECT_TYPES }).notNull(),
     subjectId: text('subject_id'),
     action: text('action').notNull(),
-    effect: text('effect', { enum: ['allow', 'deny'] }).notNull(),
+    effect: text('effect', { enum: PERMISSION_EFFECTS }).notNull(),
     createdAt: integer('created_at').notNull(),
   },
   (t) => [index('permission_grants_subject_idx').on(t.subjectType, t.subjectId)],
@@ -185,11 +200,11 @@ export const pageRules = sqliteTable(
   'page_rules',
   {
     id: text('id').primaryKey(),
-    subjectType: text('subject_type', { enum: ['user', 'group', 'anonymous'] }).notNull(),
+    subjectType: text('subject_type', { enum: SUBJECT_TYPES }).notNull(),
     subjectId: text('subject_id'),
     action: text('action').notNull(),
-    effect: text('effect', { enum: ['allow', 'deny'] }).notNull(),
-    matcher: text('matcher', { enum: ['exact', 'prefix', 'suffix', 'regex'] }).notNull(),
+    effect: text('effect', { enum: PERMISSION_EFFECTS }).notNull(),
+    matcher: text('matcher', { enum: PAGE_RULE_MATCHERS }).notNull(),
     pattern: text('pattern').notNull(),
     createdAt: integer('created_at').notNull(),
   },
@@ -210,10 +225,10 @@ export const pages = sqliteTable(
     renderedHtml: text('rendered_html').notNull().default(''),
     toc: text('toc').notNull().default('[]'),
     contentType: text('content_type').notNull().default('markdown'),
-    lifecycle: text('lifecycle', { enum: ['active', 'archived', 'deleted'] })
+    lifecycle: text('lifecycle', { enum: PAGE_LIFECYCLES })
       .notNull()
       .default('active'),
-    status: text('status', { enum: ['draft', 'in-review', 'verified', 'outdated'] })
+    status: text('status', { enum: PAGE_STATUSES })
       .notNull()
       .default('draft'),
     labels: text('labels').notNull().default('[]'),
@@ -241,7 +256,7 @@ export const pageRevisions = sqliteTable(
     description: text('description').notNull().default(''),
     content: text('content').notNull().default(''),
     authorId: text('author_id'),
-    action: text('action', { enum: ['created', 'updated', 'moved', 'deleted', 'archived', 'restored', 'purged'] }).notNull(),
+    action: text('action', { enum: PAGE_REVISION_ACTIONS }).notNull(),
     createdAt: integer('created_at').notNull(),
   },
   (t) => [index('revisions_page_idx').on(t.pageId), index('revisions_created_idx').on(t.createdAt)],
@@ -358,7 +373,7 @@ export const linkPreviews = sqliteTable(
   'link_previews',
   {
     url: text('url').primaryKey(),
-    kind: text('kind', { enum: ['unfurl', 'youtube-latest'] }).notNull(),
+    kind: text('kind', { enum: LINK_PREVIEW_KINDS }).notNull(),
     provider: text('provider').notNull().default(''),
     title: text('title').notNull().default(''),
     description: text('description').notNull().default(''),
@@ -402,8 +417,8 @@ export const wikiEvents = sqliteTable(
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
     sourceId: text('source_id').notNull(),
-    eventType: text('event_type', { enum: ['page:changed'] }).notNull(),
-    action: text('action', { enum: ['created', 'updated', 'moved', 'deleted'] }).notNull(),
+    eventType: text('event_type', { enum: WIKI_EVENT_TYPES }).notNull(),
+    action: text('action', { enum: WIKI_EVENT_ACTIONS }).notNull(),
     path: text('path').notNull(),
     fromPath: text('from_path'),
     createdAt: integer('created_at').notNull(),
@@ -457,7 +472,7 @@ export const webhookDeliveries = sqliteTable(
     eventId: text('event_id').notNull(),
     eventType: text('event_type').notNull(),
     payload: text('payload').notNull(),
-    status: text('status', { enum: ['pending', 'succeeded', 'failed'] }).notNull().default('pending'),
+    status: text('status', { enum: WEBHOOK_DELIVERY_STATUSES }).notNull().default('pending'),
     attempts: integer('attempts').notNull().default(0),
     nextAttemptAt: integer('next_attempt_at'),
     responseStatus: integer('response_status'),
@@ -479,7 +494,7 @@ export const automationRules = sqliteTable(
   {
     id: text('id').primaryKey(),
     name: text('name').notNull(),
-    type: text('type', { enum: ['event-rule', 'page-updated-metadata'] }).notNull(),
+    type: text('type', { enum: AUTOMATION_RULE_TYPES }).notNull(),
     enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
     priority: integer('priority').notNull().default(0),
     stopOnMatch: integer('stop_on_match', { mode: 'boolean' }).notNull().default(false),

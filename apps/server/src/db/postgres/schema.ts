@@ -17,6 +17,21 @@
  * intentionally NOT here yet — it lands in a later search slice (#364 / #366).
  */
 import { pgTable, text, bigint, boolean, bigserial, index, primaryKey } from 'drizzle-orm/pg-core'
+import {
+  ROLES,
+  WEBAUTHN_CHALLENGE_PURPOSES,
+  SUBJECT_TYPES,
+  PERMISSION_EFFECTS,
+  PAGE_RULE_MATCHERS,
+  PAGE_LIFECYCLES,
+  PAGE_STATUSES,
+  PAGE_REVISION_ACTIONS,
+  LINK_PREVIEW_KINDS,
+  WIKI_EVENT_TYPES,
+  WIKI_EVENT_ACTIONS,
+  WEBHOOK_DELIVERY_STATUSES,
+  AUTOMATION_RULE_TYPES,
+} from '../schema-enums'
 
 /** SQLite epoch-millis / counter integers map to bigint read as a JS number. */
 const millis = (name: string) => bigint(name, { mode: 'number' })
@@ -31,7 +46,7 @@ export const users = pgTable('users', {
   email: text('email').notNull().unique(),
   name: text('name').notNull(),
   passwordHash: text('password_hash').notNull(),
-  role: text('role', { enum: ['admin', 'editor', 'viewer'] })
+  role: text('role', { enum: ROLES })
     .notNull()
     .default('viewer'),
   totpSecret: text('totp_secret'),
@@ -130,7 +145,7 @@ export const webauthnChallenges = pgTable(
   {
     challenge: text('challenge').primaryKey(),
     userId: text('user_id'),
-    purpose: text('purpose', { enum: ['registration', 'authentication'] }).notNull(),
+    purpose: text('purpose', { enum: WEBAUTHN_CHALLENGE_PURPOSES }).notNull(),
     expiresAt: millis('expires_at').notNull(),
     createdAt: millis('created_at').notNull(),
   },
@@ -146,7 +161,7 @@ export const apiKeys = pgTable(
     id: text('id').primaryKey(),
     name: text('name').notNull(),
     keyHash: text('key_hash').notNull().unique(),
-    role: text('role', { enum: ['admin', 'editor', 'viewer'] })
+    role: text('role', { enum: ROLES })
       .notNull()
       .default('viewer'),
     expiresAt: millis('expires_at'),
@@ -184,10 +199,10 @@ export const permissionGrants = pgTable(
   'permission_grants',
   {
     id: text('id').primaryKey(),
-    subjectType: text('subject_type', { enum: ['user', 'group', 'anonymous'] }).notNull(),
+    subjectType: text('subject_type', { enum: SUBJECT_TYPES }).notNull(),
     subjectId: text('subject_id'),
     action: text('action').notNull(),
-    effect: text('effect', { enum: ['allow', 'deny'] }).notNull(),
+    effect: text('effect', { enum: PERMISSION_EFFECTS }).notNull(),
     createdAt: millis('created_at').notNull(),
   },
   (t) => [index('permission_grants_subject_idx').on(t.subjectType, t.subjectId)],
@@ -197,11 +212,11 @@ export const pageRules = pgTable(
   'page_rules',
   {
     id: text('id').primaryKey(),
-    subjectType: text('subject_type', { enum: ['user', 'group', 'anonymous'] }).notNull(),
+    subjectType: text('subject_type', { enum: SUBJECT_TYPES }).notNull(),
     subjectId: text('subject_id'),
     action: text('action').notNull(),
-    effect: text('effect', { enum: ['allow', 'deny'] }).notNull(),
-    matcher: text('matcher', { enum: ['exact', 'prefix', 'suffix', 'regex'] }).notNull(),
+    effect: text('effect', { enum: PERMISSION_EFFECTS }).notNull(),
+    matcher: text('matcher', { enum: PAGE_RULE_MATCHERS }).notNull(),
     pattern: text('pattern').notNull(),
     createdAt: millis('created_at').notNull(),
   },
@@ -222,10 +237,10 @@ export const pages = pgTable(
     renderedHtml: text('rendered_html').notNull().default(''),
     toc: text('toc').notNull().default('[]'),
     contentType: text('content_type').notNull().default('markdown'),
-    lifecycle: text('lifecycle', { enum: ['active', 'archived', 'deleted'] })
+    lifecycle: text('lifecycle', { enum: PAGE_LIFECYCLES })
       .notNull()
       .default('active'),
-    status: text('status', { enum: ['draft', 'in-review', 'verified', 'outdated'] })
+    status: text('status', { enum: PAGE_STATUSES })
       .notNull()
       .default('draft'),
     labels: text('labels').notNull().default('[]'),
@@ -253,7 +268,7 @@ export const pageRevisions = pgTable(
     description: text('description').notNull().default(''),
     content: text('content').notNull().default(''),
     authorId: text('author_id'),
-    action: text('action', { enum: ['created', 'updated', 'moved', 'deleted', 'archived', 'restored', 'purged'] }).notNull(),
+    action: text('action', { enum: PAGE_REVISION_ACTIONS }).notNull(),
     createdAt: millis('created_at').notNull(),
   },
   (t) => [index('revisions_page_idx').on(t.pageId), index('revisions_created_idx').on(t.createdAt)],
@@ -370,7 +385,7 @@ export const linkPreviews = pgTable(
   'link_previews',
   {
     url: text('url').primaryKey(),
-    kind: text('kind', { enum: ['unfurl', 'youtube-latest'] }).notNull(),
+    kind: text('kind', { enum: LINK_PREVIEW_KINDS }).notNull(),
     provider: text('provider').notNull().default(''),
     title: text('title').notNull().default(''),
     description: text('description').notNull().default(''),
@@ -414,8 +429,8 @@ export const wikiEvents = pgTable(
   {
     id: bigserial('id', { mode: 'number' }).primaryKey(),
     sourceId: text('source_id').notNull(),
-    eventType: text('event_type', { enum: ['page:changed'] }).notNull(),
-    action: text('action', { enum: ['created', 'updated', 'moved', 'deleted'] }).notNull(),
+    eventType: text('event_type', { enum: WIKI_EVENT_TYPES }).notNull(),
+    action: text('action', { enum: WIKI_EVENT_ACTIONS }).notNull(),
     path: text('path').notNull(),
     fromPath: text('from_path'),
     createdAt: millis('created_at').notNull(),
@@ -469,7 +484,7 @@ export const webhookDeliveries = pgTable(
     eventId: text('event_id').notNull(),
     eventType: text('event_type').notNull(),
     payload: text('payload').notNull(),
-    status: text('status', { enum: ['pending', 'succeeded', 'failed'] }).notNull().default('pending'),
+    status: text('status', { enum: WEBHOOK_DELIVERY_STATUSES }).notNull().default('pending'),
     attempts: millis('attempts').notNull().default(0),
     nextAttemptAt: millis('next_attempt_at'),
     responseStatus: millis('response_status'),
@@ -491,7 +506,7 @@ export const automationRules = pgTable(
   {
     id: text('id').primaryKey(),
     name: text('name').notNull(),
-    type: text('type', { enum: ['event-rule', 'page-updated-metadata'] }).notNull(),
+    type: text('type', { enum: AUTOMATION_RULE_TYPES }).notNull(),
     enabled: boolean('enabled').notNull().default(true),
     priority: millis('priority').notNull().default(0),
     stopOnMatch: boolean('stop_on_match').notNull().default(false),
