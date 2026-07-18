@@ -11,12 +11,16 @@
 import { SQL } from 'bun'
 import { drizzle, type BunSQLDatabase } from 'drizzle-orm/bun-sql'
 import type { PostgresDatabaseConfig } from '../config.ts'
+import * as schema from './schema.ts'
+
+/** Drizzle (pg dialect) handle bound to the PostgreSQL schema. */
+export type PostgresDb = BunSQLDatabase<typeof schema>
 
 export interface PostgresClient {
   /** Raw Bun.SQL pool — for hand-written SQL and lifecycle control. */
   readonly sql: SQL
-  /** Drizzle (pg dialect) handle the repository impls will query through. */
-  readonly db: BunSQLDatabase
+  /** Drizzle (pg dialect) handle the repository impls query through. */
+  readonly db: PostgresDb
   /** Fail-fast connectivity check; rejects if the server is unreachable. */
   ping(): Promise<void>
   /** Drain and close the pool. */
@@ -37,7 +41,7 @@ export const createPostgresClient = (config: PostgresDatabaseConfig): PostgresCl
     tls: tlsOption(config.ssl),
     ...(config.maxConnections ? { max: config.maxConnections } : {}),
   })
-  const db = drizzle(sql)
+  const db = drizzle(sql, { schema })
   return {
     sql,
     db,
