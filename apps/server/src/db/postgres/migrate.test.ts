@@ -8,7 +8,7 @@
  */
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createPostgresClient } from './client.ts'
-import { runPostgresMigrations, verifyPostgresSchema, postgresSchemaStatements, postgresTableNames } from './migrate.ts'
+import { runPostgresMigrations, verifyPostgresSchema, postgresSchemaStatements, postgresSearchStatements, postgresTableNames } from './migrate.ts'
 import { testPostgresUrl, waitForPostgres } from './test-support.ts'
 
 const one = <T>(rows: T[]): T => {
@@ -38,7 +38,8 @@ describe.skipIf(!testPostgresUrl)('postgres migrations (integration)', () => {
     await runPostgresMigrations(client.sql)
     await verifyPostgresSchema(client.sql) // throws on any column/index drift
 
-    const expectedTables = postgresSchemaStatements().filter((statement) => statement.startsWith('CREATE TABLE')).length
+    const expectedTables = [...postgresSchemaStatements(), ...postgresSearchStatements()]
+      .filter((statement) => statement.startsWith('CREATE TABLE')).length
     const rows = (await client.sql`
       SELECT table_name FROM information_schema.tables
       WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
