@@ -13,10 +13,8 @@ import {
   unauthorized,
 } from '@kawaii-wiki/core'
 import type { Env } from '../env.ts'
-import type { DB } from '../db/client.ts'
-import { createServices } from '../db/services.ts'
 import type { MailSender } from '../services/index.ts'
-import { createCollabRuntime, createPresenceRuntime, createRealtimeBus } from '../realtime/runtime.ts'
+import { createCollabRuntime, createPresenceRuntime } from '../realtime/runtime.ts'
 import { createAssetStorage, type AssetStorage } from '../storage/assets.ts'
 import { createGitStorage, type GitConfig } from '../storage/git.ts'
 import { createGitSyncHandlers, startGitSyncScheduler } from '../storage/git-sync.ts'
@@ -29,8 +27,7 @@ import {
   type StructuredLogger,
 } from '../observability/logging.ts'
 import type { AutomationEvent, WebhookFetcher, WebhookHostnameResolver } from '../services/webhooks.ts'
-import { createSqliteRealtimeTicketRepository } from '../db/repositories/realtime-tickets.ts'
-import { createSqliteAuditLogRepository } from '../db/repositories/audit-log.ts'
+import type { DatabaseAdapter } from './database-adapter.ts'
 import { HttpError } from './errors.ts'
 import { requireHttpPermission } from './permissions.ts'
 import {
@@ -63,7 +60,7 @@ import { APP_VERSION } from '../version.ts'
 import { createTemplateRoutes } from './routes/templates.ts'
 
 export interface AppDeps {
-  readonly db: DB
+  readonly database: DatabaseAdapter
   readonly env: Env
   readonly logger?: StructuredLogger
   readonly assetStorage?: AssetStorage
@@ -119,7 +116,7 @@ const verifyTokenPrincipal = async (jwt: JwtVerifier, token: string | null | und
 }
 
 export const createApp = ({
-  db,
+  database,
   env,
   logger: suppliedLogger = consoleStructuredLogger,
   assetStorage: suppliedAssetStorage,
@@ -128,9 +125,9 @@ export const createApp = ({
   webhookResolver,
   rateLimiterFactory: suppliedRateLimiterFactory,
 }: AppDeps) => {
-  const logger = createAuditLogger(createSqliteAuditLogRepository(db), suppliedLogger, env.audit)
+  const logger = createAuditLogger(database.auditLogRepo, suppliedLogger, env.audit)
   const assetStorage = suppliedAssetStorage ?? createAssetStorage(env.assetStorage)
-  const services = createServices(db, {
+  const services = database.createServices({
     assetUrl: assetStorage.url,
     auth: env.auth,
     assetUpload: env.assetUpload,
@@ -154,7 +151,7 @@ export const createApp = ({
   const corsOrigin = env.cors.origins === null ? true : [...env.cors.origins]
   const createAppRateLimiter: RateLimiterFactory = suppliedRateLimiterFactory ?? createRateLimiterFactory({
     windowMs: RATE_LIMIT_WINDOW_MS,
-    database: env.realtime.eventBus === 'db' ? db.$client : null,
+    database: env.realtime.eventBus === 'db' ? database.rateLimitDatabase : null,
   })
   const authLimiter = createAppRateLimiter(AUTH_RATE_LIMIT_ATTEMPTS)
   const credentialLimiter = createAppRateLimiter(CREDENTIAL_RATE_LIMIT_ATTEMPTS)
@@ -224,7 +221,7 @@ export const createApp = ({
     return services.authz.principalForUser(user)
   }
 
-  const realtimeTicketRepo = createSqliteRealtimeTicketRepository(db)
+  const realtimeTicketRepo = database.realtimeTicketRepo
 
   const mintRealtimeTicket = async (principal: Principal | null): Promise<{ ticket: string; expiresAt: number }> => {
     if (!principal) throw new HttpError(unauthorized())
@@ -408,7 +405,7 @@ export const createApp = ({
   }, 60_000)
   unrefTimer(webhookRetryTimer)
 
-  const bus = createRealtimeBus(db, env.realtime)
+  const bus = database.createRealtimeBus(env.realtime)
   const presenceRuntime = createPresenceRuntime()
 
   const gitConfig: GitConfig = {
