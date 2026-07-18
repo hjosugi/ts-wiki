@@ -15,6 +15,7 @@ import type { WebhookFetcher, WebhookHostnameResolver, WebhookPayload } from '..
 import type { AssetStorage } from '../storage/assets.ts'
 import type { LogEvent, StructuredLogger } from '../observability/logging.ts'
 import { createApp, type App } from './app.ts'
+import { createSqliteDatabaseAdapter } from './database-adapter.ts'
 import { passkeys } from '../db/schema.ts'
 import { APP_VERSION } from '../version.ts'
 
@@ -150,7 +151,7 @@ const createFixture = (
   const env = options.env?.(testEnv(dataDir, cors)) ?? testEnv(dataDir, cors)
   const db = createDb(':memory:', { ftsTokenizer: env.search.ftsTokenizer })
   const app = createApp({
-    db,
+    database: createSqliteDatabaseAdapter(db),
     env,
     logger: options.logger ?? noopLogger,
     assetStorage: options.assetStorage,
