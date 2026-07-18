@@ -666,6 +666,11 @@ if (import.meta.main) {
   const env = loadEnv()
   const db = createDb(env.database, { ftsTokenizer: env.search.ftsTokenizer })
   db.$client.close()
-  const target = env.database.driver === 'sqlite' ? env.database.path : env.database.replicaPath ?? env.database.url
+  const target =
+    env.database.driver === 'sqlite'
+      ? env.database.path
+      : env.database.driver === 'libsql'
+        ? env.database.replicaPath ?? env.database.url
+        : env.database.url
   console.log(`✓ Migrations applied to ${target}`)
 }

@@ -1,4 +1,4 @@
-export type DatabaseDriver = 'sqlite' | 'libsql'
+export type DatabaseDriver = 'sqlite' | 'libsql' | 'postgres'
 
 export interface SqliteDatabaseConfig {
   readonly driver: 'sqlite'
@@ -17,7 +17,24 @@ export interface LibsqlDatabaseConfig {
   readonly replicaPath: string | null
 }
 
-export type DatabaseConfig = SqliteDatabaseConfig | LibsqlDatabaseConfig
+export interface PostgresDatabaseConfig {
+  readonly driver: 'postgres'
+  /** libpq-style connection string, e.g. postgres://user:pass@host:5432/db. */
+  readonly url: string
+  /**
+   * TLS for the connection. `false` disables it (local/test), `true` enables it
+   * with the platform trust store, `'require'` enforces it without verifying the
+   * server certificate chain (managed providers that terminate TLS internally).
+   */
+  readonly ssl: boolean | 'require'
+  /** Upper bound on pooled connections. Null defers to the driver default. */
+  readonly maxConnections: number | null
+}
+
+export type DatabaseConfig =
+  | SqliteDatabaseConfig
+  | LibsqlDatabaseConfig
+  | PostgresDatabaseConfig
 
 export const DEFAULT_SQLITE_PATH = './data/ts-wiki.sqlite'
 export const DEFAULT_LIBSQL_REPLICA_FILENAME = 'ts-wiki-libsql-replica.db'

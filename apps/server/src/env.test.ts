@@ -138,8 +138,40 @@ describe('loadEnv', () => {
     })
   })
 
+  test('parses postgres database config with ssl and pool options', () => {
+    const env = loadEnv({
+      DATABASE_DRIVER: 'POSTGRES',
+      DATABASE_URL: 'postgres://wiki:secret@db.example.com:5432/wiki',
+      DATABASE_SSL: 'require',
+      DATABASE_POOL_MAX: '12',
+    })
+
+    expect(env.database).toEqual({
+      driver: 'postgres',
+      url: 'postgres://wiki:secret@db.example.com:5432/wiki',
+      ssl: 'require',
+      maxConnections: 12,
+    })
+  })
+
+  test('defaults postgres ssl off and pool size unset', () => {
+    const env = loadEnv({
+      DATABASE_DRIVER: 'postgres',
+      DATABASE_URL: 'postgres://localhost/wiki',
+    })
+
+    expect(env.database).toEqual({
+      driver: 'postgres',
+      url: 'postgres://localhost/wiki',
+      ssl: false,
+      maxConnections: null,
+    })
+  })
+
   test('rejects unknown or incomplete database config', () => {
-    expect(() => loadEnv({ DATABASE_DRIVER: 'postgres' })).toThrow(/DATABASE_DRIVER/)
+    expect(() => loadEnv({ DATABASE_DRIVER: 'oracle' })).toThrow(/DATABASE_DRIVER must be one of/)
+    expect(() => loadEnv({ DATABASE_DRIVER: 'postgres' })).toThrow(/DATABASE_DRIVER=postgres requires DATABASE_URL/)
+    expect(() => loadEnv({ DATABASE_DRIVER: 'postgres', DATABASE_URL: 'postgres://x', DATABASE_SSL: 'maybe' })).toThrow(/DATABASE_SSL/)
     expect(() => loadEnv({ DATABASE_DRIVER: 'libsql' })).toThrow(/LIBSQL_URL/)
   })
 

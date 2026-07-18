@@ -32,6 +32,12 @@ describe('createDb', () => {
     sqlite.close()
   })
 
+  test('fails fast for the not-yet-runnable postgres driver', () => {
+    expect(() =>
+      createDb({ driver: 'postgres', url: 'postgres://localhost/wiki', ssl: false, maxConnections: null }),
+    ).toThrow(/DATABASE_DRIVER=postgres/)
+  })
+
   test('opens a migrated libSQL database and supports core wiki flows', async () => {
     const db = createDb({
       driver: 'libsql',

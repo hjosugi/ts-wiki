@@ -26,6 +26,8 @@ const removeDatabaseFiles = (path: string): void => {
 const env = loadEnv()
 const path = env.database.driver === 'sqlite'
   ? env.database.path
-  : env.database.replicaPath ?? env.database.url
+  : env.database.driver === 'libsql'
+    ? env.database.replicaPath ?? env.database.url
+    : env.database.url
 removeDatabaseFiles(path)
 console.log(`✓ removed ${path}`)

@@ -1,0 +1,22 @@
+# Local integration backends for driver contract tests.
+#
+#   docker compose -f docker-compose.test.yml up -d --wait postgres
+#   KAWAII_WIKI_TEST_POSTGRES_URL=postgres://wiki:wiki@127.0.0.1:15432/wiki \
+#     bun test apps/server/src/db/postgres
+#   docker compose -f docker-compose.test.yml down -v
+#
+# scripts/test-postgres.sh wraps this. CI uses a service container instead.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: wiki
+      POSTGRES_PASSWORD: wiki
+      POSTGRES_DB: wiki
+    ports:
+      - "127.0.0.1:15432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wiki -d wiki"]
+      interval: 1s
+      timeout: 3s
+      retries: 30

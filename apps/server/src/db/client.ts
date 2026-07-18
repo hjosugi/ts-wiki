@@ -16,6 +16,7 @@ import { BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core/db'
 import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core/dialect'
 import { BetterSQLiteSession } from 'drizzle-orm/better-sqlite3/session'
 import { createTableRelationsHelpers, extractTablesRelationalConfig } from 'drizzle-orm/relations'
+import { UnsupportedDatabaseDriverError } from './config.ts'
 import type { DatabaseConfig, DatabaseDriver, LibsqlDatabaseConfig } from './config.ts'
 import * as schema from './schema.ts'
 import { runMigrationsAtomically, verifyDatabaseSchema, type FtsTokenizer } from './migrate.ts'
@@ -160,6 +161,12 @@ export const createDb = (configOrPath: DatabaseConfig | string, options: CreateD
   const config = typeof configOrPath === 'string' ? sqliteConfig(configOrPath) : configOrPath
   if (config.driver === 'libsql') {
     return createLibsqlDb(config, options)
+  }
+  if (config.driver === 'postgres') {
+    // The PostgreSQL adapter (connection, schema, repositories, migrations) is
+    // being built out under #364 and is not yet a runnable runtime driver. Fail
+    // fast with a clear message instead of silently falling back to SQLite.
+    throw new UnsupportedDatabaseDriverError(config, 'server runtime')
   }
   return createSqliteDb(config.path, options)
 }

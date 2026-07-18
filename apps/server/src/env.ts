@@ -171,8 +171,16 @@ const parseRole = (value: string | undefined): 'admin' | 'editor' | 'viewer' =>
 
 const parseDatabaseDriver = (value: string | undefined): DatabaseDriver => {
   const driver = value?.trim().toLowerCase() || 'sqlite'
-  if (driver === 'sqlite' || driver === 'libsql') return driver
-  throw new Error('DATABASE_DRIVER must be either "sqlite" or "libsql".')
+  if (driver === 'sqlite' || driver === 'libsql' || driver === 'postgres') return driver
+  throw new Error('DATABASE_DRIVER must be one of "sqlite", "libsql", or "postgres".')
+}
+
+const parsePostgresSsl = (value: string | undefined): boolean | 'require' => {
+  const ssl = value?.trim().toLowerCase()
+  if (!ssl || ssl === 'false' || ssl === 'disable' || ssl === '0' || ssl === 'no') return false
+  if (ssl === 'true' || ssl === 'enable' || ssl === '1' || ssl === 'yes' || ssl === 'verify') return true
+  if (ssl === 'require') return 'require'
+  throw new Error('DATABASE_SSL must be one of "true", "false", or "require".')
 }
 
 const parseFtsTokenizer = (value: string | undefined): FtsTokenizer => {
@@ -272,6 +280,22 @@ const loadDatabaseEnv = (source: EnvSource, dataDir: string): DatabaseConfig => 
     return {
       driver,
       path: source.DATABASE_PATH ?? DEFAULT_SQLITE_PATH,
+    }
+  }
+
+  if (driver === 'postgres') {
+    const missing: string[] = []
+    const url = requireEnv(source, 'DATABASE_URL', missing)
+    if (missing.length > 0) {
+      throw new Error(`DATABASE_DRIVER=postgres requires ${missing.join(', ')}.`)
+    }
+    return {
+      driver,
+      url,
+      ssl: parsePostgresSsl(source.DATABASE_SSL),
+      maxConnections: source.DATABASE_POOL_MAX
+        ? parsePositiveInteger(source.DATABASE_POOL_MAX, 0, 'DATABASE_POOL_MAX')
+        : null,
     }
   }
 
