@@ -93,7 +93,7 @@ export const createSetupRoutes = ({
           }
         }
 
-        const searchIndex = unwrap(services.search.rebuildIndex(principal, { tokenizer: body.tokenizer }))
+        const searchIndex = unwrap(await services.search.rebuildIndex(principal, { tokenizer: body.tokenizer }))
         await publishAutomation({ type: 'user.created', actorId: user.id, data: { user: publicUser(user) } })
         audit(logger, 'setup.complete', {
           userId: user.id,

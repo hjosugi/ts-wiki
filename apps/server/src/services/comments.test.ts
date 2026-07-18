@@ -9,8 +9,12 @@ import type { SearchIndexer } from './search.ts'
 const admin: Principal = { id: 'admin-1', role: 'admin' }
 
 const fakeIndexer = (indexed: string[]): SearchIndexer => ({
-  indexPage: (page) => indexed.push(page.id),
-  indexPageById: (pageId) => indexed.push(pageId),
+  indexPage: (page) => {
+    indexed.push(page.id)
+  },
+  indexPageById: (pageId) => {
+    indexed.push(pageId)
+  },
   removePage: () => {},
   search: () => {
     throw new Error('not used')

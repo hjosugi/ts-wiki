@@ -128,7 +128,7 @@ export const createPostgresPageWriteRepository = (db: PostgresDb, searchIndexer:
       const [updated] = await tx.select().from(pages).where(eq(pages.id, input.pageId)).limit(1)
       return updated
     })
-    if (page) searchIndexer.indexPage(page)
+    if (page) await searchIndexer.indexPage(page)
     return page
   },
 
@@ -141,7 +141,7 @@ export const createPostgresPageWriteRepository = (db: PostgresDb, searchIndexer:
         const [row] = await tx.select().from(pages).where(eq(pages.id, page.id)).limit(1)
         return row
       })
-      if (created) searchIndexer.indexPage(created)
+      if (created) await searchIndexer.indexPage(created)
       return created
     } catch (error) {
       if (isUniqueConstraintError(error)) throw new DuplicatePagePathError()
@@ -164,8 +164,8 @@ export const createPostgresPageWriteRepository = (db: PostgresDb, searchIndexer:
       const [updated] = await tx.select().from(pages).where(eq(pages.id, input.pageId)).limit(1)
       return updated
     })
-    if (input.index && page) searchIndexer.indexPage(page)
-    else searchIndexer.removePage(input.pageId)
+    if (input.index && page) await searchIndexer.indexPage(page)
+    else await searchIndexer.removePage(input.pageId)
     return page
   },
 
@@ -204,7 +204,7 @@ export const createPostgresPageWriteRepository = (db: PostgresDb, searchIndexer:
       if (moved) pagesToIndex.push(moved)
       return moved
     })
-    for (const indexedPage of pagesToIndex) searchIndexer.indexPage(indexedPage)
+    for (const indexedPage of pagesToIndex) await searchIndexer.indexPage(indexedPage)
     return page
   },
 
@@ -217,7 +217,7 @@ export const createPostgresPageWriteRepository = (db: PostgresDb, searchIndexer:
       const [updated] = await tx.select().from(pages).where(eq(pages.id, input.pageId)).limit(1)
       return updated
     })
-    searchIndexer.removePage(input.pageId)
+    await searchIndexer.removePage(input.pageId)
     return page
   },
 
@@ -240,6 +240,6 @@ export const createPostgresPageWriteRepository = (db: PostgresDb, searchIndexer:
       await tx.delete(pageRevisions).where(eq(pageRevisions.pageId, pageId))
       await tx.delete(pages).where(eq(pages.id, pageId))
     })
-    searchIndexer.removePage(pageId)
+    await searchIndexer.removePage(pageId)
   },
 })

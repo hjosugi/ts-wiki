@@ -279,10 +279,14 @@ export const rebuildSearchIndex = (db: DB, tokenizer: FtsTokenizer): void => {
   })
 }
 
+// Returns the concrete (synchronous) FTS indexer rather than the widened
+// `SearchIndexer` interface: SQLite resolves every call synchronously, so
+// direct callers keep sync ergonomics while still satisfying `SearchIndexer`
+// (a sync value is a valid `Awaitable`). Async drivers return promises.
 export const createFtsSearchIndexer = (
   db: DB,
   options: { configuredTokenizer?: FtsTokenizer } = {},
-): SearchIndexer => {
+) => {
   const configuredTokenizer = options.configuredTokenizer ?? 'unicode61'
   const ftsInsert = db.$client.prepare(
     'INSERT INTO pages_fts(rowid, page_id, title, description, content, comments, assets) VALUES (?, ?, ?, ?, ?, ?, ?)',

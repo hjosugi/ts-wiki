@@ -31,7 +31,7 @@ describe('page + search slice (in-memory db)', () => {
     expect(fetched.ok).toBe(true)
 
     // Searchable immediately.
-    const result = search.search('banana')
+    const result = (await search.search('banana'))
     expect(result.hits.length).toBe(1)
     expect(result.hits[0]?.path).toBe('docs/intro')
     expect(result.hits[0]?.snippet).toContain('<mark>')
@@ -45,11 +45,11 @@ describe('page + search slice (in-memory db)', () => {
     await pages.create({ path: 'secret/b', title: 'Beta', content: 'a secret banana note' }, admin)
 
     // Without a read predicate, both match.
-    expect(search.search('banana').hits.length).toBe(2)
+    expect((await search.search('banana')).hits.length).toBe(2)
 
     // With a predicate that denies the secret subtree, only the readable page
     // surfaces — no title/path/snippet leak past the ACL.
-    const filtered = search.search('banana', 20, {}, (path) => !path.startsWith('secret/'))
+    const filtered = (await search.search('banana', 20, {}, (path) => !path.startsWith('secret/')))
     expect(filtered.hits.length).toBe(1)
     expect(filtered.hits[0]?.path).toBe('public/a')
   })
@@ -59,7 +59,7 @@ describe('page + search slice (in-memory db)', () => {
     const { pages, search } = createServices(db)
 
     await pages.create({ path: 'p', title: 'P', content: 'banana <script>alert(1)</script>' }, admin)
-    const snippet = search.search('banana').hits[0]?.snippet ?? ''
+    const snippet = (await search.search('banana')).hits[0]?.snippet ?? ''
     expect(snippet).toContain('<mark>')
     // Raw HTML is disabled at render time and content is stored tag-stripped, so
     // the script tag is entity-encoded — never live markup in the snippet.
@@ -130,8 +130,8 @@ describe('page + search slice (in-memory db)', () => {
     await pages.create({ path: 'p', title: 'P', content: 'original apple' }, admin)
     await pages.update('p', { content: 'replaced orange' }, admin)
 
-    expect(search.search('apple').hits.length).toBe(0)
-    expect(search.search('orange').hits.length).toBe(1)
+    expect((await search.search('apple')).hits.length).toBe(0)
+    expect((await search.search('orange')).hits.length).toBe(1)
   })
 
   test('update rejects stale expectedUpdatedAt', async () => {
@@ -206,8 +206,8 @@ describe('page + search slice (in-memory db)', () => {
     const { pages, search } = createServices(db)
     await pages.create({ path: 'jp/search', title: '日本語検索', content: 'これはテストです。天ぷら本文もあります。' }, admin)
 
-    expect(search.search('テスト').hits[0]?.path).toBe('jp/search')
-    expect(search.search('天ぷら').hits[0]?.path).toBe('jp/search')
+    expect((await search.search('テスト')).hits[0]?.path).toBe('jp/search')
+    expect((await search.search('天ぷら')).hits[0]?.path).toBe('jp/search')
   })
 
   test('trigram tokenizer falls back for one- and two-character CJK queries', async () => {
@@ -215,13 +215,13 @@ describe('page + search slice (in-memory db)', () => {
     const { pages, search } = createServices(db)
     await pages.create({ path: 'jp/short', title: '検索', description: '日本語', content: '短い語でも見つかります。' }, admin)
 
-    const twoChars = search.search('検索')
+    const twoChars = (await search.search('検索'))
     expect(twoChars.hits[0]?.path).toBe('jp/short')
     expect(twoChars.truncatedTerms).toEqual(['検索'])
     expect(twoChars.shortQueryHint).toMatchObject({ kind: 'trigram-short-query', tokenizer: 'trigram' })
     expect(twoChars.hits[0]?.snippet).toContain('<mark>検索</mark>')
 
-    const oneChar = search.search('語')
+    const oneChar = (await search.search('語'))
     expect(oneChar.hits[0]?.path).toBe('jp/short')
     expect(oneChar.truncatedTerms).toEqual(['語'])
   })
@@ -231,14 +231,14 @@ describe('page + search slice (in-memory db)', () => {
     const { pages, search } = createServices(db)
     await pages.create({ path: 'jp/search', title: '日本語検索', content: 'これはテストです。天ぷら本文もあります。' }, admin)
 
-    const result = search.search('日本語')
+    const result = (await search.search('日本語'))
     expect(result.tokenizerHint).toMatchObject({
       kind: 'cjk-tokenizer',
       tokenizer: 'unicode61',
       recommendedTokenizer: 'trigram',
     })
 
-    const status = search.indexStatus(admin)
+    const status = await search.indexStatus(admin)
     expect(status.ok).toBe(true)
     if (!status.ok) return
     expect(status.value.tokenizer).toBe('unicode61')
@@ -252,13 +252,13 @@ describe('page + search slice (in-memory db)', () => {
     const { pages, search } = createServices(db)
     await pages.create({ path: 'jp/reindex', title: '日本語検索', content: 'これはテストです。天ぷら本文もあります。' }, admin)
 
-    const rebuilt = search.rebuildIndex(admin, { tokenizer: 'trigram' })
+    const rebuilt = await search.rebuildIndex(admin, { tokenizer: 'trigram' })
     expect(rebuilt.ok).toBe(true)
     if (!rebuilt.ok) return
     expect(rebuilt.value.tokenizer).toBe('trigram')
     expect(rebuilt.value.needsTrigram).toBe(false)
-    expect(search.search('天ぷら').hits[0]?.path).toBe('jp/reindex')
-    expect(search.search('天ぷら').tokenizerHint).toBeUndefined()
+    expect((await search.search('天ぷら')).hits[0]?.path).toBe('jp/reindex')
+    expect((await search.search('天ぷら')).tokenizerHint).toBeUndefined()
   })
 
   test('page metadata supports labels, status, review dates, and filtered search', async () => {
@@ -295,14 +295,14 @@ describe('page + search slice (in-memory db)', () => {
       spaceKey: 'docs',
       locale: 'en-us',
     })
-    expect(search.search('banana', 20, {
+    expect((await search.search('banana', 20, {
       pathPrefix: 'docs',
       label: 'ops',
       status: 'verified',
       spaceKey: 'docs',
       locale: 'en-us',
-    }).hits.length).toBe(1)
-    expect(search.search('banana', 20, { label: 'missing' }).hits.length).toBe(0)
+    })).hits.length).toBe(1)
+    expect((await search.search('banana', 20, { label: 'missing' })).hits.length).toBe(0)
     expect(await pages.spaces()).toContainEqual(expect.objectContaining({ key: 'docs', pages: 1 }))
   })
 
@@ -312,14 +312,14 @@ describe('page + search slice (in-memory db)', () => {
     await pages.create({ path: 'docs/body', title: 'Body mention', content: 'banana appears in the body' }, admin)
     await pages.create({ path: 'docs/title', title: 'Banana', content: 'plain body' }, admin)
 
-    expect(search.search('banana').hits[0]?.path).toBe('docs/title')
+    expect((await search.search('banana')).hits[0]?.path).toBe('docs/title')
 
     await pages.create({ path: 'docs/old', title: 'Old', content: 'kiwi same body' }, admin)
     await pages.create({ path: 'docs/fresh', title: 'Fresh', content: 'kiwi same body' }, admin)
     db.$client.prepare('UPDATE pages SET updated_at = ? WHERE path = ?').run(1, 'docs/old')
     db.$client.prepare('UPDATE pages SET updated_at = ? WHERE path = ?').run(9_000_000_000_000, 'docs/fresh')
 
-    expect(search.search('kiwi', { sort: 'recent' }).hits[0]?.path).toBe('docs/fresh')
+    expect((await search.search('kiwi', { sort: 'recent' })).hits[0]?.path).toBe('docs/fresh')
   })
 
   test('search snippets use the matching title or description column', async () => {
@@ -338,8 +338,8 @@ describe('page + search slice (in-memory db)', () => {
       content: 'another unrelated body',
     }, admin)
 
-    expect(search.search('needle').hits[0]?.snippet).toContain('<mark>Needle</mark>')
-    expect(search.search('appears').hits[0]?.snippet).toContain('<mark>appears</mark>')
+    expect((await search.search('needle')).hits[0]?.snippet).toContain('<mark>Needle</mark>')
+    expect((await search.search('appears')).hits[0]?.snippet).toContain('<mark>appears</mark>')
   })
 
   test('search paginates with total count and supports phrase, exclusion, and title scope', async () => {
@@ -353,14 +353,14 @@ describe('page + search slice (in-memory db)', () => {
     await pages.create({ path: 'titles/banana', title: 'Banana guide', content: 'no fruit body' }, admin)
     await pages.create({ path: 'titles/body', title: 'Body guide', content: 'banana body only' }, admin)
 
-    const secondPage = search.search('bulkterm', { limit: 10, offset: 10 })
+    const secondPage = (await search.search('bulkterm', { limit: 10, offset: 10 }))
     expect(secondPage.total).toBe(25)
     expect(secondPage.hits.length).toBe(10)
     expect(secondPage.hasMore).toBe(true)
 
-    expect(search.search('"error code 42"').hits.map((hit) => hit.path)).toEqual(['phrases/exact'])
-    expect(search.search('error -split').hits.map((hit) => hit.path)).not.toContain('phrases/split')
-    expect(search.search('banana', { scope: 'title' }).hits.map((hit) => hit.path)).toEqual(['titles/banana'])
+    expect((await search.search('"error code 42"')).hits.map((hit) => hit.path)).toEqual(['phrases/exact'])
+    expect((await search.search('error -split')).hits.map((hit) => hit.path)).not.toContain('phrases/split')
+    expect((await search.search('banana', { scope: 'title' })).hits.map((hit) => hit.path)).toEqual(['titles/banana'])
   })
 
   test('search filters by author and updated date', async () => {
@@ -372,9 +372,9 @@ describe('page + search slice (in-memory db)', () => {
     db.$client.prepare('UPDATE pages SET updated_at = ? WHERE path = ?').run(1_000, 'filters/admin')
     db.$client.prepare('UPDATE pages SET updated_at = ? WHERE path = ?').run(9_000, 'filters/viewer')
 
-    expect(search.search('filterterm', { filters: { author: 'viewer-1' } }).hits.map((hit) => hit.path)).toEqual(['filters/viewer'])
-    expect(search.search('filterterm', { filters: { updatedAfter: 5_000 } }).hits.map((hit) => hit.path)).toEqual(['filters/viewer'])
-    expect(search.search('filterterm', { filters: { updatedBefore: 5_000 } }).hits.map((hit) => hit.path)).toEqual(['filters/admin'])
+    expect((await search.search('filterterm', { filters: { author: 'viewer-1' } })).hits.map((hit) => hit.path)).toEqual(['filters/viewer'])
+    expect((await search.search('filterterm', { filters: { updatedAfter: 5_000 } })).hits.map((hit) => hit.path)).toEqual(['filters/viewer'])
+    expect((await search.search('filterterm', { filters: { updatedBefore: 5_000 } })).hits.map((hit) => hit.path)).toEqual(['filters/admin'])
   })
 
   test('search indexes page comments and referenced asset filenames', async () => {
@@ -399,9 +399,9 @@ describe('page + search slice (in-memory db)', () => {
     }, admin)
     expect(asset.ok).toBe(true)
 
-    const commentHit = search.search('decisionterm').hits[0]
+    const commentHit = (await search.search('decisionterm')).hits[0]
     expect(commentHit).toMatchObject({ path: 'docs/context', kind: 'comment', anchor: 'comments' })
-    const assetHit = search.search('diagram').hits[0]
+    const assetHit = (await search.search('diagram')).hits[0]
     expect(assetHit).toMatchObject({ path: 'docs/context', kind: 'asset', anchor: 'attachments' })
     const listed = await assets.list(admin, undefined, 'diagram')
     expect(listed.ok).toBe(true)
@@ -424,7 +424,7 @@ describe('page + search slice (in-memory db)', () => {
     if (moved.ok) expect(moved.value.path).toBe('new/path')
     expect((await pages.getByPath('old/path')).ok).toBe(false)
     expect((await pages.getByPath('new/path')).ok).toBe(true)
-    expect(search.search('pear').hits[0]?.path).toBe('new/path')
+    expect((await search.search('pear')).hits[0]?.path).toBe('new/path')
     const home = await pages.getByPath('home')
     expect(home.ok).toBe(true)
     if (home.ok) {
@@ -762,9 +762,9 @@ describe('page + search slice (in-memory db)', () => {
     const db = createDb(':memory:')
     const { pages, search } = createServices(db)
     await pages.create({ path: 'gone', title: 'Gone', content: 'ephemeral mango' }, admin)
-    expect(search.search('mango').hits.length).toBe(1)
+    expect((await search.search('mango')).hits.length).toBe(1)
     await pages.remove('gone', admin)
-    expect(search.search('mango').hits.length).toBe(0)
+    expect((await search.search('mango')).hits.length).toBe(0)
     expect((await pages.getByPath('gone')).ok).toBe(false)
     expect(await pages.trash()).toContainEqual(expect.objectContaining({ path: 'gone', lifecycle: 'deleted' }))
   })
@@ -781,12 +781,12 @@ describe('page + search slice (in-memory db)', () => {
     expect(archived.ok).toBe(true)
     expect((await pages.list()).some((page) => page.path === 'docs/archive-me')).toBe(false)
     expect(await pages.trash()).toContainEqual(expect.objectContaining({ path: 'docs/archive-me', lifecycle: 'archived' }))
-    expect(search.search('kiwi').hits.length).toBe(0)
+    expect((await search.search('kiwi')).hits.length).toBe(0)
 
     const restored = await pages.restore('docs/archive-me', admin)
     expect(restored.ok).toBe(true)
     expect((await pages.getByPath('docs/archive-me')).ok).toBe(true)
-    expect(search.search('kiwi').hits.length).toBe(1)
+    expect((await search.search('kiwi')).hits.length).toBe(1)
 
     const purged = await pages.purge('docs/archive-me', admin)
     expect(purged.ok).toBe(true)

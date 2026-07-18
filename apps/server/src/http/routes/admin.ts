@@ -316,13 +316,13 @@ export const createAdminRoutes = ({
       async ({ params, services, principal }) => unwrap(await services.authz.deletePageRule(principal, params.id)),
       { params: t.Object({ id: t.String() }) },
     )
-    .get('/api/admin/search-index', ({ services, principal }) => ({
-      searchIndex: unwrap(services.search.indexStatus(principal)),
+    .get('/api/admin/search-index', async ({ services, principal }) => ({
+      searchIndex: unwrap(await services.search.indexStatus(principal)),
     }))
     .post(
       '/api/admin/search-index/rebuild',
-      ({ body, services, principal }) => {
-        const searchIndex = unwrap(services.search.rebuildIndex(principal, body ?? undefined))
+      async ({ body, services, principal }) => {
+        const searchIndex = unwrap(await services.search.rebuildIndex(principal, body ?? undefined))
         audit(logger, 'search.index.rebuild', {
           userId: principal?.id ?? null,
           tokenizer: searchIndex.tokenizer,

@@ -15,7 +15,7 @@ export const createSearchRoutes = ({ requireSearchRead, canReadPage }: SearchRou
     const readablePaths = new Set((await Promise.all(pages.map(async (page) =>
       await canReadPage(principal, page.path) ? page.path : null
     ))).filter((path): path is string => path !== null))
-    return services.search.search(
+    return await services.search.search(
       query.q ?? '',
       {
         limit: query.limit,

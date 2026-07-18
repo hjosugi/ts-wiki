@@ -21,8 +21,8 @@ describe('saveContent (collab autosave)', () => {
     if (r.ok) expect(r.value.content).toBe('autosaved papaya')
 
     expect(revisions(db)).toBe(before) // crucial: no revision spam
-    expect(search.search('papaya').hits.length).toBe(1) // reindexed
-    expect(search.search('kiwi').hits.length).toBe(0)
+    expect((await search.search('papaya')).hits.length).toBe(1) // reindexed
+    expect((await search.search('kiwi')).hits.length).toBe(0)
   })
 
   test('forbidden for anonymous, not_found for a missing page', async () => {

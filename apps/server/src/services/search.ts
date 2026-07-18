@@ -88,20 +88,27 @@ export interface SearchIndexRebuildInput {
   readonly tokenizer?: SearchTokenizer
 }
 
+/**
+ * A synchronous value or a promise of one. The SQLite/FTS5 indexer resolves
+ * these synchronously; async drivers (Postgres) return promises, and callers
+ * simply await — awaiting a plain value is transparent.
+ */
+export type Awaitable<T> = T | Promise<T>
+
 export interface SearchIndexer {
-  indexPage(page: PageRecord): void
-  indexPageById(pageId: string): void
-  removePage(pageId: string): void
-  search(query: string, request: Required<SearchRequest>, canRead?: (path: string) => boolean): SearchResponse
-  rebuild(tokenizer: SearchTokenizer): void
-  status(): SearchIndexStatus
+  indexPage(page: PageRecord): Awaitable<void>
+  indexPageById(pageId: string): Awaitable<void>
+  removePage(pageId: string): Awaitable<void>
+  search(query: string, request: Required<SearchRequest>, canRead?: (path: string) => boolean): Awaitable<SearchResponse>
+  rebuild(tokenizer: SearchTokenizer): Awaitable<void>
+  status(): Awaitable<SearchIndexStatus>
 }
 
 export interface SearchService {
-  search(query: string, options?: SearchRequest, canRead?: (path: string) => boolean): SearchResponse
-  search(query: string, limit?: number, filters?: SearchFilters, canRead?: (path: string) => boolean): SearchResponse
-  indexStatus(principal: Principal | null): Result<SearchIndexStatus, AppError>
-  rebuildIndex(principal: Principal | null, input?: SearchIndexRebuildInput): Result<SearchIndexStatus, AppError>
+  search(query: string, options?: SearchRequest, canRead?: (path: string) => boolean): Promise<SearchResponse>
+  search(query: string, limit?: number, filters?: SearchFilters, canRead?: (path: string) => boolean): Promise<SearchResponse>
+  indexStatus(principal: Principal | null): Promise<Result<SearchIndexStatus, AppError>>
+  rebuildIndex(principal: Principal | null, input?: SearchIndexRebuildInput): Promise<Result<SearchIndexStatus, AppError>>
 }
 
 const DEFAULT_LIMIT = 20
@@ -124,20 +131,21 @@ const normalizeRequest = (limitOrOptions?: number | SearchRequest, filters: Sear
 }
 
 export const createSearchService = (indexer: SearchIndexer): SearchService => ({
-  search(query, limitOrOptions?: number | SearchRequest, filtersOrCanRead?: SearchFilters | ((path: string) => boolean), maybeCanRead?: (path: string) => boolean) {
+  async search(query, limitOrOptions?: number | SearchRequest, filtersOrCanRead?: SearchFilters | ((path: string) => boolean), maybeCanRead?: (path: string) => boolean) {
     const request = normalizeRequest(limitOrOptions, typeof filtersOrCanRead === 'function' ? {} : filtersOrCanRead ?? {})
     const canRead = typeof filtersOrCanRead === 'function' ? filtersOrCanRead : maybeCanRead
     return indexer.search(query, request, canRead)
   },
-  indexStatus(principal) {
+  async indexStatus(principal) {
     const allowed = requirePermission(principal, 'admin:access')
     if (!allowed.ok) return allowed
-    return ok(indexer.status())
+    return ok(await indexer.status())
   },
-  rebuildIndex(principal, input = {}) {
+  async rebuildIndex(principal, input = {}) {
     const allowed = requirePermission(principal, 'admin:access')
     if (!allowed.ok) return allowed
-    indexer.rebuild(input.tokenizer ?? indexer.status().tokenizer)
-    return ok(indexer.status())
+    const tokenizer = input.tokenizer ?? (await indexer.status()).tokenizer
+    await indexer.rebuild(tokenizer)
+    return ok(await indexer.status())
   },
 })

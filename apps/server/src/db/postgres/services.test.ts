@@ -120,7 +120,7 @@ describe.skipIf(!testPostgresUrl)('postgres composed services', () => {
   })
 
   test('search: composes but returns empty results (placeholder indexer)', async () => {
-    const response = services.search.search('anything')
+    const response = await services.search.search('anything')
     expect(response.hits).toEqual([])
     expect(response.total).toBe(0)
   })

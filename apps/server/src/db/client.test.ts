@@ -65,7 +65,7 @@ describe('createDb', () => {
       }, principal)
       expect(page.ok).toBe(true)
 
-      const hits = services.search.search('turso').hits
+      const hits = (await services.search.search('turso')).hits
       expect(hits[0]?.path).toBe('docs/libsql')
     } finally {
       db.$client.close()
