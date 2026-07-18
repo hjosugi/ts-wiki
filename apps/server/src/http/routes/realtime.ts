@@ -14,7 +14,7 @@ export interface RealtimeRoutesContext {
   readonly presenceRuntime: ReturnType<typeof createPresenceRuntime>
   readonly collab: ReturnType<typeof createCollabRuntime>
   readonly privateWiki: () => boolean
-  readonly mintRealtimeTicket: (principal: Principal | null) => { ticket: string; expiresAt: number }
+  readonly mintRealtimeTicket: (principal: Principal | null) => Promise<{ ticket: string; expiresAt: number }>
   readonly consumeRealtimeTicket: (ticket: string | null | undefined) => Promise<Principal | null>
 }
 

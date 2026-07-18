@@ -5,7 +5,6 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { openapi } from '@elysia/openapi'
-import { lte } from 'drizzle-orm'
 import {
   can,
   forbidden,
@@ -30,7 +29,7 @@ import {
   type StructuredLogger,
 } from '../observability/logging.ts'
 import type { AutomationEvent, WebhookFetcher, WebhookHostnameResolver } from '../services/webhooks.ts'
-import { realtimeTickets } from '../db/schema.ts'
+import { createSqliteRealtimeTicketRepository } from '../db/repositories/realtime-tickets.ts'
 import { HttpError } from './errors.ts'
 import { requireHttpPermission } from './permissions.ts'
 import {
@@ -217,31 +216,23 @@ export const createApp = ({
     return services.authz.principalForUser(user)
   }
 
-  const cleanupRealtimeTickets = (): void => {
-    db.delete(realtimeTickets).where(lte(realtimeTickets.expiresAt, Date.now())).run()
-  }
+  const realtimeTicketRepo = createSqliteRealtimeTicketRepository(db)
 
-  const mintRealtimeTicket = (principal: Principal | null): { ticket: string; expiresAt: number } => {
+  const mintRealtimeTicket = async (principal: Principal | null): Promise<{ ticket: string; expiresAt: number }> => {
     if (!principal) throw new HttpError(unauthorized())
-    cleanupRealtimeTickets()
     const createdAt = Date.now()
     const ticket = `${crypto.randomUUID()}-${crypto.randomUUID()}`
     const expiresAt = createdAt + REALTIME_TICKET_TTL_MS
-    db.insert(realtimeTickets).values({ ticket, userId: principal.id, expiresAt, createdAt }).run()
+    await realtimeTicketRepo.cleanupExpired(createdAt)
+    await realtimeTicketRepo.insert({ ticket, userId: principal.id, expiresAt, createdAt })
     return { ticket, expiresAt }
   }
 
   const consumeRealtimeTicket = async (ticket: string | null | undefined): Promise<Principal | null> => {
     if (!ticket) return null
-    const row = db.$client.prepare(`
-      DELETE FROM realtime_tickets
-      WHERE ticket = ?
-      RETURNING user_id AS userId, expires_at AS expiresAt
-    `).get(ticket) as { userId?: unknown; expiresAt?: unknown } | null
-    const userId = typeof row?.userId === 'string' ? row.userId : null
-    const expiresAt = typeof row?.expiresAt === 'number' ? row.expiresAt : Number(row?.expiresAt ?? 0)
-    if (!userId || expiresAt <= Date.now()) return null
-    return principalForUserId(userId)
+    const row = await realtimeTicketRepo.consume(ticket)
+    if (!row || row.expiresAt <= Date.now()) return null
+    return principalForUserId(row.userId)
   }
 
   const canReadPage = async (principal: Principal | null, path?: string): Promise<boolean> =>
