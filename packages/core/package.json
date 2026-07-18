@@ -21,7 +21,7 @@
     "@mdit/plugin-img-size": "^1.0.1",
     "@mdit/plugin-katex": "^1.0.1",
     "highlight.js": "^11.11.1",
-    "katex": "^0.17.0",
+    "katex": "^0.18.0",
     "markdown-it": "^14.1.0",
     "markdown-it-anchor": "^9.2.0",
     "markdown-it-emoji": "^3.0.0",
