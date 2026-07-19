@@ -18,11 +18,14 @@ the preferred prefix; legacy `TS_WIKI_*` aliases remain accepted for 1.x.
 | `KAWAII_WIKI_JWT_SECRET_FILE` | `/data/.jwt-secret` in Docker | File used by the Docker entrypoint when `JWT_SECRET` is omitted |
 | `DATA_DIR` | `./data` | Runtime files and local assets |
 | `WEB_DIST_DIR` | `apps/web/dist` | Built SPA directory |
-| `DATABASE_DRIVER` | `sqlite` | `sqlite` or `libsql` |
+| `DATABASE_DRIVER` | `sqlite` | `sqlite`, `libsql`, or `postgres` |
 | `DATABASE_PATH` | `DATA_DIR/ts-wiki.sqlite` | SQLite file |
 | `LIBSQL_URL` | unset | Local or remote libSQL URL |
 | `LIBSQL_AUTH_TOKEN` | unset | Remote libSQL credential |
 | `LIBSQL_REPLICA_PATH` | under `DATA_DIR` | Embedded replica file |
+| `DATABASE_URL` | unset | Connection string for `postgres`, e.g. `postgres://user:pass@host:5432/db` |
+| `DATABASE_SSL` | `false` | Postgres TLS: `false`, `true` (verify the certificate), or `require` (enforce TLS without verifying the chain — managed providers) |
+| `DATABASE_POOL_MAX` | driver default | Upper bound on pooled Postgres connections |
 | `KAWAII_WIKI_FTS_TOKENIZER` | `unicode61` | `unicode61` or `trigram`; back up before changing an existing index |
 
 ## Authentication and policy
