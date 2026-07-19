@@ -11,9 +11,10 @@
 import { createPool, type Pool, type PoolOptions } from 'mysql2/promise'
 import { drizzle, type MySql2Database } from 'drizzle-orm/mysql2'
 import type { MysqlDatabaseConfig } from '../config.ts'
+import * as schema from './schema.ts'
 
-/** Drizzle (mysql dialect) handle. The schema is bound in the schema slice. */
-export type MysqlDb = MySql2Database<Record<string, never>>
+/** Drizzle (mysql dialect) handle bound to the MySQL schema. */
+export type MysqlDb = MySql2Database<typeof schema>
 
 export interface MysqlClient {
   /** Raw mysql2 pool — for hand-written SQL and lifecycle control. */
@@ -41,7 +42,7 @@ export const createMysqlClient = (config: MysqlDatabaseConfig): MysqlClient => {
     ...(config.maxConnections ? { connectionLimit: config.maxConnections } : {}),
     ...(tlsOption(config.ssl) ? { ssl: tlsOption(config.ssl) } : {}),
   })
-  const db = drizzle(pool)
+  const db = drizzle(pool, { schema, mode: 'default' })
   return {
     pool,
     db,
