@@ -72,8 +72,15 @@ export const createMysqlContractDb = async (databaseName: string): Promise<Mysql
       await client.pool.query('SET FOREIGN_KEY_CHECKS = 1')
     },
     async close() {
-      await client.pool.query(`DROP DATABASE IF EXISTS \`${databaseName}\``)
+      // Close the pool first, then drop from a fresh connection — dropping the
+      // database a pool is actively connected to can wedge pool teardown.
       await client.close()
+      const admin = createMysqlClient({ driver: 'mysql', url: withDatabase(testMysqlUrl ?? '', null), ssl: false, maxConnections: 1 })
+      try {
+        await admin.pool.query(`DROP DATABASE IF EXISTS \`${databaseName}\``)
+      } finally {
+        await admin.close()
+      }
     },
   }
 }

@@ -11,8 +11,8 @@ import { mysqlSchemaStatements, mysqlTableNames, runMysqlMigrations, verifyMysql
 
 describe.skipIf(!testMysqlUrl)('mysql migrations', () => {
   let harness: MysqlContractDb
-  beforeAll(async () => { harness = await createMysqlContractDb('kw_migrate_contract') })
-  afterAll(async () => { await harness?.close() })
+  beforeAll(async () => { harness = await createMysqlContractDb('kw_migrate_contract') }, 30_000)
+  afterAll(async () => { await harness?.close() }, 30_000)
 
   test('materializes every declared table', async () => {
     const [rows] = (await harness.client.pool.query(
