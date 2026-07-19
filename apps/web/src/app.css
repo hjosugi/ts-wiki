@@ -57,6 +57,18 @@
   --z-popover: 20;
   --z-menu: 30;
   --z-tooltip: 70;
+  /* Spacing scale — 0.125rem (2px) grid; use a step instead of a new value */
+  --space-3xs: 0.125rem;
+  --space-2xs: 0.25rem;
+  --space-xs: 0.375rem;
+  --space-sm: 0.5rem;
+  --space-md: 0.625rem;
+  --space-lg: 0.75rem;
+  --space-xl: 0.875rem;
+  --space-2xl: 1rem;
+  --space-3xl: 1.25rem;
+  --space-4xl: 1.5rem;
+  --space-fluid: clamp(1.25rem, 4vw, 2.5rem);
   --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --site-background: var(--c-bg);
   --site-background-size: auto;
@@ -261,7 +273,7 @@ body {
   border-radius: var(--radius-md);
   background: var(--c-text);
   color: var(--c-bg);
-  padding: 0.35rem 0.5rem;
+  padding: var(--space-xs) var(--space-sm);
   font-size: var(--fs-xs);
   font-weight: var(--fw-medium);
   line-height: var(--lh-snug);
@@ -353,7 +365,7 @@ body {
 .admin-redirect-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 1rem;
+  gap: var(--space-2xl);
 }
 
 @container admin-content (min-width: 58rem) {
@@ -566,7 +578,7 @@ main:focus {
 
 .skeleton-stack {
   display: grid;
-  gap: 0.65rem;
+  gap: var(--space-md);
   max-width: 44rem;
 }
 
@@ -616,23 +628,23 @@ main:focus {
 .editor-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: var(--space-sm);
   align-items: center;
 }
 
 .editor-toolbar-group {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: var(--space-2xs);
   align-items: center;
-  padding: 0.25rem;
+  padding: var(--space-2xs);
   border: 1px solid var(--c-border);
   border-radius: var(--radius);
   background: var(--c-surface);
 }
 
 .editor-toolbar-label {
-  padding: 0 0.35rem;
+  padding: 0 var(--space-xs);
   color: var(--c-text-muted);
   font-size: var(--fs-2xs);
   font-weight: var(--fw-bold);
@@ -644,7 +656,7 @@ main:focus {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: var(--space-xs);
   min-height: 2rem;
   white-space: nowrap;
 }
@@ -660,7 +672,7 @@ main:focus {
   border-radius: var(--radius-md);
   background: var(--c-text);
   color: var(--c-bg);
-  padding: 0.35rem 0.5rem;
+  padding: var(--space-xs) var(--space-sm);
   font-size: var(--fs-xs);
   line-height: var(--lh-tight);
   opacity: 0;
@@ -684,7 +696,7 @@ main:focus {
   border-radius: var(--radius);
   background: var(--c-surface);
   box-shadow: var(--shadow-lg);
-  padding: 0.35rem;
+  padding: var(--space-xs);
 }
 
 .slash-menu-button {
@@ -692,9 +704,9 @@ main:focus {
   width: 100%;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: var(--space-lg);
   border-radius: var(--radius-md);
-  padding: 0.45rem 0.55rem;
+  padding: var(--space-sm) var(--space-sm);
   text-align: left;
 }
 
@@ -709,7 +721,7 @@ main:focus {
   color: var(--c-code-text);
   border: 1px solid var(--c-border);
   border-radius: var(--radius);
-  padding: 0.9rem 1.1rem;
+  padding: var(--space-xl) var(--space-2xl);
   overflow-x: auto;
 }
 
@@ -789,7 +801,7 @@ main:focus {
 .prose th,
 .prose td {
   border: 1px solid rgba(125, 125, 125, 0.3);
-  padding: 0.4rem 0.7rem;
+  padding: var(--space-xs) var(--space-lg);
 }
 .prose h1,
 .prose h2,
@@ -842,9 +854,9 @@ main:focus {
 .wiki-event-card {
   display: flex;
   justify-content: space-between;
-  gap: 1rem;
-  margin: 1.25rem 0;
-  padding: 1rem;
+  gap: var(--space-2xl);
+  margin: var(--space-3xl) 0;
+  padding: var(--space-2xl);
   border: 1px solid var(--c-border);
   border-left: 4px solid var(--c-accent);
   border-radius: var(--radius);
@@ -856,7 +868,7 @@ main:focus {
 }
 
 .wiki-event-kicker {
-  margin: 0 0 0.2rem;
+  margin: 0 0 var(--space-2xs);
   font-size: var(--fs-2xs);
   font-weight: var(--fw-bold);
   letter-spacing: 0.05em;
@@ -871,13 +883,13 @@ main:focus {
 
 .wiki-event-time,
 .wiki-event-description {
-  margin: 0.35rem 0 0;
+  margin: var(--space-xs) 0 0;
   color: var(--c-text-muted);
 }
 
 .wiki-event-details {
   display: grid;
-  gap: 0.35rem;
+  gap: var(--space-xs);
   margin-top: 0.7rem;
   font-size: var(--fs-md);
 }
@@ -885,7 +897,7 @@ main:focus {
 .wiki-event-details div {
   display: grid;
   grid-template-columns: 4.5rem minmax(0, 1fr);
-  gap: 0.75rem;
+  gap: var(--space-lg);
 }
 
 .wiki-event-details span {
@@ -901,7 +913,7 @@ main:focus {
 .wiki-event-actions {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
+  gap: var(--space-sm);
   align-items: flex-end;
   flex-shrink: 0;
 }
@@ -911,7 +923,7 @@ main:focus {
   align-items: center;
   justify-content: center;
   min-height: 2rem;
-  padding: 0.35rem 0.65rem;
+  padding: var(--space-xs) var(--space-md);
   border-radius: var(--radius);
   background: var(--c-surface-muted);
   color: var(--c-text);
@@ -929,7 +941,7 @@ main:focus {
   display: inline-flex;
   align-items: center;
   min-height: 1.35rem;
-  padding: 0.1rem 0.45rem;
+  padding: var(--space-3xs) var(--space-sm);
   border-radius: var(--radius-full);
   background: color-mix(in srgb, var(--c-accent) 12%, var(--c-surface-muted));
   color: var(--c-accent);
@@ -940,8 +952,8 @@ main:focus {
 .wiki-media-card {
   display: grid;
   grid-template-columns: minmax(10rem, 16rem) minmax(0, 1fr);
-  gap: 1rem;
-  margin: 1.25rem 0;
+  gap: var(--space-2xl);
+  margin: var(--space-3xl) 0;
   overflow: hidden;
   border: 1px solid var(--c-border);
   border-radius: var(--radius);
@@ -978,7 +990,7 @@ main:focus {
 
 .wiki-media-body {
   min-width: 0;
-  padding: 1rem 1rem 1rem 0;
+  padding: var(--space-2xl) var(--space-2xl) var(--space-2xl) 0;
 }
 
 .wiki-media-kicker,
@@ -995,7 +1007,7 @@ main:focus {
 }
 
 .wiki-media-card h3 {
-  margin: 0.25rem 0;
+  margin: var(--space-2xs) 0;
   overflow-wrap: anywhere;
   font-size: var(--fs-2xl);
 }
@@ -1007,7 +1019,7 @@ main:focus {
 .wiki-media-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: var(--space-sm);
   margin-top: 0.8rem;
 }
 
@@ -1017,7 +1029,7 @@ main:focus {
   align-items: center;
   justify-content: center;
   min-height: 2rem;
-  padding: 0.35rem 0.7rem;
+  padding: var(--space-xs) var(--space-lg);
   border: 1px solid var(--c-border);
   border-radius: var(--radius);
   background: var(--c-surface-muted);
@@ -1038,8 +1050,8 @@ main:focus {
 }
 
 .wiki-youtube-latest {
-  margin: 1.25rem 0;
-  padding: 1rem;
+  margin: var(--space-3xl) 0;
+  padding: var(--space-2xl);
   border: 1px solid var(--c-border);
   border-radius: var(--radius);
   background: var(--c-surface);
@@ -1050,19 +1062,19 @@ main:focus {
 }
 
 .wiki-youtube-latest-header h3 {
-  margin: 0.2rem 0 0;
+  margin: var(--space-2xs) 0 0;
   font-size: var(--fs-2xl);
 }
 
 .wiki-youtube-latest-items {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-lg);
 }
 
 .wiki-youtube-latest-card {
   display: grid;
   grid-template-columns: minmax(7rem, 10rem) minmax(0, 1fr);
-  gap: 0.75rem;
+  gap: var(--space-lg);
   align-items: center;
   color: var(--c-text);
   text-decoration: none;
@@ -1109,7 +1121,7 @@ main:focus {
   display: grid;
   min-height: 22rem;
   align-items: end;
-  margin: 1.5rem 0;
+  margin: var(--space-4xl) 0;
   overflow: hidden;
   border-radius: var(--radius);
   background: linear-gradient(135deg, color-mix(in srgb, var(--c-accent) 24%, #111827), #111827);
@@ -1135,7 +1147,7 @@ main:focus {
   position: relative;
   z-index: var(--z-content);
   max-width: 44rem;
-  padding: clamp(1.25rem, 4vw, 2.5rem);
+  padding: var(--space-fluid);
 }
 
 .wiki-landing-hero-center {
@@ -1176,7 +1188,7 @@ main:focus {
 .wiki-landing-actions p {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.65rem;
+  gap: var(--space-md);
   margin: 0;
 }
 
@@ -1189,13 +1201,13 @@ main:focus {
   border-radius: var(--radius);
   background: rgb(255 255 255 / 0.16);
   color: white;
-  padding: 0.45rem 0.8rem;
+  padding: var(--space-sm) var(--space-lg);
   font-weight: var(--fw-bold);
   text-decoration: none;
 }
 
 .wiki-page-widget {
-  margin: 1.5rem 0;
+  margin: var(--space-4xl) 0;
 }
 
 .wiki-page-widget-header {
@@ -1203,7 +1215,7 @@ main:focus {
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: var(--space-lg);
   margin-bottom: 0.8rem;
 }
 
@@ -1221,7 +1233,7 @@ main:focus {
 .wiki-page-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
-  gap: 0.8rem;
+  gap: var(--space-lg);
 }
 
 .wiki-page-card {
@@ -1253,9 +1265,9 @@ main:focus {
 
 .wiki-page-card-body {
   display: grid;
-  gap: 0.25rem;
+  gap: var(--space-2xs);
   min-width: 0;
-  padding: 0.75rem;
+  padding: var(--space-lg);
 }
 
 .wiki-page-card-title,
@@ -1289,19 +1301,19 @@ main:focus {
 
 .wiki-activity-list {
   display: grid;
-  gap: 0.5rem;
+  gap: var(--space-sm);
 }
 
 .wiki-activity-item {
   display: grid;
   grid-template-columns: 2rem minmax(0, 1fr);
-  gap: 0.65rem;
+  gap: var(--space-md);
   align-items: center;
   border: 1px solid var(--c-border);
   border-radius: var(--radius);
   background: var(--c-surface);
   color: var(--c-text);
-  padding: 0.6rem 0.7rem;
+  padding: var(--space-md) var(--space-lg);
   text-decoration: none;
 }
 
@@ -1341,8 +1353,8 @@ main:focus {
 }
 
 .wiki-callout {
-  margin: 1.25rem 0;
-  padding: 0.9rem 1rem;
+  margin: var(--space-3xl) 0;
+  padding: var(--space-xl) var(--space-2xl);
   border: 1px solid var(--c-border);
   border-left: 4px solid rgb(59 130 246);
   border-radius: var(--radius);
@@ -1394,8 +1406,8 @@ main:focus {
   float: right;
   width: 18rem;
   max-width: 100%;
-  margin: 0.25rem 0 1rem 1.25rem;
-  padding: 0.9rem;
+  margin: var(--space-2xs) 0 var(--space-2xl) var(--space-3xl);
+  padding: var(--space-xl);
   border: 1px solid var(--c-border);
   border-radius: var(--radius);
   background: var(--c-surface);
@@ -1431,14 +1443,14 @@ main:focus {
 .wiki-infobox-fields {
   display: grid;
   gap: 0;
-  margin: 0.75rem 0 0;
+  margin: var(--space-lg) 0 0;
 }
 
 .wiki-infobox-row {
   display: grid;
   grid-template-columns: minmax(4.5rem, 40%) minmax(0, 1fr);
-  gap: 0.5rem;
-  padding: 0.35rem 0;
+  gap: var(--space-sm);
+  padding: var(--space-xs) 0;
   border-top: 1px solid var(--c-border);
   font-size: var(--fs-md);
 }
@@ -1473,7 +1485,7 @@ main:focus {
   .wiki-infobox {
     float: none;
     width: 100%;
-    margin: 1.25rem 0;
+    margin: var(--space-3xl) 0;
   }
 }
 
@@ -1481,15 +1493,15 @@ main:focus {
 .wiki-links {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  margin: 1.25rem 0;
+  gap: var(--space-sm);
+  margin: var(--space-3xl) 0;
 }
 
 .wiki-links-item {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.45rem 0.95rem;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-xl);
   border-radius: var(--radius-full);
   border: 1px solid var(--c-border);
   background: var(--c-surface);
@@ -1560,7 +1572,7 @@ main:focus {
   position: absolute;
   top: 0.4rem;
   right: 0.4rem;
-  padding: 0.15rem 0.55rem;
+  padding: var(--space-3xs) var(--space-sm);
   font-size: var(--fs-2xs);
   font-weight: var(--fw-semibold);
   border-radius: var(--radius-md);
@@ -1601,9 +1613,9 @@ main:focus {
 .wiki-embed {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 0.8rem;
-  margin: 1.25rem 0;
-  padding: 0.9rem 1rem;
+  gap: var(--space-lg);
+  margin: var(--space-3xl) 0;
+  padding: var(--space-xl) var(--space-2xl);
   border: 1px solid var(--c-border);
   border-radius: var(--radius);
   background: var(--c-surface);
@@ -1670,8 +1682,8 @@ main:focus {
 }
 
 .wiki-mermaid-rendered {
-  margin: 1.25rem 0;
-  padding: 1rem;
+  margin: var(--space-3xl) 0;
+  padding: var(--space-2xl);
   border-radius: var(--radius);
   background: var(--c-surface);
   overflow-x: auto;
@@ -1683,7 +1695,7 @@ main:focus {
 }
 
 .wiki-tabs {
-  margin: 1.25rem 0;
+  margin: var(--space-3xl) 0;
   border: 1px solid var(--c-border);
   border-radius: var(--radius);
   background: var(--c-surface);
@@ -1692,8 +1704,8 @@ main:focus {
 .wiki-tabs-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
-  padding: 0.5rem;
+  gap: var(--space-2xs);
+  padding: var(--space-sm);
   border-bottom: 1px solid var(--c-border);
   background: var(--c-surface-muted);
 }
@@ -1702,7 +1714,7 @@ main:focus {
   display: inline-flex;
   align-items: center;
   min-height: 2rem;
-  padding: 0.35rem 0.75rem;
+  padding: var(--space-xs) var(--space-lg);
   border-radius: var(--radius);
   color: var(--c-text-muted);
   font-size: var(--fs-md);
@@ -1722,7 +1734,7 @@ main:focus {
 }
 
 .wiki-tabs-panels {
-  padding: 1rem;
+  padding: var(--space-2xl);
 }
 
 .wiki-tab-panel h3:first-child {
@@ -1743,7 +1755,7 @@ main:focus {
   }
 
   .wiki-media-body {
-    padding: 0 1rem 1rem;
+    padding: 0 var(--space-2xl) var(--space-2xl);
   }
 
   .wiki-youtube-latest-card,
@@ -1891,9 +1903,9 @@ html.dark {
 .profile-main {
   display: flex;
   align-items: end;
-  gap: 1rem;
+  gap: var(--space-2xl);
   margin-top: -2.25rem;
-  padding: 0 1rem;
+  padding: 0 var(--space-2xl);
 }
 
 .profile-avatar {
@@ -1925,14 +1937,14 @@ html.dark {
 
 .profile-bio {
   margin-top: 2rem;
-  padding: 0 1rem;
+  padding: 0 var(--space-2xl);
 }
 
 .profile-links {
   display: grid;
-  gap: 0.65rem;
+  gap: var(--space-md);
   margin-top: 1.5rem;
-  padding: 0 1rem;
+  padding: 0 var(--space-2xl);
 }
 
 .profile-links a {
@@ -1955,7 +1967,7 @@ html.dark {
 
 .profile-section {
   margin-top: 2.25rem;
-  padding: 0 1rem;
+  padding: 0 var(--space-2xl);
 }
 
 .profile-section h2 {
@@ -1967,15 +1979,15 @@ html.dark {
 .profile-page-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-  gap: 0.75rem;
+  gap: var(--space-lg);
 }
 
 .profile-page-grid a {
   display: grid;
-  gap: 0.35rem;
+  gap: var(--space-xs);
   border: 1px solid var(--c-border);
   border-radius: var(--radius);
-  padding: 0.85rem;
+  padding: var(--space-xl);
   background: var(--c-surface);
   color: var(--c-text);
   text-decoration: none;
@@ -2009,20 +2021,20 @@ html.dark {
 .page-tree-row {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: var(--space-xs);
 }
 
 .page-tree-folder {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: var(--space-xs);
 }
 
 .page-tree-line {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 0.125rem;
+  gap: var(--space-3xs);
   min-height: 1.875rem;
 }
 
@@ -2048,16 +2060,16 @@ html.dark {
   border: 1px solid var(--c-border);
   border-radius: var(--radius);
   background: var(--c-surface);
-  padding: 0.25rem;
+  padding: var(--space-2xs);
   box-shadow: var(--shadow-lg);
 }
 
 .page-tree-actions-menu button {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-sm);
   border-radius: var(--radius-md);
-  padding: 0.45rem 0.55rem;
+  padding: var(--space-sm) var(--space-sm);
   color: var(--c-text);
   font-size: var(--fs-sm);
   text-align: left;
@@ -2098,7 +2110,7 @@ html.dark {
 .page-tree-move {
   flex: 0 0 auto;
   border-radius: var(--radius-sm);
-  padding: 0.25rem 0.35rem;
+  padding: var(--space-2xs) var(--space-xs);
   color: rgb(107 114 128);
   font-size: var(--fs-2xs);
   line-height: var(--lh-none);
@@ -2144,7 +2156,7 @@ html.dark {
 }
 
 .page-tree-compact {
-  gap: 0.5rem;
+  gap: var(--space-sm);
 }
 
 .page-tree-compact .page-tree-row,
@@ -2166,7 +2178,7 @@ html.dark {
   min-height: 1.5rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  padding: 0 1rem;
+  padding: 0 var(--space-2xl);
 }
 
 .history-added {
@@ -2241,8 +2253,8 @@ html.dark {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.8rem 0.9rem 0.6rem;
+  gap: var(--space-lg);
+  padding: var(--space-lg) var(--space-xl) var(--space-md);
 }
 
 .interactive-graph-head h2 {
@@ -2258,11 +2270,11 @@ html.dark {
 
 .interactive-graph-actions {
   display: flex;
-  gap: 0.25rem;
+  gap: var(--space-2xs);
 }
 
 .interactive-graph-actions .btn-ghost {
-  padding: 0.25rem 0.45rem;
+  padding: var(--space-2xs) var(--space-sm);
   font-size: var(--fs-xs);
 }
 
@@ -2270,8 +2282,8 @@ html.dark {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.65rem 1rem;
-  padding: 0 0.9rem 0.75rem;
+  gap: var(--space-md) var(--space-2xl);
+  padding: 0 var(--space-xl) var(--space-lg);
   font-size: var(--fs-sm);
   color: rgb(75 85 99);
 }
@@ -2279,7 +2291,7 @@ html.dark {
 .interactive-graph-controls label {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--space-xs);
 }
 
 .graph-range {
@@ -2359,9 +2371,9 @@ html.dark {
 .interactive-graph-detail {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 1rem;
+  gap: var(--space-2xl);
   border-top: 1px solid rgb(229 231 235);
-  padding: 0.9rem;
+  padding: var(--space-xl);
   font-size: var(--fs-md);
 }
 
