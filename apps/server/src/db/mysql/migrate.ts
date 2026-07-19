@@ -9,8 +9,10 @@
  *
  * MySQL specifics vs Postgres: identifiers are backtick-quoted, DDL auto-commits
  * (no wrapping transaction), booleans render as `1`/`0`, and auto-increment keys
- * carry the `AUTO_INCREMENT` keyword. Full-text search (SQLite FTS5 -> MySQL
- * `FULLTEXT`) is intentionally deferred to a later search slice.
+ * carry the `AUTO_INCREMENT` keyword. Full-text search materializes a separate
+ * `page_search` table (the analogue of SQLite FTS5 / the Postgres tsvector) with
+ * a `FULLTEXT` index built by the ngram parser so CJK queries tokenize; see
+ * `mysqlSearchStatements`.
  */
 import type { Pool } from 'mysql2/promise'
 import { getTableConfig, type MySqlColumn, type MySqlTable } from 'drizzle-orm/mysql-core'
@@ -82,10 +84,33 @@ export const mysqlSchemaStatements = (): string[] =>
     return `CREATE TABLE IF NOT EXISTS ${quoteIdent(config.name)} (\n  ${lines.join(',\n  ')}\n)`
   })
 
+/**
+ * DDL for the search index. Kept out of the mysql-core schema (like the Postgres
+ * `page_search`) because the mysql-core builder cannot express `FULLTEXT ... WITH
+ * PARSER ngram`. Each stored column feeds the snippet/rank helpers; `searchable`
+ * is the lowercased concatenation the query filter and LIKE backstop scan, and
+ * the ngram FULLTEXT index over it accelerates the candidate fetch (including
+ * CJK, which the ngram parser tokenizes into bigrams). `page_id` is a
+ * `varchar(255)` because MySQL cannot key a `TEXT` column without a prefix.
+ */
+export const mysqlSearchStatements = (): string[] => [
+  `CREATE TABLE IF NOT EXISTS \`page_search\` (
+  \`page_id\` varchar(255) NOT NULL,
+  \`title\` text NOT NULL,
+  \`description\` text NOT NULL,
+  \`content\` text NOT NULL,
+  \`comments\` text NOT NULL,
+  \`assets\` text NOT NULL,
+  \`searchable\` text NOT NULL,
+  PRIMARY KEY (\`page_id\`),
+  FULLTEXT KEY \`page_search_ft\` (\`searchable\`) WITH PARSER ngram
+)`,
+]
+
 /** Create the relational schema on a MySQL database. Idempotent. */
 export const runMysqlMigrations = async (pool: Pool): Promise<void> => {
   // DDL auto-commits in MySQL, so there is nothing to wrap in a transaction.
-  for (const statement of mysqlSchemaStatements()) {
+  for (const statement of [...mysqlSchemaStatements(), ...mysqlSearchStatements()]) {
     await pool.query(statement)
   }
 }

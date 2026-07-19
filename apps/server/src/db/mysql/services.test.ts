@@ -3,12 +3,11 @@
  *
  * Composes the full service layer with `createMysqlServices` against a real
  * database and drives the same domains the cross-driver matrix asserts
- * (authorization, page, auth, automation, import/export), proving the MySQL
- * composition root wires all 22 repositories + page writes correctly. Realtime
- * is excluded — the DB event bus is SQLite-typed and gets its own MySQL slice;
- * search is the placeholder indexer (empty results) until the FULLTEXT slice, so
- * it is not exercised here. Tests share one database and use distinct paths and
- * emails instead of resetting between them.
+ * (authorization, page, auth, automation, import/export, search), proving the
+ * MySQL composition root wires all 22 repositories + page writes + the FULLTEXT
+ * search indexer correctly. Realtime is excluded — the DB event bus is
+ * SQLite-typed and gets its own MySQL slice. Tests share one database and use
+ * distinct paths and emails instead of resetting between them.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { can, parsePageFile, serializePageFile, type Principal } from '@kawaii-wiki/core'
@@ -122,5 +121,12 @@ describe.skipIf(!testMysqlUrl)('mysql composed services', () => {
     const exported = (await services.pages.allActive()).find((page) => page.path === path)
     expect(exported?.title).toBe('Imported')
     expect(exported?.content).toContain('import body')
+  })
+
+  test('search: indexes on write and finds pages through the composed layer', async () => {
+    await services.pages.create({ path: 'searchable/mysql', title: 'Findme', content: 'uniquebody about kiwithree' }, admin)
+    const response = await services.search.search('kiwithree')
+    expect(response.hits.map((hit) => hit.path)).toContain('searchable/mysql')
+    expect(await services.search.search('nomatchxyz')).toMatchObject({ hits: [], total: 0 })
   })
 })
