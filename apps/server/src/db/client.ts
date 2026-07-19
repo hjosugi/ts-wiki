@@ -162,11 +162,12 @@ export const createDb = (configOrPath: DatabaseConfig | string, options: CreateD
   if (config.driver === 'libsql') {
     return createLibsqlDb(config, options)
   }
-  if (config.driver === 'postgres') {
+  if (config.driver === 'postgres' || config.driver === 'mysql') {
     // `createDb` only builds the SQLite-family (bun:sqlite / libSQL) handle.
     // Postgres runs through `createPostgresClient` + `createPostgresDatabaseAdapter`
-    // in the entry point instead, so reaching here means a SQLite-only caller was
-    // handed a Postgres config — fail fast rather than fall back silently.
+    // in the entry point instead; MySQL's adapter is still being built out (#365)
+    // and is not yet a runnable runtime driver. Reaching here means a SQLite-only
+    // caller was handed a non-SQLite config — fail fast rather than fall back.
     throw new UnsupportedDatabaseDriverError(config, 'server runtime')
   }
   return createSqliteDb(config.path, options)

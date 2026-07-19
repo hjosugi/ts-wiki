@@ -5,7 +5,8 @@
 #     bun test apps/server/src/db/postgres
 #   docker compose -f docker-compose.test.yml down -v
 #
-# scripts/test-postgres.sh wraps this. CI uses a service container instead.
+# scripts/test-postgres.sh / scripts/test-mysql.sh wrap this. CI uses service
+# containers instead.
 services:
   postgres:
     image: postgres:17-alpine
@@ -23,3 +24,19 @@ services:
       interval: 1s
       timeout: 3s
       retries: 30
+
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: wiki
+      MYSQL_DATABASE: wiki
+      MYSQL_USER: wiki
+      MYSQL_PASSWORD: wiki
+    ports:
+      - "127.0.0.1:13306:3306"
+    healthcheck:
+      # -h 127.0.0.1 for the same TCP-vs-socket reason as postgres above.
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u wiki -pwiki --silent"]
+      interval: 2s
+      timeout: 3s
+      retries: 40
