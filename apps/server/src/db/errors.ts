@@ -15,7 +15,8 @@ const errorText = (error: unknown, depth = 0): string => {
 }
 
 export const isUniqueConstraintError = (error: unknown): boolean =>
-  // SQLite text codes/messages, plus PostgreSQL unique_violation (SQLSTATE 23505).
-  /SQLITE_CONSTRAINT_(?:UNIQUE|PRIMARYKEY)|UNIQUE constraint failed|PRIMARY KEY constraint failed|duplicate key value violates unique constraint|\b23505\b/i.test(
+  // SQLite text codes/messages, PostgreSQL unique_violation (SQLSTATE 23505),
+  // and MySQL/MariaDB duplicate key (ER_DUP_ENTRY / errno 1062).
+  /SQLITE_CONSTRAINT_(?:UNIQUE|PRIMARYKEY)|UNIQUE constraint failed|PRIMARY KEY constraint failed|duplicate key value violates unique constraint|\b23505\b|ER_DUP_ENTRY|Duplicate entry/i.test(
     errorText(error),
   )

@@ -12,8 +12,8 @@ import type { MysqlClient } from './client.ts'
 
 describe.skipIf(!testMysqlUrl)('mysql client foundation', () => {
   let client: MysqlClient
-  beforeAll(async () => { client = await createMysqlTestClient() })
-  afterAll(async () => { await client?.close() })
+  beforeAll(async () => { client = await createMysqlTestClient() }, 30_000)
+  afterAll(async () => { await client?.close() }, 30_000)
 
   test('pings the server', async () => {
     await expect(client.ping()).resolves.toBeUndefined()
