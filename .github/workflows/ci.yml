@@ -167,5 +167,6 @@ jobs:
 
       - name: Run MySQL contract
         env:
-          KAWAII_WIKI_TEST_MYSQL_URL: mysql://wiki:wiki@127.0.0.1:3306/wiki
+          # Root: the contract harness creates/drops a database per test file.
+          KAWAII_WIKI_TEST_MYSQL_URL: mysql://root:wiki@127.0.0.1:3306/wiki
         run: bun test apps/server/src/db/mysql

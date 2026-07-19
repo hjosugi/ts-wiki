@@ -16,7 +16,9 @@ trap cleanup EXIT
 echo "== starting mysql =="
 docker compose -f "$compose_file" up -d --wait mysql
 
-export KAWAII_WIKI_TEST_MYSQL_URL="mysql://wiki:wiki@127.0.0.1:13306/wiki"
+# Root credentials: the contract harness isolates each test file in its own
+# database (MySQL has no per-schema search_path), which needs CREATE/DROP DATABASE.
+export KAWAII_WIKI_TEST_MYSQL_URL="mysql://root:wiki@127.0.0.1:13306/wiki"
 
 echo "== mysql contract: db/mysql =="
 bun test apps/server/src/db/mysql
