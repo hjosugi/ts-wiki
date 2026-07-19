@@ -39,6 +39,11 @@ const tlsOption = (ssl: MysqlDatabaseConfig['ssl']): PoolOptions['ssl'] => {
 export const createMysqlClient = (config: MysqlDatabaseConfig): MysqlClient => {
   const pool = createPool({
     uri: config.url,
+    // CLIENT_FOUND_ROWS: report matched rows (not just changed rows) from UPDATE
+    // affectedRows, so optimistic-concurrency checks that mirror Postgres
+    // `.returning()` behave the same when the update sets a column to its
+    // existing value (e.g. a passkey counter that stays at 0).
+    flags: ['FOUND_ROWS'],
     ...(config.maxConnections ? { connectionLimit: config.maxConnections } : {}),
     ...(tlsOption(config.ssl) ? { ssl: tlsOption(config.ssl) } : {}),
   })
