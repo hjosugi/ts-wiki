@@ -38,6 +38,12 @@ describe('createDb', () => {
     ).toThrow(/DATABASE_DRIVER=postgres/)
   })
 
+  test('fails fast for the not-yet-runnable mysql driver', () => {
+    expect(() =>
+      createDb({ driver: 'mysql', url: 'mysql://localhost/wiki', ssl: false, maxConnections: null }),
+    ).toThrow(/DATABASE_DRIVER=mysql/)
+  })
+
   test('opens a migrated libSQL database and supports core wiki flows', async () => {
     const db = createDb({
       driver: 'libsql',
