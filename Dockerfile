@@ -63,4 +63,6 @@ ENTRYPOINT ["kawaii-wiki-entrypoint"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD ["bun", "-e", "const r=await fetch('http://127.0.0.1:4000/api/health');if(!r.ok)process.exit(1)"]
 
-CMD ["bun", "apps/server/src/index.ts"]
+# --smol runs Bun with a smaller heap and more eager GC: lower RSS in exchange
+# for a little CPU, which suits a low-traffic wiki (memory dominates the bill).
+CMD ["bun", "--smol", "apps/server/src/index.ts"]
