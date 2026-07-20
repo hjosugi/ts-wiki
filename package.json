@@ -21,6 +21,7 @@
     "build": "bun --filter '@kawaii-wiki/web' build && bun scripts/check-bundle-size.ts",
     "lint": "oxlint apps packages scripts e2e playwright.config.ts",
     "db:migrate": "bun --filter '@kawaii-wiki/server' db:migrate",
+    "db:migrate-to": "bun --filter '@kawaii-wiki/server' db:migrate-to",
     "db:reindex-search": "bun --filter '@kawaii-wiki/server' db:reindex-search",
     "db:seed": "bun --filter '@kawaii-wiki/server' db:seed",
     "docs:install": "bun --filter '@kawaii-wiki/server' docs:install",

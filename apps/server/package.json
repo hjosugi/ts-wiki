@@ -14,6 +14,7 @@
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
     "db:migrate": "bun src/db/migrate.ts",
+    "db:migrate-to": "bun src/db/cross-driver-migrate.ts",
     "db:reindex-search": "bun src/db/reindex-search.ts",
     "db:seed": "bun src/db/seed.ts",
     "docs:install": "bun src/db/install-official-docs.ts",
