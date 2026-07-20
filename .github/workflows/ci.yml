@@ -176,3 +176,39 @@ jobs:
             echo "-- $file --"
             bun test "$file"
           done
+
+  elasticsearch-contract:
+    name: Provision and test Elasticsearch
+    runs-on: ubuntu-latest
+
+    services:
+      elasticsearch:
+        image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+        env:
+          discovery.type: single-node
+          xpack.security.enabled: "false"
+          ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+        ports:
+          - 9200:9200
+        options: >-
+          --health-cmd "curl -fsS http://127.0.0.1:9200/_cluster/health || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run Elasticsearch contract
+        env:
+          KAWAII_WIKI_TEST_ELASTICSEARCH_URL: http://127.0.0.1:9200
+        run: bun test apps/server/src/search/elasticsearch

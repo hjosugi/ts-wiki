@@ -36,7 +36,7 @@ describe('loadEnv', () => {
     expect(env.databasePath).toBe('./data/ts-wiki.sqlite')
     expect(env.trustProxyHeaders).toBe(false)
     expect(env.cors.origins).toBeNull()
-    expect(env.search).toEqual({ ftsTokenizer: 'unicode61' })
+    expect(env.search).toEqual({ ftsTokenizer: 'unicode61', backend: 'fts5', elasticsearch: null })
     expect(env.assetUpload).toEqual({ maxBytes: 25 * 1024 * 1024 })
     expect(env.webhooks).toEqual({
       allowPrivateTargets: false,
@@ -179,6 +179,28 @@ describe('loadEnv', () => {
     expect(loadEnv({ TS_WIKI_FTS_TOKENIZER: 'trigram' }).search.ftsTokenizer).toBe('trigram')
     expect(loadEnv({ TS_WIKI_FTS_TOKENIZER: 'UNICODE61' }).search.ftsTokenizer).toBe('unicode61')
     expect(() => loadEnv({ TS_WIKI_FTS_TOKENIZER: 'kuromoji' })).toThrow(/TS_WIKI_FTS_TOKENIZER/)
+  })
+
+  test('parses the elasticsearch search backend and its connection config', () => {
+    const env = loadEnv({
+      SEARCH_BACKEND: 'elasticsearch',
+      ELASTICSEARCH_URL: 'http://es:9200',
+      ELASTICSEARCH_API_KEY: 'secret-key',
+      ELASTICSEARCH_INDEX_PREFIX: 'wiki',
+    })
+    expect(env.search.backend).toBe('elasticsearch')
+    expect(env.search.elasticsearch).toEqual({
+      url: 'http://es:9200',
+      apiKey: 'secret-key',
+      username: null,
+      password: null,
+      indexPrefix: 'wiki',
+    })
+  })
+
+  test('elasticsearch requires a URL and the backend value is validated', () => {
+    expect(() => loadEnv({ SEARCH_BACKEND: 'elasticsearch' })).toThrow(/ELASTICSEARCH_URL/)
+    expect(() => loadEnv({ SEARCH_BACKEND: 'solr' })).toThrow(/SEARCH_BACKEND/)
   })
 
   test('parses auth lifecycle and upload limit settings', () => {
