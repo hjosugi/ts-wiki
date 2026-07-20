@@ -15,6 +15,7 @@
 | ローカル libSQL | `DATABASE_DRIVER=libsql` とローカルの `file:` または `:memory:` URL でサポートされています。 |
 | Turso/libSQL | libSQL 埋め込みレプリカとしてサポート：サーバーはローカルのレプリカファイルを開き、リモートの Turso URL と同期します。 |
 | PostgreSQL | `DATABASE_DRIVER=postgres` と `DATABASE_URL` でサポート。スキーマは起動時にマイグレーションされます。 |
+| MySQL | `DATABASE_DRIVER=mysql` と `DATABASE_URL` でサポート。スキーマは起動時にマイグレーションされます。 |
 
 ## Render Free の形態
 

@@ -15,14 +15,14 @@
 | `KAWAII_WIKI_JWT_SECRET_FILE` | Dockerでは `/data/.jwt-secret` | `JWT_SECRET` が省略された場合にDockerエントリポイントが使用するファイル |
 | `DATA_DIR` | `./data` | ランタイムファイルとローカルアセット |
 | `WEB_DIST_DIR` | `apps/web/dist` | ビルド済みSPAのディレクトリ |
-| `DATABASE_DRIVER` | `sqlite` | `sqlite`、`libsql`、または `postgres` |
+| `DATABASE_DRIVER` | `sqlite` | `sqlite`、`libsql`、`postgres`、または `mysql` |
 | `DATABASE_PATH` | `DATA_DIR/ts-wiki.sqlite` | SQLiteファイルのパス |
 | `LIBSQL_URL` | 未設定 | ローカルまたはリモートのlibSQL URL |
 | `LIBSQL_AUTH_TOKEN` | 未設定 | リモートlibSQLの認証トークン |
 | `LIBSQL_REPLICA_PATH` | `DATA_DIR` 配下 | 埋め込みレプリカファイル |
-| `DATABASE_URL` | 未設定 | `postgres` の接続文字列。例: `postgres://user:pass@host:5432/db` |
-| `DATABASE_SSL` | `false` | Postgres の TLS: `false`、`true`（証明書を検証）、`require`（チェーンを検証せず TLS を強制。マネージド事業者向け） |
-| `DATABASE_POOL_MAX` | ドライバ既定 | Postgres のプール接続数の上限 |
+| `DATABASE_URL` | 未設定 | `postgres` または `mysql` の接続文字列。例: `postgres://user:pass@host:5432/db` または `mysql://user:pass@host:3306/db` |
+| `DATABASE_SSL` | `false` | Postgres/MySQL の TLS: `false`、`true`（証明書を検証）、`require`（チェーンを検証せず TLS を強制。マネージド事業者向け） |
+| `DATABASE_POOL_MAX` | ドライバ既定 | Postgres または MySQL のプール接続数の上限 |
 | `KAWAII_WIKI_FTS_TOKENIZER` | `unicode61` | `unicode61` または `trigram`。既存のインデックスを変更する前にバックアップ推奨 |
 
 ## 認証とポリシー

@@ -15,6 +15,7 @@ This is the zero-cost deployment path for issue #44.
 | Local libSQL | Supported via `DATABASE_DRIVER=libsql` and a local `file:` or `:memory:` URL. |
 | Turso/libSQL | Supported as a libSQL embedded replica: the server opens a local replica file and syncs it with the remote Turso URL. |
 | PostgreSQL | Supported via `DATABASE_DRIVER=postgres` and a `DATABASE_URL`; the schema migrates on boot. |
+| MySQL | Supported via `DATABASE_DRIVER=mysql` and a `DATABASE_URL`; the schema migrates on boot. |
 
 ## Render Free Shape
 
