@@ -625,6 +625,8 @@ export const createApp = ({
       logger,
       enforceCredentialLimit,
       publishAutomation,
+      databaseDriver: database.driver,
+      assetBackend: assetStorage.type,
     }))
     .use(createGitRoutes({
       git,

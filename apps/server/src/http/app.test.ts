@@ -868,6 +868,28 @@ describe('http app auth', () => {
     expect(events).toContainEqual(expect.objectContaining({ type: 'audit', action: 'auth.password.change' }))
   }, HTTP_TEST_TIMEOUT_MS)
 
+  test('admin system backends reports the active drivers and gates on admin', async () => {
+    const { app } = createFixture()
+    const admin = await register(app, 'admin@example.com')
+    const viewer = await register(app, 'viewer@example.com')
+
+    const backends = await app.handle(new Request('http://localhost/api/admin/system/backends', {
+      headers: { authorization: `Bearer ${admin.token}` },
+    }))
+    expect(backends.status).toBe(200)
+    expect(await backends.json()).toEqual({
+      database: { driver: 'sqlite', healthy: true },
+      search: { backend: 'builtin', engine: 'fts5', healthy: true },
+      assets: { backend: 'local', healthy: true },
+    })
+
+    // The infra report is admin-only — a viewer is forbidden.
+    const denied = await app.handle(new Request('http://localhost/api/admin/system/backends', {
+      headers: { authorization: `Bearer ${viewer.token}` },
+    }))
+    expect(denied.status).toBe(403)
+  }, HTTP_TEST_TIMEOUT_MS)
+
   test('admin reset/deactivate invalidates sessions and demoted admins lose admin access', async () => {
     const { logger, events } = captureLogger()
     const { app } = createFixture(undefined, { logger })

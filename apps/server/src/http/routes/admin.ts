@@ -2,7 +2,11 @@ import { t } from 'elysia'
 import type { Principal } from '@kawaii-wiki/core'
 import { audit, type StructuredLogger } from '../../observability/logging.ts'
 import type { AutomationEvent } from '../../services/webhooks.ts'
+import type { DatabaseDriver } from '../../db/config.ts'
+import type { AssetStorageType } from '../../storage/assets.ts'
 import { unwrap } from '../errors.ts'
+import { requireHttpPermission } from '../permissions.ts'
+import { describeSystemBackends } from '../system-backends.ts'
 import type { RequestIpServer } from '../rate-limit.ts'
 import { publicUser } from '../representations.ts'
 import type { BaseApp } from '../base.ts'
@@ -78,15 +82,31 @@ export interface AdminRoutesContext {
     principal?: Principal | null,
   ) => void
   readonly publishAutomation: (event: AutomationEvent) => Promise<void>
+  /** Active database driver, for the read-only storage & search backend report. */
+  readonly databaseDriver: DatabaseDriver
+  /** Active asset-storage backend, for the same report. */
+  readonly assetBackend: AssetStorageType
 }
 
 export const createAdminRoutes = ({
   logger,
   enforceCredentialLimit,
   publishAutomation,
+  databaseDriver,
+  assetBackend,
 }: AdminRoutesContext) => (app: BaseApp) =>
   app
     .get('/api/admin/stats', async ({ services, principal }) => unwrap(await services.admin.stats(principal)))
+    .get('/api/admin/system/backends', async ({ services, principal }) => {
+      requireHttpPermission(principal, 'admin:access')
+      let databaseHealthy = true
+      try {
+        await services.ping()
+      } catch {
+        databaseHealthy = false
+      }
+      return describeSystemBackends({ databaseDriver, assetBackend, databaseHealthy })
+    })
     .get('/api/admin/history', async ({ services, principal }) => unwrap(await services.admin.historyStats(principal)))
     .post('/api/admin/history/purge', async ({ body, services, principal }) => {
       const result = unwrap(await services.admin.purgeHistory(principal, body))
