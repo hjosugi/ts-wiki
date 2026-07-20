@@ -59,8 +59,22 @@ export interface CorsEnv {
   readonly origins: readonly string[] | null
 }
 
+export type SearchBackend = 'fts5' | 'elasticsearch'
+
+export interface ElasticsearchEnv {
+  readonly url: string
+  readonly apiKey: string | null
+  readonly username: string | null
+  readonly password: string | null
+  readonly indexPrefix: string
+}
+
 export interface SearchEnv {
   readonly ftsTokenizer: FtsTokenizer
+  /** Selected search backend; defaults to the zero-infrastructure FTS5. */
+  readonly backend?: SearchBackend
+  /** Connection config when `backend === 'elasticsearch'`, else null. */
+  readonly elasticsearch?: ElasticsearchEnv | null
 }
 
 export interface OidcProviderEnv {
@@ -187,6 +201,26 @@ const parseFtsTokenizer = (value: string | undefined): FtsTokenizer => {
   const tokenizer = value?.trim().toLowerCase() || 'unicode61'
   if (tokenizer === 'unicode61' || tokenizer === 'trigram') return tokenizer
   throw new Error('TS_WIKI_FTS_TOKENIZER must be either "unicode61" or "trigram".')
+}
+
+const parseSearchBackend = (value: string | undefined): SearchBackend => {
+  const backend = value?.trim().toLowerCase() || 'fts5'
+  if (backend === 'fts5' || backend === 'elasticsearch') return backend
+  throw new Error('SEARCH_BACKEND must be either "fts5" or "elasticsearch".')
+}
+
+const loadElasticsearch = (source: EnvSource): ElasticsearchEnv | null => {
+  if (parseSearchBackend(source.SEARCH_BACKEND) !== 'elasticsearch') return null
+  const missing: string[] = []
+  const url = requireEnv(source, 'ELASTICSEARCH_URL', missing)
+  if (missing.length) throw new Error(`SEARCH_BACKEND=elasticsearch requires ${missing.join(', ')}.`)
+  return {
+    url,
+    apiKey: optionalTrimmed(source.ELASTICSEARCH_API_KEY),
+    username: optionalTrimmed(source.ELASTICSEARCH_USERNAME),
+    password: optionalTrimmed(source.ELASTICSEARCH_PASSWORD),
+    indexPrefix: optionalTrimmed(source.ELASTICSEARCH_INDEX_PREFIX) ?? 'kawaii-wiki',
+  }
 }
 
 const parseTheme = (value: string | undefined): BrandingEnv['theme'] => {
@@ -585,6 +619,8 @@ export const loadEnv = (input: EnvSource = process.env): Env => {
     auth,
     search: {
       ftsTokenizer: parseFtsTokenizer(source.TS_WIKI_FTS_TOKENIZER),
+      backend: parseSearchBackend(source.SEARCH_BACKEND),
+      elasticsearch: loadElasticsearch(source),
     },
     assetUpload: {
       maxBytes: parsePositiveInteger(source.ASSET_MAX_BYTES, 25 * 1024 * 1024, 'ASSET_MAX_BYTES'),
