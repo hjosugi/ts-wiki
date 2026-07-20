@@ -26,6 +26,7 @@ const panels = [
   { id: 'automation', label: 'adminAutomation', category: 'automation', keywords: 'rule trigger action workflow', component: defineAsyncComponent(() => import('@/components/admin/AdminAutomationPanel.vue')) },
   { id: 'git', label: 'adminGit', category: 'system', keywords: 'repository sync mirror backup', component: defineAsyncComponent(() => import('@/components/admin/AdminGitPanel.vue')) },
   { id: 'api', label: 'adminApi', category: 'system', keywords: 'developer rest openapi graphql token integration', component: defineAsyncComponent(() => import('@/components/admin/AdminApiPanel.vue')) },
+  { id: 'backends', label: 'adminBackends', category: 'system', keywords: 'database search asset driver storage postgres mysql sqlite libsql health engine fulltext tsvector fts5 r2 local backend', component: defineAsyncComponent(() => import('@/components/admin/AdminBackendsPanel.vue')) },
   { id: 'audit', label: 'adminAudit', category: 'system', keywords: 'log activity event security', component: defineAsyncComponent(() => import('@/components/admin/AdminAuditPanel.vue')) },
 ] as const
 

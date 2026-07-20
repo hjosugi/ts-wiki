@@ -478,6 +478,11 @@ export interface AdminStats {
   pages: number
   revisions: number
 }
+export interface SystemBackendsStatus {
+  database: { driver: 'sqlite' | 'libsql' | 'postgres' | 'mysql'; healthy: boolean }
+  search: { backend: 'builtin'; engine: 'fts5' | 'tsvector' | 'fulltext'; healthy: boolean }
+  assets: { backend: 'local' | 'r2'; healthy: boolean }
+}
 export interface SearchIndexStatus {
   tokenizer: FtsTokenizer
   configuredTokenizer: FtsTokenizer
@@ -1093,6 +1098,7 @@ export const Api = {
 
   // Admin
   adminStats: () => call<AdminStats>(client().api.admin.stats.get()),
+  adminBackends: () => call<SystemBackendsStatus>(client().api.admin.system.backends.get()),
   adminSearchIndex: () =>
     call<{ searchIndex: SearchIndexStatus }>(client().api.admin['search-index'].get()).then((d) => d.searchIndex),
   adminRebuildSearchIndex: (tokenizer: FtsTokenizer = 'trigram') =>
