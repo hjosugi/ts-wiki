@@ -17,6 +17,7 @@ export interface PageIndexSource {
   readonly locale: string
   readonly authorId: string | null
   readonly authorName: string | null
+  readonly authorEmail?: string | null
   /** JSON array string as stored on the page row. */
   readonly labels: string
   readonly icon: string
@@ -41,6 +42,7 @@ export interface PageDocument {
   readonly locale: string
   readonly authorId: string | null
   readonly authorName: string | null
+  readonly authorEmail: string | null
   readonly labels: string[]
   readonly icon: string
   readonly coverUrl: string
@@ -69,6 +71,7 @@ export const buildPageDocument = (source: PageIndexSource): PageDocument => ({
   locale: source.locale,
   authorId: source.authorId,
   authorName: source.authorName,
+  authorEmail: source.authorEmail ?? null,
   labels: parseLabels(source.labels),
   icon: source.icon,
   coverUrl: source.coverUrl,

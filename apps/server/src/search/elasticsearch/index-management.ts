@@ -21,12 +21,15 @@ export const PAGE_INDEX_BODY = {
       description: { type: 'text', analyzer: 'cjk' },
       content: { type: 'text', analyzer: 'cjk' },
       comments: { type: 'text', analyzer: 'cjk' },
-      assets: { type: 'text', analyzer: 'cjk' },
+      // The filename subfield splits punctuation (for example diagram.png) so
+      // basename queries match, while the main cjk field preserves CJK search.
+      assets: { type: 'text', analyzer: 'cjk', fields: { filename: { type: 'text', analyzer: 'simple' } } },
       spaceKey: { type: 'keyword' },
       status: { type: 'keyword' },
       locale: { type: 'keyword' },
       authorId: { type: 'keyword' },
       authorName: { type: 'text', analyzer: 'cjk' },
+      authorEmail: { type: 'keyword' },
       labels: { type: 'keyword' },
       updatedAt: { type: 'long' },
       icon: { type: 'keyword', index: false },

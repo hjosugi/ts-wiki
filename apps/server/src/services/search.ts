@@ -45,6 +45,25 @@ export interface SearchRequest {
   readonly sort?: SearchSort
 }
 
+/**
+ * Authorization context for a search request.
+ *
+ * `readablePaths` lets external search backends apply ACLs inside the search
+ * engine before Elasticsearch computes totals, highlights, or pagination. The
+ * optional predicate is retained as a defence-in-depth check and keeps the
+ * built-in database indexers compatible with callers that only have a local
+ * permission function.
+ */
+export type SearchAccess =
+  | ((path: string) => boolean)
+  | {
+      readonly readablePaths: readonly string[]
+      readonly canRead?: (path: string) => boolean
+    }
+
+export const canReadSearchPath = (access: SearchAccess | undefined, path: string): boolean =>
+  !access || (typeof access === 'function' ? access(path) : access.canRead?.(path) ?? access.readablePaths.includes(path))
+
 export interface SearchTokenizerHint {
   readonly kind: 'cjk-tokenizer'
   readonly tokenizer: SearchTokenizer
@@ -99,14 +118,14 @@ export interface SearchIndexer {
   indexPage(page: PageRecord): Awaitable<void>
   indexPageById(pageId: string): Awaitable<void>
   removePage(pageId: string): Awaitable<void>
-  search(query: string, request: Required<SearchRequest>, canRead?: (path: string) => boolean): Awaitable<SearchResponse>
+  search(query: string, request: Required<SearchRequest>, access?: SearchAccess): Awaitable<SearchResponse>
   rebuild(tokenizer: SearchTokenizer): Awaitable<void>
   status(): Awaitable<SearchIndexStatus>
 }
 
 export interface SearchService {
-  search(query: string, options?: SearchRequest, canRead?: (path: string) => boolean): Promise<SearchResponse>
-  search(query: string, limit?: number, filters?: SearchFilters, canRead?: (path: string) => boolean): Promise<SearchResponse>
+  search(query: string, options?: SearchRequest, access?: SearchAccess): Promise<SearchResponse>
+  search(query: string, limit?: number, filters?: SearchFilters, access?: SearchAccess): Promise<SearchResponse>
   indexStatus(principal: Principal | null): Promise<Result<SearchIndexStatus, AppError>>
   rebuildIndex(principal: Principal | null, input?: SearchIndexRebuildInput): Promise<Result<SearchIndexStatus, AppError>>
 }
@@ -131,10 +150,17 @@ const normalizeRequest = (limitOrOptions?: number | SearchRequest, filters: Sear
 }
 
 export const createSearchService = (indexer: SearchIndexer): SearchService => ({
-  async search(query, limitOrOptions?: number | SearchRequest, filtersOrCanRead?: SearchFilters | ((path: string) => boolean), maybeCanRead?: (path: string) => boolean) {
-    const request = normalizeRequest(limitOrOptions, typeof filtersOrCanRead === 'function' ? {} : filtersOrCanRead ?? {})
-    const canRead = typeof filtersOrCanRead === 'function' ? filtersOrCanRead : maybeCanRead
-    return indexer.search(query, request, canRead)
+  async search(query, limitOrOptions?: number | SearchRequest, filtersOrAccess?: SearchFilters | SearchAccess, maybeAccess?: SearchAccess) {
+    if (typeof limitOrOptions === 'number') {
+      const filters = typeof filtersOrAccess === 'function' || (filtersOrAccess && 'readablePaths' in filtersOrAccess)
+        ? {}
+        : filtersOrAccess ?? {}
+      const access = typeof filtersOrAccess === 'function' || (filtersOrAccess && 'readablePaths' in filtersOrAccess)
+        ? filtersOrAccess
+        : maybeAccess
+      return indexer.search(query, normalizeRequest(limitOrOptions, filters), access)
+    }
+    return indexer.search(query, normalizeRequest(limitOrOptions), filtersOrAccess as SearchAccess | undefined)
   },
   async indexStatus(principal) {
     const allowed = requirePermission(principal, 'admin:access')

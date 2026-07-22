@@ -21,14 +21,16 @@ import {
   trigramShortTerms,
   type SnippetChoice,
 } from '../../services/search-support.ts'
-import type {
-  SearchFilters,
-  SearchHit,
-  SearchHitKind,
-  SearchIndexer,
-  SearchIndexStatus,
-  SearchRequest,
-  SearchResponse,
+import {
+  canReadSearchPath,
+  type SearchAccess,
+  type SearchFilters,
+  type SearchHit,
+  type SearchHitKind,
+  type SearchIndexer,
+  type SearchIndexStatus,
+  type SearchRequest,
+  type SearchResponse,
 } from '../../services/search.ts'
 
 const SNIPPET_START = '\u0001'
@@ -347,7 +349,7 @@ export const createFtsSearchIndexer = (
       ftsDelete.run(pageId)
     },
 
-    search(query: string, request: Required<SearchRequest>, canRead?: (path: string) => boolean): SearchResponse {
+    search(query: string, request: Required<SearchRequest>, access?: SearchAccess): SearchResponse {
       const tokenizer = readFtsTokenizer(db, configuredTokenizer)
       const hint = tokenizerHint(query, tokenizer)
       const parsed = parseSearchQuery(query)
@@ -380,7 +382,7 @@ export const createFtsSearchIndexer = (
         const supplemental = supplementalTextForPages(db, rows.map((row) => row.id))
         const hits = sortHits(
           rows
-            .filter((row) => !canRead || canRead(row.path))
+            .filter((row) => canReadSearchPath(access, row.path))
             .filter((row) => {
               const commentText = (supplemental.comments.get(row.id) ?? []).join('\n')
               const assetText = (supplemental.assetText.get(row.id) ?? []).join('\n')
@@ -445,7 +447,7 @@ export const createFtsSearchIndexer = (
         }>
         const hits = sortHits(
           rows
-            .filter((row) => !canRead || canRead(row.path))
+            .filter((row) => canReadSearchPath(access, row.path))
             .map((row) => toHit(row, query, now)),
           request.sort,
         )

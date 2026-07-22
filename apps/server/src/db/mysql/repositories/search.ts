@@ -25,13 +25,15 @@ import {
   sortHits,
   tokenizerHint,
 } from '../../../services/search-support.ts'
-import type {
-  SearchHit,
-  SearchIndexStatus,
-  SearchIndexer,
-  SearchRequest,
-  SearchResponse,
-  SearchTokenizer,
+import {
+  canReadSearchPath,
+  type SearchAccess,
+  type SearchHit,
+  type SearchIndexStatus,
+  type SearchIndexer,
+  type SearchRequest,
+  type SearchResponse,
+  type SearchTokenizer,
 } from '../../../services/search.ts'
 import type { MysqlClient, MysqlDb } from '../client.ts'
 import { assets, pageAssetRefs, pageComments, pages } from '../schema.ts'
@@ -209,7 +211,7 @@ export const createMysqlSearchIndexer = (
       await pool.query('DELETE FROM `page_search` WHERE `page_id` = ?', [pageId])
     },
 
-    async search(query: string, request: Required<SearchRequest>, canRead?: (path: string) => boolean): Promise<SearchResponse> {
+    async search(query: string, request: Required<SearchRequest>, access?: SearchAccess): Promise<SearchResponse> {
       const hint = tokenizerHint(query, containsCjk(query) ? 'unicode61' : 'trigram')
       const parsed = parseSearchQuery(query)
       const matchTerms = [...parsed.positive, ...parsed.phrases].map((term) => term.toLowerCase())
@@ -223,7 +225,7 @@ export const createMysqlSearchIndexer = (
         const rows = await fetchCandidates(against, like, request, clampCandidate(request.offset, request.limit))
         const hits = sortHits(
           rows
-            .filter((row) => !canRead || canRead(row.path))
+            .filter((row) => canReadSearchPath(access, row.path))
             .filter((row) => {
               const haystack = request.scope === 'title' ? row.sTitle.toLowerCase() : row.searchable
               return matchTerms.every((term) => haystack.includes(term)) && !excludeTerms.some((term) => haystack.includes(term))

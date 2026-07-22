@@ -12,9 +12,11 @@ export const createSearchRoutes = ({ requireSearchRead, canReadPage }: SearchRou
     requireSearchRead(principal)
     const pages = await services.pages.list()
     const publicationByPath = new Map(pages.map((page) => [page.path, page]))
-    const readablePaths = new Set((await Promise.all(pages.map(async (page) =>
-      await canReadPage(principal, page.path) ? page.path : null
-    ))).filter((path): path is string => path !== null))
+    const readablePaths = new Set((await Promise.all(pages.map(async (page) => {
+      if (!await canReadPage(principal, page.path)) return null
+      const published = page.status !== 'draft' && (page.publishAt === null || page.publishAt <= Date.now())
+      return published || can(principal, 'page:update', { path: page.path }) ? page.path : null
+    }))).filter((path): path is string => path !== null))
     return await services.search.search(
       query.q ?? '',
       {
@@ -33,10 +35,12 @@ export const createSearchRoutes = ({ requireSearchRead, canReadPage }: SearchRou
           updatedBefore: query.updatedBefore,
         },
       },
-      (path) => {
-        const page = publicationByPath.get(path)
-        const published = page && page.status !== 'draft' && (page.publishAt === null || page.publishAt <= Date.now())
-        return readablePaths.has(path) && Boolean(published || can(principal, 'page:update', { path }))
+      {
+        readablePaths: [...readablePaths],
+        canRead: (path) => {
+          const page = publicationByPath.get(path)
+          return readablePaths.has(path) && Boolean(page)
+        },
       },
     )
   }, {
