@@ -503,6 +503,17 @@ export const runMigrations = (sqlite: MigratableDatabase, options: MigrationOpti
     );
     CREATE INDEX IF NOT EXISTS wiki_events_id_idx ON wiki_events(id);
 
+    CREATE TABLE IF NOT EXISTS search_outbox (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      page_id         TEXT NOT NULL,
+      operation       TEXT NOT NULL,
+      enqueued_at     INTEGER NOT NULL,
+      attempts        INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at INTEGER NOT NULL,
+      last_error      TEXT
+    );
+    CREATE INDEX IF NOT EXISTS search_outbox_due_idx ON search_outbox(next_attempt_at);
+
     CREATE TABLE IF NOT EXISTS rate_limit_hits (
       bucket_key TEXT NOT NULL,
       hit_at     INTEGER NOT NULL

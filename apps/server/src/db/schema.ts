@@ -22,6 +22,7 @@ import {
   WIKI_EVENT_ACTIONS,
   WEBHOOK_DELIVERY_STATUSES,
   AUTOMATION_RULE_TYPES,
+  SEARCH_OUTBOX_OPERATIONS,
 } from './schema-enums'
 
 export const schemaMigrations = sqliteTable('schema_migrations', {
@@ -424,6 +425,23 @@ export const wikiEvents = sqliteTable(
     createdAt: integer('created_at').notNull(),
   },
   (t) => [index('wiki_events_id_idx').on(t.id)],
+)
+
+// Durable queue of pending Elasticsearch index operations. Written in the page
+// transaction and drained by the background worker, so a page save never fails
+// or is lost when the search backend is unavailable.
+export const searchOutbox = sqliteTable(
+  'search_outbox',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    pageId: text('page_id').notNull(),
+    operation: text('operation', { enum: SEARCH_OUTBOX_OPERATIONS }).notNull(),
+    enqueuedAt: integer('enqueued_at').notNull(),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: integer('next_attempt_at').notNull(),
+    lastError: text('last_error'),
+  },
+  (t) => [index('search_outbox_due_idx').on(t.nextAttemptAt)],
 )
 
 export const rateLimitHits = sqliteTable(

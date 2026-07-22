@@ -46,3 +46,6 @@ export const WEBHOOK_DELIVERY_STATUSES = ['pending', 'succeeded', 'failed'] as c
 
 /** automation_rules.type */
 export const AUTOMATION_RULE_TYPES = ['event-rule', 'page-updated-metadata'] as const
+
+/** search_outbox.operation */
+export const SEARCH_OUTBOX_OPERATIONS = ['index', 'delete'] as const
