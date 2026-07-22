@@ -12,7 +12,10 @@
   ],
   "overrides": {
     "esbuild": "0.25.12",
-    "vite": "8.1.4"
+    "vite": "8.1.4",
+    "linkify-it": "5.0.2",
+    "dompurify": "3.4.12",
+    "brace-expansion": "2.1.2"
   },
   "scripts": {
     "dev": "bun --filter '@kawaii-wiki/server' --filter '@kawaii-wiki/web' dev",
