@@ -40,6 +40,7 @@ import {
   WIKI_EVENT_ACTIONS,
   WEBHOOK_DELIVERY_STATUSES,
   AUTOMATION_RULE_TYPES,
+  SEARCH_OUTBOX_OPERATIONS,
 } from '../schema-enums'
 
 /** SQLite epoch-millis / counter integers map to bigint read as a JS number. */
@@ -445,6 +446,20 @@ export const wikiEvents = mysqlTable(
     createdAt: millis('created_at').notNull(),
   },
   (t) => [index('wiki_events_id_idx').on(t.id)],
+)
+
+export const searchOutbox = mysqlTable(
+  'search_outbox',
+  {
+    id: bigint('id', { mode: 'number' }).autoincrement().primaryKey(),
+    pageId: varchar('page_id', { length: 255 }).notNull(),
+    operation: varchar('operation', { length: 32, enum: SEARCH_OUTBOX_OPERATIONS }).notNull(),
+    enqueuedAt: millis('enqueued_at').notNull(),
+    attempts: millis('attempts').notNull().default(0),
+    nextAttemptAt: millis('next_attempt_at').notNull(),
+    lastError: text('last_error'),
+  },
+  (t) => [index('search_outbox_due_idx').on(t.nextAttemptAt)],
 )
 
 export const rateLimitHits = mysqlTable(

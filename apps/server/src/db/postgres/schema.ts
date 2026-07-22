@@ -31,6 +31,7 @@ import {
   WIKI_EVENT_ACTIONS,
   WEBHOOK_DELIVERY_STATUSES,
   AUTOMATION_RULE_TYPES,
+  SEARCH_OUTBOX_OPERATIONS,
 } from '../schema-enums'
 
 /** SQLite epoch-millis / counter integers map to bigint read as a JS number. */
@@ -436,6 +437,20 @@ export const wikiEvents = pgTable(
     createdAt: millis('created_at').notNull(),
   },
   (t) => [index('wiki_events_id_idx').on(t.id)],
+)
+
+export const searchOutbox = pgTable(
+  'search_outbox',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    pageId: text('page_id').notNull(),
+    operation: text('operation', { enum: SEARCH_OUTBOX_OPERATIONS }).notNull(),
+    enqueuedAt: millis('enqueued_at').notNull(),
+    attempts: millis('attempts').notNull().default(0),
+    nextAttemptAt: millis('next_attempt_at').notNull(),
+    lastError: text('last_error'),
+  },
+  (t) => [index('search_outbox_due_idx').on(t.nextAttemptAt)],
 )
 
 export const rateLimitHits = pgTable(
