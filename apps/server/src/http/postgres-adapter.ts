@@ -11,6 +11,7 @@ import { createPostgresServices } from '../db/postgres/services.ts'
 import { createPostgresDbEventBus } from '../db/postgres/event-bus.ts'
 import { createPostgresAuditLogRepository } from '../db/postgres/repositories/audit-log.ts'
 import { createPostgresRealtimeTicketRepository } from '../db/postgres/repositories/realtime-tickets.ts'
+import { createPostgresElasticsearchDataSource } from '../db/postgres/repositories/elasticsearch.ts'
 import { createEventBus } from '../realtime/bus.ts'
 import type { DatabaseAdapter } from './database-adapter.ts'
 
@@ -27,6 +28,7 @@ export const createPostgresDatabaseAdapter = (client: PostgresClient): DatabaseA
       : createEventBus(),
   auditLogRepo: createPostgresAuditLogRepository(client.db),
   realtimeTicketRepo: createPostgresRealtimeTicketRepository(client.db),
+  elasticsearch: createPostgresElasticsearchDataSource(client.db),
   rateLimitDatabase: null,
   close: () => client.close(),
 })

@@ -2,7 +2,7 @@ import { asc, desc, eq, lt, ne, sql } from 'drizzle-orm'
 import { isUniqueConstraintError } from '../../errors.ts'
 import type { SearchIndexer } from '../../../services/search.ts'
 import type { MysqlDb } from '../client.ts'
-import { pageAnalytics, pageAssetRefs, pageComments, pageRedirects, pageRevisions, pages, users } from '../schema.ts'
+import { pageAnalytics, pageAssetRefs, pageComments, pageRedirects, pageRevisions, pages, searchOutbox, users } from '../schema.ts'
 import {
   DuplicatePagePathError,
   type PageReadRepository,
@@ -15,6 +15,15 @@ type MysqlTx = Parameters<Parameters<MysqlDb['transaction']>[0]>[0]
 
 const insertRevision = (tx: MysqlTx, revision: PageRevisionRecord): Promise<unknown> =>
   tx.insert(pageRevisions).values(revision)
+
+const enqueueSearchOutbox = async (tx: MysqlTx, pageId: string, operation: 'index' | 'delete'): Promise<void> => {
+  const now = Date.now()
+  await tx.insert(searchOutbox).values({ pageId, operation, enqueuedAt: now, attempts: 0, nextAttemptAt: now, lastError: null })
+}
+
+export interface MysqlPageWriteOptions {
+  readonly searchBackend?: 'fts5' | 'elasticsearch'
+}
 
 // SQLite tie-broke revision order on rowid; MySQL has none, so fall back to
 // the revision id for a stable, deterministic secondary order.
@@ -98,7 +107,13 @@ export const createMysqlPageReadRepository = (db: MysqlDb): PageReadRepository =
  * already read the row back after writing (MySQL has no RETURNING), so the
  * Postgres logic ports directly apart from the redirect upsert.
  */
-export const createMysqlPageWriteRepository = (db: MysqlDb, searchIndexer: SearchIndexer): PageWriteRepository => ({
+export const createMysqlPageWriteRepository = (
+  db: MysqlDb,
+  searchIndexer: SearchIndexer,
+  options: MysqlPageWriteOptions = {},
+): PageWriteRepository => {
+  const externalSearch = options.searchBackend === 'elasticsearch'
+  return {
   async findByPath(path) {
     const [row] = await db.select().from(pages).where(eq(pages.path, path)).limit(1)
     return row
@@ -124,9 +139,10 @@ export const createMysqlPageWriteRepository = (db: MysqlDb, searchIndexer: Searc
       if (input.revision) await insertRevision(tx, input.revision)
       await tx.update(pages).set(input.changes).where(eq(pages.id, input.pageId))
       const [updated] = await tx.select().from(pages).where(eq(pages.id, input.pageId)).limit(1)
+      if (updated && externalSearch) await enqueueSearchOutbox(tx, updated.id, 'index')
       return updated
     })
-    if (page) await searchIndexer.indexPage(page)
+    if (page && !externalSearch) await searchIndexer.indexPage(page)
     return page
   },
 
@@ -137,9 +153,10 @@ export const createMysqlPageWriteRepository = (db: MysqlDb, searchIndexer: Searc
         await tx.insert(pages).values(page)
         await insertRevision(tx, revision)
         const [row] = await tx.select().from(pages).where(eq(pages.id, page.id)).limit(1)
+        if (row && externalSearch) await enqueueSearchOutbox(tx, row.id, 'index')
         return row
       })
-      if (created) await searchIndexer.indexPage(created)
+      if (created && !externalSearch) await searchIndexer.indexPage(created)
       return created
     } catch (error) {
       if (isUniqueConstraintError(error)) throw new DuplicatePagePathError()
@@ -160,10 +177,13 @@ export const createMysqlPageWriteRepository = (db: MysqlDb, searchIndexer: Searc
       await insertRevision(tx, input.revision)
       await tx.update(pages).set({ lifecycle: input.lifecycle, updatedAt: input.updatedAt }).where(eq(pages.id, input.pageId))
       const [updated] = await tx.select().from(pages).where(eq(pages.id, input.pageId)).limit(1)
+      if (externalSearch) await enqueueSearchOutbox(tx, input.pageId, input.index ? 'index' : 'delete')
       return updated
     })
-    if (input.index && page) await searchIndexer.indexPage(page)
-    else await searchIndexer.removePage(input.pageId)
+    if (!externalSearch) {
+      if (input.index && page) await searchIndexer.indexPage(page)
+      else await searchIndexer.removePage(input.pageId)
+    }
     return page
   },
 
@@ -193,13 +213,15 @@ export const createMysqlPageWriteRepository = (db: MysqlDb, searchIndexer: Searc
           })
           .where(eq(pages.id, rewritten.pageId))
         const [updated] = await tx.select().from(pages).where(eq(pages.id, rewritten.pageId)).limit(1)
-        if (updated) pagesToIndex.push(updated)
+        if (updated && externalSearch) await enqueueSearchOutbox(tx, updated.id, 'index')
+        else if (updated) pagesToIndex.push(updated)
       }
       const [moved] = await tx.select().from(pages).where(eq(pages.id, input.pageId)).limit(1)
-      if (moved) pagesToIndex.push(moved)
+      if (moved && externalSearch) await enqueueSearchOutbox(tx, moved.id, 'index')
+      else if (moved) pagesToIndex.push(moved)
       return moved
     })
-    for (const indexedPage of pagesToIndex) await searchIndexer.indexPage(indexedPage)
+    if (!externalSearch) for (const indexedPage of pagesToIndex) await searchIndexer.indexPage(indexedPage)
     return page
   },
 
@@ -210,9 +232,10 @@ export const createMysqlPageWriteRepository = (db: MysqlDb, searchIndexer: Searc
       await tx.delete(pageRedirects).where(eq(pageRedirects.fromPath, input.path))
       await tx.delete(pageRedirects).where(eq(pageRedirects.toPath, input.path))
       const [updated] = await tx.select().from(pages).where(eq(pages.id, input.pageId)).limit(1)
+      if (externalSearch) await enqueueSearchOutbox(tx, input.pageId, 'delete')
       return updated
     })
-    await searchIndexer.removePage(input.pageId)
+    if (!externalSearch) await searchIndexer.removePage(input.pageId)
     return page
   },
 
@@ -234,7 +257,9 @@ export const createMysqlPageWriteRepository = (db: MysqlDb, searchIndexer: Searc
       await tx.delete(pageComments).where(eq(pageComments.pageId, pageId))
       await tx.delete(pageRevisions).where(eq(pageRevisions.pageId, pageId))
       await tx.delete(pages).where(eq(pages.id, pageId))
+      if (externalSearch) await enqueueSearchOutbox(tx, pageId, 'delete')
     })
-    await searchIndexer.removePage(pageId)
+    if (!externalSearch) await searchIndexer.removePage(pageId)
   },
-})
+  }
+}

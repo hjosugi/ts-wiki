@@ -6,13 +6,15 @@ import { createPostgresSearchIndexer } from './repositories/search.ts'
 
 /** PostgreSQL composition root; services only receive driver-neutral contracts. */
 export const createPostgresServices = (client: PostgresClient, options: ServiceOptions = {}): Services => {
-  const searchIndexer = createPostgresSearchIndexer(client, {
+  const searchIndexer = options.searchIndexer ?? createPostgresSearchIndexer(client, {
     configuredTokenizer: options.search?.ftsTokenizer,
   })
   return createServiceLayer(
     {
       repositories: createPostgresDatabaseRepositories(client.db),
-      pageWrites: createPostgresPageWriteRepository(client.db, searchIndexer),
+      pageWrites: createPostgresPageWriteRepository(client.db, searchIndexer, {
+        searchBackend: options.search?.backend ?? 'fts5',
+      }),
       searchIndexer,
       ping: () => client.ping(),
     },

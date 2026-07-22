@@ -1,6 +1,6 @@
 import { asc, desc, eq, lt, ne, sql } from 'drizzle-orm'
 import type { DB } from '../client.ts'
-import { pageAnalytics, pageAssetRefs, pageComments, pageRedirects, pageRevisions, pages, users } from '../schema.ts'
+import { pageAnalytics, pageAssetRefs, pageComments, pageRedirects, pageRevisions, pages, searchOutbox, users } from '../schema.ts'
 import { isUniqueConstraintError } from '../errors.ts'
 import type { SearchIndexer } from '../../services/search.ts'
 import {
@@ -80,7 +80,26 @@ const insertRevision = (tx: { insert: DB['insert'] }, revision: PageRevisionReco
   tx.insert(pageRevisions).values(revision).run()
 }
 
-export const createSqlitePageWriteRepository = (db: DB, searchIndexer: SearchIndexer): PageWriteRepository => ({
+export interface SqlitePageWriteOptions {
+  readonly searchBackend?: 'fts5' | 'elasticsearch'
+}
+
+const enqueueSearchOutbox = (
+  tx: { insert: DB['insert'] },
+  pageId: string,
+  operation: 'index' | 'delete',
+): void => {
+  const now = Date.now()
+  tx.insert(searchOutbox).values({ pageId, operation, enqueuedAt: now, attempts: 0, nextAttemptAt: now, lastError: null }).run()
+}
+
+export const createSqlitePageWriteRepository = (
+  db: DB,
+  searchIndexer: SearchIndexer,
+  options: SqlitePageWriteOptions = {},
+): PageWriteRepository => {
+  const externalSearch = options.searchBackend === 'elasticsearch'
+  return ({
   async findByPath(path) {
     return db.select().from(pages).where(eq(pages.path, path)).get()
   },
@@ -98,10 +117,11 @@ export const createSqlitePageWriteRepository = (db: DB, searchIndexer: SearchInd
       if (input.revision) insertRevision(tx, input.revision)
       tx.update(pages).set(input.changes).where(eq(pages.id, input.pageId)).run()
       const updated = tx.select().from(pages).where(eq(pages.id, input.pageId)).get()
-      if (updated && !db.$syncAfterWrite) searchIndexer.indexPage(updated)
+      if (updated && externalSearch) enqueueSearchOutbox(tx, updated.id, 'index')
+      else if (updated && !db.$syncAfterWrite) searchIndexer.indexPage(updated)
       return updated
     })
-    if (page && db.$syncAfterWrite) searchIndexer.indexPage(page)
+    if (page && db.$syncAfterWrite && !externalSearch) searchIndexer.indexPage(page)
     await db.$syncAfterWrite?.()
     return page
   },
@@ -111,10 +131,11 @@ export const createSqlitePageWriteRepository = (db: DB, searchIndexer: SearchInd
         tx.delete(pageRedirects).where(eq(pageRedirects.fromPath, page.path)).run()
         tx.insert(pages).values(page).run()
         insertRevision(tx, revision)
-        if (!db.$syncAfterWrite) searchIndexer.indexPage(page)
+        if (externalSearch) enqueueSearchOutbox(tx, page.id, 'index')
+        else if (!db.$syncAfterWrite) searchIndexer.indexPage(page)
         return tx.select().from(pages).where(eq(pages.id, page.id)).get()
       })
-      if (created && db.$syncAfterWrite) searchIndexer.indexPage(created)
+      if (created && db.$syncAfterWrite && !externalSearch) searchIndexer.indexPage(created)
       await db.$syncAfterWrite?.()
       return created
     } catch (error) {
@@ -136,13 +157,15 @@ export const createSqlitePageWriteRepository = (db: DB, searchIndexer: SearchInd
       tx.update(pages).set({ lifecycle: input.lifecycle, updatedAt: input.updatedAt })
         .where(eq(pages.id, input.pageId)).run()
       const updated = tx.select().from(pages).where(eq(pages.id, input.pageId)).get()
-      if (!db.$syncAfterWrite) {
+      if (externalSearch) {
+        enqueueSearchOutbox(tx, input.pageId, input.index ? 'index' : 'delete')
+      } else if (!db.$syncAfterWrite) {
         if (input.index && updated) searchIndexer.indexPage(updated)
         else searchIndexer.removePage(input.pageId)
       }
       return updated
     })
-    if (db.$syncAfterWrite) {
+    if (db.$syncAfterWrite && !externalSearch) {
       if (input.index && page) searchIndexer.indexPage(page)
       else searchIndexer.removePage(input.pageId)
     }
@@ -173,19 +196,23 @@ export const createSqlitePageWriteRepository = (db: DB, searchIndexer: SearchInd
           updatedAt: rewritten.updatedAt,
         }).where(eq(pages.id, rewritten.pageId)).run()
         const updated = tx.select().from(pages).where(eq(pages.id, rewritten.pageId)).get()
-        if (updated) {
+        if (updated && externalSearch) {
+          enqueueSearchOutbox(tx, updated.id, 'index')
+        } else if (updated) {
           if (db.$syncAfterWrite) pagesToIndex.push(updated)
           else searchIndexer.indexPage(updated)
         }
       }
       const moved = tx.select().from(pages).where(eq(pages.id, input.pageId)).get()
-      if (moved) {
+      if (moved && externalSearch) {
+        enqueueSearchOutbox(tx, moved.id, 'index')
+      } else if (moved) {
         if (db.$syncAfterWrite) pagesToIndex.push(moved)
         else searchIndexer.indexPage(moved)
       }
       return moved
     })
-    for (const indexedPage of pagesToIndex) searchIndexer.indexPage(indexedPage)
+    if (!externalSearch) for (const indexedPage of pagesToIndex) searchIndexer.indexPage(indexedPage)
     await db.$syncAfterWrite?.()
     return page
   },
@@ -196,10 +223,11 @@ export const createSqlitePageWriteRepository = (db: DB, searchIndexer: SearchInd
         .where(eq(pages.id, input.pageId)).run()
       tx.delete(pageRedirects).where(eq(pageRedirects.fromPath, input.path)).run()
       tx.delete(pageRedirects).where(eq(pageRedirects.toPath, input.path)).run()
-      if (!db.$syncAfterWrite) searchIndexer.removePage(input.pageId)
+      if (externalSearch) enqueueSearchOutbox(tx, input.pageId, 'delete')
+      else if (!db.$syncAfterWrite) searchIndexer.removePage(input.pageId)
       return tx.select().from(pages).where(eq(pages.id, input.pageId)).get()
     })
-    if (db.$syncAfterWrite) searchIndexer.removePage(input.pageId)
+    if (db.$syncAfterWrite && !externalSearch) searchIndexer.removePage(input.pageId)
     await db.$syncAfterWrite?.()
     return page
   },
@@ -221,9 +249,11 @@ export const createSqlitePageWriteRepository = (db: DB, searchIndexer: SearchInd
       tx.delete(pageComments).where(eq(pageComments.pageId, pageId)).run()
       tx.delete(pageRevisions).where(eq(pageRevisions.pageId, pageId)).run()
       tx.delete(pages).where(eq(pages.id, pageId)).run()
-      if (!db.$syncAfterWrite) searchIndexer.removePage(pageId)
+      if (externalSearch) enqueueSearchOutbox(tx, pageId, 'delete')
+      else if (!db.$syncAfterWrite) searchIndexer.removePage(pageId)
     })
-    if (db.$syncAfterWrite) searchIndexer.removePage(pageId)
+    if (db.$syncAfterWrite && !externalSearch) searchIndexer.removePage(pageId)
     await db.$syncAfterWrite?.()
   },
-})
+  })
+}

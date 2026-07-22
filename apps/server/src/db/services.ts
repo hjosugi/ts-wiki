@@ -7,10 +7,10 @@ import { createServiceLayer, type ServiceOptions, type Services } from '../servi
 /** SQLite/libSQL composition root; services only receive driver-neutral contracts. */
 export const createServices = (db: DB, options: ServiceOptions = {}): Services => {
   const search = options.search ?? { ftsTokenizer: 'unicode61' as const }
-  const searchIndexer = createFtsSearchIndexer(db, { configuredTokenizer: search.ftsTokenizer })
+  const searchIndexer = options.searchIndexer ?? createFtsSearchIndexer(db, { configuredTokenizer: search.ftsTokenizer })
   return createServiceLayer({
     repositories: createDatabaseRepositories(db),
-    pageWrites: createSqlitePageWriteRepository(db, searchIndexer),
+    pageWrites: createSqlitePageWriteRepository(db, searchIndexer, { searchBackend: search.backend ?? 'fts5' }),
     searchIndexer,
     ping: async () => { db.$client.prepare('SELECT 1 AS ready').get() },
   }, options)

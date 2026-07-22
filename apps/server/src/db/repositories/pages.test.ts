@@ -3,10 +3,11 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { DB } from '../client.ts'
 import { createLibsqlDb, createSqliteDb } from '../client.ts'
-import { pageRedirects, pageRevisions, pages, users } from '../schema.ts'
+import { pageRedirects, pageRevisions, pages, searchOutbox, users } from '../schema.ts'
 import { DuplicatePagePathError, type PageRecord, type PageRevisionRecord } from '../../repositories/pages.ts'
 import { createFtsSearchIndexer } from './search.ts'
 import { createSqlitePageReadRepository, createSqlitePageWriteRepository } from './pages.ts'
+import type { SearchIndexer } from '../../services/search.ts'
 
 const databases: DB[] = []
 const externalReplicaDir = mkdtempSync(join(process.cwd(), '.kawaii-wiki-libsql-contract-'))
@@ -179,6 +180,52 @@ describe.each(drivers)('%s page write repository contract', (_driver, create) =>
     const db = create()
     databases.push(db)
     await assertDuplicatePathContract(db)
+  })
+
+  test('writes Elasticsearch outbox operations atomically without contacting Elasticsearch', async () => {
+    const db = create()
+    databases.push(db)
+    const unavailableIndexer: SearchIndexer = {
+      indexPage: () => { throw new Error('elasticsearch unavailable') },
+      indexPageById: () => { throw new Error('elasticsearch unavailable') },
+      removePage: () => { throw new Error('elasticsearch unavailable') },
+      search: () => { throw new Error('not exercised') },
+      rebuild: () => { throw new Error('not exercised') },
+      status: () => { throw new Error('not exercised') },
+    }
+    const repository = createSqlitePageWriteRepository(db, unavailableIndexer, { searchBackend: 'elasticsearch' })
+    const page = pageRecord('outbox-page', 'docs/outbox', 'body')
+
+    expect(await repository.create(page, revisionRecord(page, 'outbox-created', 'created', 1))).toMatchObject({ id: page.id })
+    await repository.writeExisting({ pageId: page.id, changes: { content: 'updated', updatedAt: 2 }, revision: null })
+    await repository.setLifecycle({
+      pageId: page.id,
+      lifecycle: 'archived',
+      updatedAt: 3,
+      revision: revisionRecord(page, 'outbox-archived', 'archived', 3),
+      index: false,
+    })
+    await repository.setLifecycle({
+      pageId: page.id,
+      lifecycle: 'active',
+      updatedAt: 4,
+      revision: revisionRecord(page, 'outbox-restored', 'restored', 4),
+      index: true,
+    })
+    await repository.remove({
+      pageId: page.id,
+      path: page.path,
+      updatedAt: 5,
+      revision: revisionRecord(page, 'outbox-deleted', 'deleted', 5),
+    })
+
+    expect(db.select({ operation: searchOutbox.operation }).from(searchOutbox).all().map((row) => row.operation))
+      .toEqual(['index', 'index', 'delete', 'index', 'delete'])
+    // If the page transaction rolls back, its outbox write rolls back too.
+    const duplicate = pageRecord('duplicate', page.path)
+    await expect(repository.create(duplicate, revisionRecord(duplicate, 'duplicate-created', 'created', 6)))
+      .rejects.toBeInstanceOf(DuplicatePagePathError)
+    expect(db.select().from(searchOutbox).all()).toHaveLength(5)
   })
 })
 

@@ -19,6 +19,8 @@ import type { RealtimeEnv } from '../env.ts'
 import type { AuditLogRepository } from '../repositories/audit-log.ts'
 import type { RealtimeTicketRepository } from '../repositories/realtime-tickets.ts'
 import type { RateLimitDatabase } from './rate-limit.ts'
+import type { ElasticsearchSearchDataSource } from '../search/elasticsearch/search.ts'
+import { createSqliteElasticsearchDataSource } from '../db/repositories/elasticsearch.ts'
 
 export interface DatabaseAdapter {
   readonly driver: DatabaseDriver
@@ -28,6 +30,8 @@ export interface DatabaseAdapter {
   createRealtimeBus(realtime: RealtimeEnv): EventBus
   readonly auditLogRepo: AuditLogRepository
   readonly realtimeTicketRepo: RealtimeTicketRepository
+  /** Driver-specific page/outbox access used only by the optional ES runtime. */
+  readonly elasticsearch: ElasticsearchSearchDataSource
   /**
    * Raw handle backing shared DB rate limiting, or null when the driver cannot
    * provide a synchronous `RateLimitDatabase` (Postgres → in-memory limiters).
@@ -44,6 +48,7 @@ export const createSqliteDatabaseAdapter = (db: DB): DatabaseAdapter => ({
   createRealtimeBus: (realtime) => createRealtimeBus(db, realtime),
   auditLogRepo: createSqliteAuditLogRepository(db),
   realtimeTicketRepo: createSqliteRealtimeTicketRepository(db),
+  elasticsearch: createSqliteElasticsearchDataSource(db),
   rateLimitDatabase: db.$client,
   close: () => { db.$client.close() },
 })

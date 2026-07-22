@@ -14,6 +14,8 @@ export interface ElasticsearchClientConfig {
   readonly apiKey?: string | null
   readonly username?: string | null
   readonly password?: string | null
+  /** Bound every request so an unreachable cluster cannot stall a worker forever. */
+  readonly requestTimeoutMs?: number
 }
 
 /** A non-2xx response from Elasticsearch, carrying the parsed error body. */
@@ -47,12 +49,14 @@ const authHeader = (config: ElasticsearchClientConfig): Record<string, string> =
 export const createElasticsearchClient = (config: ElasticsearchClientConfig): ElasticsearchClient => {
   const base = config.url.replace(/\/+$/, '')
   const auth = authHeader(config)
+  const requestTimeoutMs = Math.max(100, config.requestTimeoutMs ?? 10_000)
 
   const request = async <T>(method: string, path: string, body?: unknown): Promise<T> => {
     const response = await fetch(`${base}${path}`, {
       method,
       headers: { 'content-type': 'application/json', ...auth },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(requestTimeoutMs),
     })
     const text = await response.text()
     const parsed = text ? JSON.parse(text) : undefined
