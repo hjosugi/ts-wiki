@@ -137,7 +137,7 @@ export const createCommentService = (repository: CommentRepository, searchIndexe
         updatedAt: now,
       }
       await repository.insert(comment)
-      searchIndexer?.indexPageById(page.id)
+      await searchIndexer?.indexPageById(page.id)
       return ok(toView(comment, await nameOf(comment.authorId)))
     },
 
@@ -149,7 +149,7 @@ export const createCommentService = (repository: CommentRepository, searchIndexe
       if (!clean.ok) return clean
       const updated = { ...comment, body: clean.value, updatedAt: Date.now() }
       if (!await repository.updateBody(id, updated.body, updated.updatedAt)) return err(notFound('Comment not found'))
-      searchIndexer?.indexPageById(comment.pageId)
+      await searchIndexer?.indexPageById(comment.pageId)
       return ok(toView(updated, await nameOf(updated.authorId)))
     },
 
@@ -168,7 +168,7 @@ export const createCommentService = (repository: CommentRepository, searchIndexe
       if (!comment) return err(notFound('Comment not found'))
       if (!canMutate(principal, comment)) return err(forbidden())
       if (!await repository.delete(id)) return err(notFound('Comment not found'))
-      searchIndexer?.indexPageById(comment.pageId)
+      await searchIndexer?.indexPageById(comment.pageId)
       return ok({ id, path: comment.path })
     },
   }

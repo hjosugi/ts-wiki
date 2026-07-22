@@ -6,13 +6,15 @@ import { createMysqlSearchIndexer } from './repositories/search.ts'
 
 /** MySQL composition root; services only receive driver-neutral contracts. */
 export const createMysqlServices = (client: MysqlClient, options: ServiceOptions = {}): Services => {
-  const searchIndexer = createMysqlSearchIndexer(client, {
+  const searchIndexer = options.searchIndexer ?? createMysqlSearchIndexer(client, {
     configuredTokenizer: options.search?.ftsTokenizer,
   })
   return createServiceLayer(
     {
       repositories: createMysqlDatabaseRepositories(client.db),
-      pageWrites: createMysqlPageWriteRepository(client.db, searchIndexer),
+      pageWrites: createMysqlPageWriteRepository(client.db, searchIndexer, {
+        searchBackend: options.search?.backend ?? 'fts5',
+      }),
       searchIndexer,
       ping: () => client.ping(),
     },

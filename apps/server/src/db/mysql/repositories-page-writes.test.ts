@@ -6,7 +6,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
-import { pageAnalytics, pageAssetRefs, pageComments, pageRedirects } from './schema.ts'
+import { pageAnalytics, pageAssetRefs, pageComments, pageRedirects, searchOutbox } from './schema.ts'
 import { createMysqlContractDb, testMysqlUrl, type MysqlContractDb } from './test-support.ts'
 import { createMysqlPageReadRepository, createMysqlPageWriteRepository } from './repositories/pages.ts'
 import { DuplicatePagePathError, type PageRecord, type PageRevisionRecord } from '../../repositories/pages.ts'
@@ -58,6 +58,23 @@ describe.skipIf(!testMysqlUrl)('mysql page-write contracts', () => {
     expect(await write.findRedirect('docs/a')).toBeNull() // create cleared the redirect at its path
 
     await expect(write.create(makePage({ id: 'p2', path: 'docs/a' }), makeRevision({ id: 'rev2' }))).rejects.toThrow(DuplicatePagePathError)
+  })
+
+  test('Elasticsearch mode commits page and outbox together without calling the remote indexer', async () => {
+    const unavailable = makeSpy()
+    unavailable.indexer.indexPage = () => { throw new Error('elasticsearch unavailable') }
+    unavailable.indexer.removePage = () => { throw new Error('elasticsearch unavailable') }
+    const write = createMysqlPageWriteRepository(harness.db, unavailable.indexer, { searchBackend: 'elasticsearch' })
+
+    await expect(write.create(makePage(), makeRevision())).resolves.toMatchObject({ id: 'p1' })
+    await write.writeExisting({ pageId: 'p1', changes: { title: 'updated', updatedAt: 2 }, revision: null })
+    await write.remove({ pageId: 'p1', path: 'docs/a', updatedAt: 3, revision: makeRevision({ id: 'rev2', action: 'deleted' }) })
+    expect((await harness.db.select({ operation: searchOutbox.operation }).from(searchOutbox)).map((row) => row.operation))
+      .toEqual(['index', 'index', 'delete'])
+
+    await expect(write.create(makePage({ id: 'p2' }), makeRevision({ id: 'rev3', pageId: 'p2' })))
+      .rejects.toThrow(DuplicatePagePathError)
+    expect(await harness.db.select().from(searchOutbox)).toHaveLength(3)
   })
 
   test('writeExisting: applies changes, records a revision, and reindexes', async () => {

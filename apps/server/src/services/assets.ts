@@ -285,7 +285,7 @@ export const createAssetService = (repository: AssetRepository, options: AssetSe
   }
   const refreshPagesForAsset = async (...records: AssetRecord[]): Promise<void> => {
     const ids = new Set((await Promise.all(records.map((asset) => repository.listAffectedPageIds(asset.id)))).flat())
-    for (const id of ids) searchIndexer?.indexPageById(id)
+    for (const id of ids) await searchIndexer?.indexPageById(id)
   }
   return {
     async record(input, principal) {

@@ -11,6 +11,7 @@ import { createMysqlServices } from '../db/mysql/services.ts'
 import { createMysqlDbEventBus } from '../db/mysql/event-bus.ts'
 import { createMysqlAuditLogRepository } from '../db/mysql/repositories/audit-log.ts'
 import { createMysqlRealtimeTicketRepository } from '../db/mysql/repositories/realtime-tickets.ts'
+import { createMysqlElasticsearchDataSource } from '../db/mysql/repositories/elasticsearch.ts'
 import { createEventBus } from '../realtime/bus.ts'
 import type { DatabaseAdapter } from './database-adapter.ts'
 
@@ -27,6 +28,7 @@ export const createMysqlDatabaseAdapter = (client: MysqlClient): DatabaseAdapter
       : createEventBus(),
   auditLogRepo: createMysqlAuditLogRepository(client.db),
   realtimeTicketRepo: createMysqlRealtimeTicketRepository(client.db),
+  elasticsearch: createMysqlElasticsearchDataSource(client.db),
   rateLimitDatabase: null,
   close: () => client.close(),
 })

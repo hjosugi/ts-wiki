@@ -39,6 +39,8 @@ export interface ServiceOptions {
   readonly auth?: AuthEnv
   readonly assetUpload?: AssetUploadEnv
   readonly search?: SearchEnv
+  /** Composition-root override for an external search backend. */
+  readonly searchIndexer?: SearchIndexer
   readonly branding?: BrandingEnv
   readonly localization?: LocalizationEnv
   readonly mail?: MailEnv

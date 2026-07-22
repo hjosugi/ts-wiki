@@ -19,6 +19,7 @@ import { createAssetStorage, type AssetStorage } from '../storage/assets.ts'
 import { createGitStorage, type GitConfig } from '../storage/git.ts'
 import { createGitSyncHandlers, startGitSyncScheduler } from '../storage/git-sync.ts'
 import { isUserActive } from '../services/users.ts'
+import type { SearchIndexer } from '../services/search.ts'
 import {
   audit,
   createAuditLogger,
@@ -64,6 +65,7 @@ export interface AppDeps {
   readonly env: Env
   readonly logger?: StructuredLogger
   readonly assetStorage?: AssetStorage
+  readonly searchIndexer?: SearchIndexer
   readonly mailSender?: MailSender
   readonly webhookFetcher?: WebhookFetcher
   readonly webhookResolver?: WebhookHostnameResolver
@@ -120,6 +122,7 @@ export const createApp = ({
   env,
   logger: suppliedLogger = consoleStructuredLogger,
   assetStorage: suppliedAssetStorage,
+  searchIndexer,
   mailSender,
   webhookFetcher,
   webhookResolver,
@@ -132,6 +135,7 @@ export const createApp = ({
     auth: env.auth,
     assetUpload: env.assetUpload,
     search: env.search,
+    searchIndexer,
     branding: env.branding,
     localization: env.localization,
     mail: env.mail,
